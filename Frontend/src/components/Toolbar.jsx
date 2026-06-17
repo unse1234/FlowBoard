@@ -48,7 +48,7 @@ export default function Toolbar({ tool, setTool, toolLocked, setToolLocked }) {
         type="button"
         onClick={() => setToolLocked((prev) => !prev)}
         className={`px-3 py-1 text-sm rounded transition ${
-          toolLocked ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+          toolLocked ? "bg-black text-white" : "bg-gray-200 hover:bg-gray-200"
         }`}
         title={
           toolLocked
