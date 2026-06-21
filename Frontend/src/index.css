@@ -5,10 +5,10 @@
  * All component styling uses Tailwind class names (e.g., className="flex gap-2")
  * This file is the entry point for global CSS.
  */
-@import "tailwindcss";
-
 /* Load fonts used by the UI (Syne, Syne Mono, Inter, Roboto) */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto:wght@400;700&family=Syne:ital,wght@0,400;0,700&family=Syne+Mono:ital,wght@0,400;0,700&display=swap');
+
+@import "tailwindcss";
 
 /* Helper utility classes for components to reference the exact fonts */
 .font-syne { font-family: 'Syne', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }

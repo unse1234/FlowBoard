@@ -1,16 +1,10 @@
-// Main App component - serves as the root component for the Flow Board application
-import Whiteboard from "./components/Whiteboard.jsx";
+import BoardPage from "./pages/BoardPage.jsx";
 
 /**
- * App Component
- *
- * The main entry point for the application. This component simply renders
- * the Whiteboard component which contains all the drawing and collaboration features.
- *
- * @returns {JSX.Element} The Whiteboard component
+ * App Component - Main application entry point
  */
 function App() {
-  return <Whiteboard />;
+  return <BoardPage />;
 }
 
-export default App;
+export default App; 
