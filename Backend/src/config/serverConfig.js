@@ -1,5 +1,5 @@
 const DEFAULT_PORT = 3001;
-const DEFAULT_CLIENT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
+const DEFAULT_CLIENT_ORIGINS = ["http://localhost:5173", "https://flow-board-beige.vercel.app/"];
 
 function getServerConfig(env = process.env) {
   return {

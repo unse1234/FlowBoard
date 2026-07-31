@@ -122,7 +122,11 @@ export function buildCollaborationLink(roomId, location = globalThis.location) {
 }
 
 export function getRealtimeUrl() {
-  return import.meta.env?.VITE_REALTIME_URL ?? DEFAULT_REALTIME_URL;
+  return (
+    import.meta.env?.VITE_API_URL ??
+    import.meta.env?.VITE_REALTIME_URL ??
+    DEFAULT_REALTIME_URL
+  );
 }
 
 /**
