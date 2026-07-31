@@ -1,16 +1,181 @@
-# React + Vite
+# FlowBoard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern collaborative whiteboard application inspired by Excalidraw, built with React and Konva. FlowBoard enables users to create diagrams, sketches, wireframes, and visual workflows through an intuitive drag-and-drop interface.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### Drawing Tools
 
-## React Compiler
+* Rectangle
+* Ellipse
+* Diamond
+* Line
+* Arrow
+* Freehand Drawing (Pen)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Editing & Manipulation
 
-## Expanding the ESLint configuration
+* Select and move shapes
+* Resize shapes
+* Multi-shape support
+* Shape customization
+* Stroke width controls
+* Color customization
+* Dashed and solid strokes
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Text & Media
+
+* Add editable text anywhere on the canvas
+* In-place text editing
+* Upload and place images
+* Resize and reposition images
+
+### Productivity Features
+
+* Undo / Redo
+* Export canvas as image
+* Local storage persistence
+* Responsive user interface
+* Professional toolbar with icons
+
+### Planned Features
+
+* Authentication
+* Real-time collaboration
+* Shared workspaces
+* Live cursors and presence indicators
+
+---
+
+## Tech Stack
+
+### Frontend
+
+* React
+* Vite
+* React Konva
+* Konva
+* Tailwind CSS
+
+### State Management
+
+* React Hooks
+* Context API (if applicable)
+
+### Development Tools
+
+* Git
+* GitHub
+* ESLint
+
+---
+
+## Project Structure
+
+```text
+src/
+├── components/
+│   ├── Toolbar/
+│   ├── Canvas/
+│   ├── PropertiesPanel/
+│   └── Shapes/
+├── constants/
+├── hooks/
+├── utils/
+├── assets/
+├── styles/
+└── App.jsx
+```
+
+---
+
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/unse1234/Flowboard.git
+```
+
+Navigate to the project directory:
+
+```bash
+cd flowboard
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Build for production:
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+---
+
+## Usage
+
+1. Select a drawing tool from the toolbar.
+2. Draw directly on the canvas.
+3. Select shapes to move, resize, or customize them.
+4. Add text and images to enhance diagrams.
+5. Use Undo/Redo to manage changes.
+6. Export the canvas as an image when finished.
+
+---
+
+## Architecture Highlights
+
+* Modular component-based architecture
+* Reusable shape rendering system
+* Centralized tool configuration
+* Utility-driven shape calculations
+* Scalable state management approach
+* Separation of rendering, business logic, and styling concerns
+
+---
+
+## Future Improvements
+
+* User authentication
+* Real-time collaboration
+* Cloud storage
+* Room-based sharing
+* Version history
+* Keyboard shortcuts
+* Multi-selection support
+* Copy/Paste support
+
+---
+
+## Screenshots
+
+
+
+---
+
+## License
+
+MIT License
+
+---
+
+## Author
+
+Developed by Muhammad Unse.

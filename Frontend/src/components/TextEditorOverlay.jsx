@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { getTextEditorStyle, measureTextArea } from "../domain/text/textMetrics";
+import {
+  getTextEditorStyle,
+  measureTextArea,
+} from "../domain/text/textMetrics";
 
 export default function TextEditorOverlay({
   shape,
@@ -34,12 +37,10 @@ export default function TextEditorOverlay({
   const editorStyle = getTextEditorStyle({ shape, transform });
 
   const commit = () => {
-   
     const textarea = textareaRef.current;
     const measuredSize = textarea ? measureTextArea(textarea) : undefined;
     onCommit(shape.id, value, measuredSize);
   };
-
 
   return (
     <textarea
@@ -68,7 +69,7 @@ export default function TextEditorOverlay({
           e.currentTarget.blur();
         }
       }}
-      className="fixed resize-none overflow-hidden border border-blue-500 bg-white p-0.5 outline-none"
+      className="fixed resize-none overflow-hidden border border-slate-500 bg-transparent p-0.5 outline-none text-current"
       style={{
         left: editorStyle.left,
         top: editorStyle.top,

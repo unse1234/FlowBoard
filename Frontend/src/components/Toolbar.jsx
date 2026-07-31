@@ -14,6 +14,7 @@ import {
   Unlock,
   Zap,
 } from "lucide-react";
+import { useThemeContext } from "../features/theme/ThemeProvider.jsx";
 import { TOOLS } from "../constants/tools.js";
 
 const ICON_SIZE = 18;
@@ -40,6 +41,7 @@ export default function Toolbar({
   pendingImageAsset,
   onImageFileSelected,
 }) {
+  const { isDark } = useThemeContext();
   const fileInputRef = useRef(null);
 
   const handleToolClick = (button) => {
@@ -51,8 +53,28 @@ export default function Toolbar({
     setTool(button.id);
   };
 
+  const toolbarBase = isDark
+    ? "border-slate-700 bg-slate-900 text-slate-100"
+    : "border-gray-200 bg-white text-slate-950";
+
+  const inactiveButtonBase = isDark
+    ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+    : "border-gray-100 bg-gray-100 text-gray-800 hover:bg-gray-200";
+
+  const getButtonClasses = (isActive) => {
+    if (isActive) {
+      return isDark ? "bg-slate-700 text-white" : "bg-gray-950 text-white";
+    }
+
+    return isDark
+      ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+      : "border-gray-100 bg-gray-100 text-gray-800 hover:bg-gray-200";
+  };
+
   return (
-    <div className="fixed top-3 right-1/2 z-50 flex translate-x-1/2 items-center gap-1 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg">
+    <div
+      className={`fixed top-3 right-1/2 z-50 flex translate-x-1/2 items-center gap-1 rounded-lg p-1.5 shadow-lg ${toolbarBase}`}
+    >
       {TOOL_BUTTONS.map((button) => {
         const Icon = button.Icon;
         const isActive = tool === button.id;
@@ -63,28 +85,28 @@ export default function Toolbar({
             key={button.id}
             type="button"
             onClick={() => handleToolClick(button)}
-            title={isPendingImage ? "Click canvas to place image" : button.title}
+            title={
+              isPendingImage ? "Click canvas to place image" : button.title
+            }
             aria-label={button.title}
-            className={`grid h-9 w-9 place-items-center rounded-md transition ${
-              isActive
-                ? "bg-gray-950 text-white"
-                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-            } ${isPendingImage ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+            className={`grid h-9 w-9 place-items-center rounded-md transition ${getButtonClasses(isActive)} ${isPendingImage ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
           >
             <Icon size={ICON_SIZE} strokeWidth={2} />
           </button>
         );
       })}
 
-      <div className="mx-1 h-6 w-px bg-gray-200" />
+      <div className="mx-1 h-6 w-px bg-gray-200 dark:bg-slate-700" />
 
       <button
         type="button"
         onClick={() => setToolLocked((prev) => !prev)}
         className={`grid h-9 w-9 place-items-center rounded-md transition ${
           toolLocked
-            ? "bg-gray-950 text-white"
-            : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+            ? isDark
+              ? "bg-slate-700 text-white"
+              : "bg-gray-950 text-white"
+            : inactiveButtonBase
         }`}
         title={
           toolLocked
