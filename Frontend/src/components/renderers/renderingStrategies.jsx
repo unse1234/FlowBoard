@@ -6,8 +6,13 @@ import { getBox, getLinePoints } from "../../utils/shapeUtils";
 import { getShapeStyle, getStrokeDash } from "../../utils/styleUtils";
 import ImageShape from "./ImageShape";
 
+const hashShapeId = (id) =>
+  String(id)
+    .split("")
+    .reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 0);
+
 const roughOffset = (shape, index, amount = 1.8) => {
-  const seed = (shape.id * 97 + index * 37) % 11;
+  const seed = (hashShapeId(shape.id) * 97 + index * 37) % 11;
   return ((seed - 5) / 5) * amount;
 };
 

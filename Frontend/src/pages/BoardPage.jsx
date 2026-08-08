@@ -3,6 +3,11 @@ import StylePanel from "../components/StylePanel";
 import WhiteboardCanvas from "../components/WhiteboardCanvas";
 import ZoomControls from "../components/ZoomControls";
 import TextEditorOverlay from "../components/TextEditorOverlay";
+import CollaborationStatusBadge from "../features/realtime/components/CollaborationStatusBadge";
+import ThemeToggle from "../features/theme/components/ThemeToggle.jsx";
+import VoicePanel from "../features/communication/voice/components/VoicePanel.jsx";
+import { useThemeContext } from "../features/theme/ThemeProvider.jsx";
+import { useVoice } from "../features/communication/voice/useVoice.js";
 import { useViewportSize } from "../hooks/useViewportSize";
 import { useWhiteboard } from "../hooks/useWhiteboard";
 
@@ -15,10 +20,16 @@ import { useWhiteboard } from "../hooks/useWhiteboard";
  */
 export default function BoardPage() {
   const board = useWhiteboard();
+  const voice = useVoice({
+    roomId: board.collaboration.roomId,
+    userId: board.collaboration.userId,
+    username: board.collaboration.username,
+  });
   const viewportSize = useViewportSize();
+  const { theme } = useThemeContext();
 
   return (
-    <>
+    <div className="min-h-screen bg-white text-slate-950 dark:bg-black dark:text-white">
       <Toolbar
         tool={board.tool}
         setTool={board.setTool}
@@ -43,6 +54,37 @@ export default function BoardPage() {
         onRedo={board.redo}
       />
 
+      <CollaborationStatusBadge
+        status={board.collaboration.status}
+        boardId={board.collaboration.boardId}
+        roomId={board.collaboration.roomId}
+        isEnabled={board.collaboration.isEnabled}
+        linkCopied={board.collaboration.linkCopied}
+        onStartCollaboration={board.collaboration.startCollaboration}
+        onCopyLink={board.collaboration.copyCollaborationLink}
+      />
+
+      <div className="fixed right-4 bottom-20 z-50">
+        <ThemeToggle />
+      </div>
+
+      <div className="fixed left-4 top-20 z-20">
+        <VoicePanel
+          isJoined={voice.isJoined}
+          isMuted={voice.isMuted}
+          connectionState={voice.connectionState}
+          localSpeaking={voice.localSpeaking}
+          participants={voice.participants}
+          error={voice.error}
+          onRequestMicrophone={voice.requestMicrophone}
+          onConnect={voice.connect}
+          onJoinVoice={voice.joinVoice}
+          onLeaveVoice={voice.leaveVoice}
+          onMute={voice.mute}
+          onUnmute={voice.unmute}
+        />
+      </div>
+
       <WhiteboardCanvas
         stageRef={board.stageRef}
         transformerRef={board.transformerRef}
@@ -55,7 +97,9 @@ export default function BoardPage() {
         editingTextShape={board.editingTextShape}
         laserPoints={board.laserPoints}
         eraserPoints={board.eraserPoints}
+        liveCursors={board.liveCursors}
         registerShapeRef={board.registerShapeRef}
+        theme={theme}
         onWheel={board.handleWheel}
         onMouseDown={board.handleMouseDown}
         onMouseMove={board.handleMouseMove}
@@ -78,6 +122,6 @@ export default function BoardPage() {
         onCommit={board.handleTextCommit}
         onCancel={board.handleTextCancel}
       />
-    </>
+    </div>
   );
 }

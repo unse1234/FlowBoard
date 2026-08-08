@@ -1,6 +1,8 @@
 import { useCallback, useRef } from "react";
 import { MAX_SCALE, MIN_SCALE, SCALE_BY } from "../constants/canvas";
 import { TOOLS } from "../constants/tools";
+import { createClientId } from "../features/shared/id/createClientId.js";
+import { OPERATION_TYPES } from "../features/realtime/operations/operationTypes.js";
 import {
   appendShape,
   deleteShapeById,
@@ -12,7 +14,6 @@ import { createImageShape, createShape, createTextShape } from "../domain/shapes
 import {
   moveShapeToNode,
   normalizeShape,
-  transformShapeFromNode,
   updateShapeDuringDraw,
   updateShapeText,
 } from "../domain/shapes/shapeOperations";
@@ -44,12 +45,13 @@ export function useWhiteboardEvents({
   setErasingIds,
   getErasableShapeId,
   updateShape,
+  publishLocalOperation,
+  publishPresence,
 }) {
   const isDrawing = useRef(false);
   const isLaserActive = useRef(false);
   const isErasing = useRef(false);
   const drawingId = useRef(null);
-  const nextShapeId = useRef(1);
   const pendingEraseIds = useRef(new Set());
 
   const getWorldPointerPosition = useCallback(() => {
@@ -72,9 +74,7 @@ export function useWhiteboardEvents({
   }, [laserClearTimeoutRef, setEraserPoints, setLaserPoints]);
 
   const createNextShapeId = useCallback(() => {
-    const id = nextShapeId.current;
-    nextShapeId.current += 1;
-    return id;
+    return createClientId("shape");
   }, []);
 
   const markShapeForErase = useCallback(
@@ -159,9 +159,19 @@ export function useWhiteboardEvents({
 
   const handleDragEnd = useCallback(
     (id, e) => {
+      const currentShape = getShapeById(shapes, id);
+      const movedShape = currentShape ? moveShapeToNode(currentShape, e.target) : null;
+
       handleDragMove(id, e);
+
+      if (movedShape) {
+        publishLocalOperation(OPERATION_TYPES.MOVE_SHAPE, {
+          shapeId: id,
+          patch: movedShape,
+        });
+      }
     },
-    [handleDragMove]
+    [handleDragMove, publishLocalOperation, shapes]
   );
 
   const handleTransformStart = useCallback(() => {
@@ -169,24 +179,38 @@ export function useWhiteboardEvents({
   }, [saveHistoryCheckpoint]);
 
   const handleTransformEnd = useCallback((id, e) => {
-  const node = e.target;
+    const node = e.target;
 
-  const scaleX = node.scaleX();
-  const scaleY = node.scaleY();
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    let resizedShape = null;
 
-  setShapes((prev) =>
-    updateShapeById(prev, id, (shape) => ({
-      ...shape,
-      width: node.width() * scaleX,
-      height: node.height() * scaleY,
-      x: node.x(),
-      y: node.y(),
-    }))
-  );
+    setShapes((prev) =>
+      updateShapeById(prev, id, (shape) => {
+        resizedShape = {
+          ...shape,
+          width: node.width() * scaleX,
+          height: node.height() * scaleY,
+          x: node.x(),
+          y: node.y(),
+          version: (shape.version ?? 0) + 1,
+          updatedAt: Date.now(),
+        };
 
-  node.scaleX(1);
-  node.scaleY(1);
-}, []);
+        return resizedShape;
+      })
+    );
+
+    if (resizedShape) {
+      publishLocalOperation(OPERATION_TYPES.RESIZE_SHAPE, {
+        shapeId: id,
+        patch: resizedShape,
+      });
+    }
+
+    node.scaleX(1);
+    node.scaleY(1);
+  }, [publishLocalOperation, setShapes]);
 
   const handleAnchorDragStart = useCallback(() => {
     saveHistoryCheckpoint();
@@ -195,6 +219,7 @@ export function useWhiteboardEvents({
   const handleAnchorDragMove = useCallback(
     (shapeId, pointIndex, e) => {
       const node = e.target;
+      let updatedShape = null;
 
       setShapes((prev) =>
         updateShapeById(prev, shapeId, (shape) => {
@@ -202,16 +227,25 @@ export function useWhiteboardEvents({
           points[pointIndex] = node.x() - shape.x;
           points[pointIndex + 1] = node.y() - shape.y;
 
-          return {
+          updatedShape = {
             ...shape,
             points,
             version: (shape.version ?? 0) + 1,
             updatedAt: Date.now(),
           };
+
+          return updatedShape;
         })
       );
+
+      if (updatedShape) {
+        publishLocalOperation(OPERATION_TYPES.UPDATE_SHAPE, {
+          shapeId,
+          patch: updatedShape,
+        });
+      }
     },
-    [setShapes]
+    [publishLocalOperation, setShapes]
   );
 
   const handleMouseDown = useCallback(
@@ -231,6 +265,7 @@ export function useWhiteboardEvents({
         const newShape = createTextShape({ id, point: pos, style: activeStyle });
 
         setShapesWithHistory((prev) => appendShape(prev, newShape));
+        publishLocalOperation(OPERATION_TYPES.CREATE_SHAPE, { shape: newShape });
         activateTextEditing(id);
         setTool(TOOLS.SELECT);
         return;
@@ -248,6 +283,7 @@ export function useWhiteboardEvents({
         });
 
         setShapesWithHistory((prev) => appendShape(prev, newShape));
+        publishLocalOperation(OPERATION_TYPES.CREATE_SHAPE, { shape: newShape });
         setPendingImageAsset(null);
         finishTransientTool(id);
         return;
@@ -299,6 +335,7 @@ export function useWhiteboardEvents({
       markShapeForErase,
       markShapeUnderPointer,
       pendingImageAsset,
+      publishLocalOperation,
       setEraserPoints,
       setErasingIds,
       setLaserPoints,
@@ -312,6 +349,11 @@ export function useWhiteboardEvents({
   const handleMouseMove = useCallback(() => {
     const pos = getWorldPointerPosition();
     if (!pos) return;
+
+    publishPresence({
+      cursor: pos,
+      status: "online",
+    });
 
     if (isLaserActive.current) {
       setLaserPoints((prev) => [...prev, pos.x, pos.y]);
@@ -331,7 +373,14 @@ export function useWhiteboardEvents({
         updateShapeDuringDraw(shape, pos)
       )
     );
-  }, [getWorldPointerPosition, markShapeUnderPointer, setEraserPoints, setLaserPoints, setShapes]);
+  }, [
+    getWorldPointerPosition,
+    markShapeUnderPointer,
+    publishPresence,
+    setEraserPoints,
+    setLaserPoints,
+    setShapes,
+  ]);
 
   const handleMouseUp = useCallback(() => {
     if (isLaserActive.current) {
@@ -346,6 +395,9 @@ export function useWhiteboardEvents({
       pendingEraseIds.current = new Set();
       setErasingIds([]);
       setShapesWithHistory((prev) => deleteShapesById(prev, idsToDelete));
+      idsToDelete.forEach((shapeId) => {
+        publishLocalOperation(OPERATION_TYPES.DELETE_SHAPE, { shapeId });
+      });
       setSelectedId((prev) => (idsToDelete.has(prev) ? null : prev));
       schedulePointerClear();
       return;
@@ -357,13 +409,23 @@ export function useWhiteboardEvents({
 
     if (!finishedId) return;
 
+    let normalizedShape = null;
+
     setShapes((prev) =>
-      updateShapeById(prev, finishedId, (shape) => normalizeShape(shape))
+      updateShapeById(prev, finishedId, (shape) => {
+        normalizedShape = normalizeShape(shape);
+        return normalizedShape;
+      })
     );
+
+    if (normalizedShape) {
+      publishLocalOperation(OPERATION_TYPES.CREATE_SHAPE, { shape: normalizedShape });
+    }
 
     finishTransientTool(finishedId);
   }, [
     finishTransientTool,
+    publishLocalOperation,
     schedulePointerClear,
     setErasingIds,
     setSelectedId,
@@ -377,6 +439,7 @@ export function useWhiteboardEvents({
 
       if (!cleanText.trim()) {
         setShapesWithHistory((prev) => deleteShapeById(prev, id));
+        publishLocalOperation(OPERATION_TYPES.DELETE_SHAPE, { shapeId: id });
         clearSelection();
         return;
       }
@@ -392,6 +455,7 @@ export function useWhiteboardEvents({
     [
       clearSelection,
       finishTextEditing,
+      publishLocalOperation,
       setShapesWithHistory,
       transform.scale,
       updateShape,
@@ -404,12 +468,13 @@ export function useWhiteboardEvents({
 
       if (!shape?.text?.trim()) {
         setShapesWithHistory((prev) => deleteShapeById(prev, id));
+        publishLocalOperation(OPERATION_TYPES.DELETE_SHAPE, { shapeId: id });
         setSelectedId(null);
       }
 
       finishTextEditing();
     },
-    [finishTextEditing, setSelectedId, setShapesWithHistory, shapes]
+    [finishTextEditing, publishLocalOperation, setSelectedId, setShapesWithHistory, shapes]
   );
 
   const handleWheel = useCallback(

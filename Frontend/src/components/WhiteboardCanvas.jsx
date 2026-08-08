@@ -2,6 +2,11 @@ import { Stage, Layer, Transformer } from "react-konva";
 import ShapeRenderer from "./ShapeRenderer";
 import LineEditor from "./LineEditor";
 import PointerTrails from "./PointerTrails";
+import LiveCursors from "../features/realtime/components/LiveCursors";
+import {
+  isShapeIdEqual,
+  normalizeShapeIdSet,
+} from "../domain/board/shapeIdentity.js";
 
 /**
  * WhiteboardCanvas Component
@@ -42,7 +47,9 @@ export default function WhiteboardCanvas({
   editingTextShape,
   laserPoints,
   eraserPoints,
+  liveCursors,
   registerShapeRef,
+  theme,
   onWheel,
   onMouseDown,
   onMouseMove,
@@ -57,6 +64,8 @@ export default function WhiteboardCanvas({
   onAnchorDragStart,
   onAnchorDragMove,
 }) {
+  const erasingShapeIds = normalizeShapeIdSet(erasingIds);
+
   return (
     <Stage
       ref={stageRef}
@@ -70,6 +79,7 @@ export default function WhiteboardCanvas({
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
+      style={{ backgroundColor: theme === "dark" ? "#000000" : "#ffffff" }}
     >
       <Layer>
         {shapes.map((shape) => (
@@ -77,8 +87,8 @@ export default function WhiteboardCanvas({
             key={shape.id}
             shape={shape}
             tool={tool}
-            isErasing={erasingIds.includes(shape.id)}
-            isEditing={editingTextShape?.id === shape.id}
+            isErasing={erasingShapeIds.has(String(shape.id))}
+            isEditing={isShapeIdEqual(editingTextShape?.id, shape.id)}
             registerShapeRef={registerShapeRef}
             onShapeMouseDown={onShapeMouseDown}
             onShapeDoubleClick={onShapeDoubleClick}
@@ -102,6 +112,8 @@ export default function WhiteboardCanvas({
           eraserPoints={eraserPoints}
           scale={transform.scale}
         />
+
+        <LiveCursors cursors={liveCursors} />
 
         {/* Transformer for shape scaling/rotation, constrained to at least 5px. */}
         <Transformer
