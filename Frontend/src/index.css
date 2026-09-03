@@ -1,45 +1,356 @@
 /**
- * Global Styles
- * 
- * Imports Tailwind CSS framework which provides utility-first CSS classes.
- * All component styling uses Tailwind class names (e.g., className="flex gap-2")
- * This file is the entry point for global CSS.
+ * Global Styles — FlowBoard
+ *
+ * Tailwind v4 token foundation.
+ *
+ * IMPORTANT: this project uses Tailwind v4 via @tailwindcss/vite. v4 does NOT
+ * read `tailwind.config.js` unless it is pulled in with `@config`. All design
+ * tokens therefore live here, in `@theme inline`.
+ *
+ * Theming strategy:
+ *   `@theme inline` maps each Tailwind token to a `--fb-*` custom property, so
+ *   utilities compile to `var(--fb-…)` and resolve at runtime. Redefining the
+ *   `--fb-*` set under `.dark` re-themes every utility at once — components do
+ *   not need `dark:` variants for color.
  */
-/* Load fonts used by the UI (Syne, Syne Mono, Inter, Roboto) */
 
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
+
+/* ThemeManager toggles `.dark` on <html>; teach v4 to follow the class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── Design Tokens ────────────────────────────────────────────────────────── */
+@theme inline {
+  /* Surfaces */
+  --color-bg: var(--fb-bg);
+  --color-canvas: var(--fb-canvas);
+  --color-surface: var(--fb-surface);
+  --color-surface-soft: var(--fb-surface-soft);
+  --color-surface-hover: var(--fb-surface-hover);
+  --color-surface-sunken: var(--fb-surface-sunken);
+
+  /* Text */
+  --color-text: var(--fb-text);
+  --color-text-muted: var(--fb-text-muted);
+  --color-text-soft: var(--fb-text-soft);
+  --color-on-brand: #ffffff;
+  --color-on-ink: var(--fb-on-ink);
+
+  /* Brand */
+  --color-brand: var(--fb-brand);
+  --color-brand-hover: var(--fb-brand-hover);
+  --color-brand-soft: var(--fb-brand-soft);
+
+  /* Ink — the high-contrast chip for active tools and segmented tabs. It
+     inverts in dark mode so the selected item stays the brightest thing. */
+  --color-ink: var(--fb-ink);
+  --color-ink-soft: var(--fb-ink-soft);
+
+  /* Pill — the floating canvas controls (zoom, view). Unlike ink these stay
+     dark in both themes: they sit on the canvas, not inside a panel. */
+  --color-pill: var(--fb-pill);
+  --color-on-pill: var(--fb-on-pill);
+
+  /* Borders */
+  --color-border: var(--fb-border);
+  --color-border-strong: var(--fb-border-strong);
+  /* Legacy alias kept so untouched components keep rendering a sane border. */
+  --color-border-hand: var(--fb-border);
+
+  /* Semantic */
+  --color-success: var(--fb-success);
+  --color-success-bg: var(--fb-success-bg);
+  --color-warning: var(--fb-warning);
+  --color-warning-bg: var(--fb-warning-bg);
+  --color-danger: var(--fb-danger);
+  --color-danger-bg: var(--fb-danger-bg);
+  --color-info: var(--fb-brand);
+  --color-info-bg: var(--fb-brand-soft);
+
+  /* Presence avatar palette */
+  --color-user-1: #6366f1;
+  --color-user-2: #ec4899;
+  --color-user-3: #14b8a6;
+  --color-user-4: #f59e0b;
+  --color-user-5: #8b5cf6;
+  --color-user-6: #0ea5e9;
+
+  /* Typography */
+  --font-body: "Inter", -apple-system, system-ui, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  --font-display: "Inter", -apple-system, system-ui, "Segoe UI", Helvetica,
+    Arial, sans-serif;
+  --font-hand: "Excalifont", "Virgil", "Comic Neue", cursive;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Radii */
+  --radius-button: 8px;
+  --radius-card: 10px;
+  --radius-panel: 14px;
+  --radius-pill: 9999px;
+
+  /* Elevation — soft and low-contrast; borders carry most of the separation */
+  --shadow-raised: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-panel: 0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 28px rgba(15, 23, 42, 0.07);
+  --shadow-popover: 0 12px 34px rgba(15, 23, 42, 0.16);
+  --shadow-sheet: 0 -8px 34px rgba(15, 23, 42, 0.16);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/*
+ * Shell metrics. The header (h-14 / 56px), the icon rail (w-11 / 44px) and the
+ * mobile tab bar (h-15 / 60px) are expressed with the standard spacing scale so
+ * every `top-14`, `left-11` and `bottom-15` in the layout lines up by
+ * construction. Changing one means changing its partners.
+ */
+
+/* ─── Light palette ───────────────────────────────────────────────────────── */
+:root {
+  --fb-bg: #f5f6f8;
+  --fb-canvas: #ffffff;
+  --fb-surface: #ffffff;
+  --fb-surface-soft: #f8fafc;
+  --fb-surface-hover: #f1f5f9;
+  --fb-surface-sunken: #f1f3f7;
+
+  --fb-text: #0f172a;
+  --fb-text-muted: #64748b;
+  --fb-text-soft: #94a3b8;
+  --fb-on-ink: #ffffff;
+
+  --fb-brand: #2563eb;
+  --fb-brand-hover: #1d4ed8;
+  --fb-brand-soft: #eff6ff;
+
+  --fb-ink: #111827;
+  --fb-ink-soft: #1f2937;
+
+  --fb-pill: #111827;
+  --fb-on-pill: #ffffff;
+
+  --fb-border: #e5e7eb;
+  --fb-border-strong: #d1d5db;
+
+  --fb-success: #16a34a;
+  --fb-success-bg: #dcfce7;
+  --fb-warning: #d97706;
+  --fb-warning-bg: #fef3c7;
+  --fb-danger: #dc2626;
+  --fb-danger-bg: #fee2e2;
+
+  color-scheme: light;
+}
+
+/* ─── Dark palette ────────────────────────────────────────────────────────── */
+.dark {
+  --fb-bg: #0b0e14;
+  --fb-canvas: #0f131a;
+  --fb-surface: #141922;
+  --fb-surface-soft: #1a212c;
+  --fb-surface-hover: #232b38;
+  --fb-surface-sunken: #10151d;
+
+  --fb-text: #e6eaf2;
+  --fb-text-muted: #94a3b8;
+  --fb-text-soft: #64748b;
+  --fb-on-ink: #0b0e14;
+
+  --fb-brand: #3b82f6;
+  --fb-brand-hover: #60a5fa;
+  --fb-brand-soft: #17233a;
+
+  /* Ink inverts in dark mode so the active tool chip stays the bright one. */
+  --fb-ink: #e6eaf2;
+  --fb-ink-soft: #cbd5e1;
+
+  --fb-pill: #1a212c;
+  --fb-on-pill: #e6eaf2;
+
+  --fb-border: #232b38;
+  --fb-border-strong: #333d4d;
+
+  --fb-success: #4ade80;
+  --fb-success-bg: #10281a;
+  --fb-warning: #fbbf24;
+  --fb-warning-bg: #2a2010;
+  --fb-danger: #f87171;
+  --fb-danger-bg: #2c1616;
+
+  color-scheme: dark;
+}
+
+/* ─── Local Fonts — Excalifont (canvas hand lettering only) ───────────────── */
 @font-face {
-  font-family: "Syne";
+  font-family: "Excalifont";
   src: url("./assets/fonts/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2")
     format("woff2");
   font-weight: 400;
   font-style: normal;
-}
-:root {
-  color-scheme: light;
-  background-color: #f8fafc;
-  color: #0f172a;
+  font-display: swap;
 }
 
-.dark {
-  color-scheme: dark;
-  background-color: #0f172a;
-  color: #f8fafc;
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
 }
 
 html,
 body,
 #root {
-  min-height: 100vh;
+  height: 100%;
 }
 
 body {
   margin: 0;
-  background: inherit;
-  color: inherit;
+  background: var(--fb-bg);
+  color: var(--fb-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
 }
 
-* {
-  font-family: "Syne", sans-serif;
-  overflow:hidden
+#root {
+  overflow: hidden;
+}
+
+/* The shell owns all scrolling; the canvas must never rubber-band the page. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+/* ─── Focus ring ──────────────────────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--fb-brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ─── Range inputs ────────────────────────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--fb-border-strong);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--fb-brand);
+  border: 2px solid var(--fb-surface);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fb-surface);
+  border-radius: 50%;
+  background: var(--fb-brand);
+  cursor: pointer;
+}
+input[type="range"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+input[type="range"]:disabled::-webkit-slider-thumb {
+  background: var(--fb-text-soft);
+}
+
+/* ─── Scrollbars — thin and unobtrusive inside panels ─────────────────────── */
+.fb-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fb-border-strong) transparent;
+}
+.fb-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.fb-scroll::-webkit-scrollbar-thumb {
+  background: var(--fb-border-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.fb-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Horizontal tool strips scroll on small screens but shouldn't show a bar. */
+.fb-scroll-none {
+  scrollbar-width: none;
+}
+.fb-scroll-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Motion ──────────────────────────────────────────────────────────────── */
+@keyframes fb-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fb-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fb-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes fb-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--fb-success) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.fb-animate-sheet {
+  animation: fb-sheet-in 260ms var(--ease-standard);
+}
+.fb-animate-fade {
+  animation: fb-fade-in 180ms var(--ease-standard);
+}
+.fb-animate-pop {
+  animation: fb-pop-in 160ms var(--ease-emphasized);
+}
+.fb-speaking {
+  animation: fb-pulse-ring 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 100ms !important;
+  }
 }

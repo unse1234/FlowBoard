@@ -1,4 +1,8 @@
 import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  BringToFront,
   Brush,
   CircleDot,
   CircleDotDashed,
@@ -7,294 +11,300 @@ import {
   Eye,
   Minus,
   PaintBucket,
-  Palette,
   PenLine,
+  SendToBack,
   Slash,
   SlidersHorizontal,
   Square,
 } from "lucide-react";
-import { useThemeContext } from "../features/theme/ThemeProvider.jsx";
-import { RENDER_STYLES } from "../constants/canvas";
+import { RENDER_STYLES, STROKE_SWATCHES } from "../constants/canvas";
 import { TOOLS } from "../constants/tools";
 import { getShapeStyle } from "../utils/styleUtils";
 import { isBendable } from "../utils/shapeUtils";
+import {
+  IconButton,
+  SectionLabel,
+  Segmented,
+  SliderRow,
+  SoonBadge,
+  Toggle,
+} from "./ui/index.js";
 
-const ICON_SIZE = 16;
+const ICON_SIZE = 15;
 
-function IconButton({ active, title, children, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-label={title}
-      className={`grid h-8 flex-1 place-items-center rounded-md border transition ${
-        active
-          ? "border-gray-950 bg-gray-950 text-white dark:border-slate-100 dark:bg-slate-700 dark:text-white"
-          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
+/**
+ * StylePanel — stroke, fill and shape appearance.
+ *
+ * Edits the selected shape when there is one, otherwise the style that new
+ * shapes will be created with — the header says which.
+ *
+ * The Layer section is in the design but there is no z-order model on shapes
+ * yet (draw order is array order, with no reordering operation in the realtime
+ * protocol), so those four controls render disabled.
+ */
 export default function StylePanel({
   tool,
   selectedShape,
   activeStyle,
   onStyleChange,
+  compact = false,
 }) {
-  const { isDark } = useThemeContext();
   const style = selectedShape ? getShapeStyle(selectedShape) : activeStyle;
+  const opacityPct = Math.round((style.opacity ?? 1) * 100);
 
   const canBend = selectedShape
     ? isBendable(selectedShape)
     : tool === TOOLS.LINE || tool === TOOLS.ARROW;
 
-  const opacityPct = Math.round((style.opacity ?? 1) * 100);
-
-  const panelBg = isDark
-    ? "border-slate-700 bg-slate-900 text-slate-100"
-    : "border-gray-200 bg-white text-slate-900";
-
   return (
-    <div className="fixed right-3 top-1/2 z-50 -translate-y-1/2">
-      <div className={`w-56 rounded-lg border p-3 font-syne shadow ${panelBg}`}>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-xs uppercase tracking-widest text-gray-500 dark:text-slate-400">
-            {selectedShape ? "Selection" : "Tool Style"}
-          </div>
-          <SlidersHorizontal
-            size={ICON_SIZE}
-            className="text-gray-500 dark:text-slate-300"
+    <div className="space-y-4">
+      {!compact && (
+        <div className="flex items-center justify-between">
+          <SectionLabel>
+            {selectedShape ? "Selection" : "Tool style"}
+          </SectionLabel>
+          <SlidersHorizontal size={14} className="text-text-soft" />
+        </div>
+      )}
+
+      {/* ── Stroke & fill colour ─────────────────────────────────── */}
+      <section className="space-y-2.5">
+        <div className="grid grid-cols-2 gap-2">
+          <ColorField
+            label="Stroke"
+            icon={PenLine}
+            value={style.stroke}
+            onChange={(next) => onStyleChange("stroke", next)}
+          />
+          <ColorField
+            label="Fill"
+            icon={PaintBucket}
+            value={style.fill}
+            disabled={!style.fillEnabled}
+            onChange={(next) => onStyleChange("fill", next)}
           />
         </div>
 
-        <div className="mb-3 grid grid-cols-2 gap-2">
-          <label
-            title="Stroke color"
-            className={`relative flex h-9 cursor-pointer items-center gap-2 overflow-hidden rounded-md border px-2 ${
-              isDark
-                ? "border-slate-700 bg-slate-900 text-slate-100"
-                : "border-gray-200 bg-white text-slate-900"
-            }`}
-          >
-            <Palette size={ICON_SIZE} className="z-10 text-white drop-shadow" />
-            <span className="z-10 font-syne-mono text-[10px] text-white drop-shadow">
-              {style.stroke}
-            </span>
-            <span
-              className="absolute inset-0"
-              style={{ background: style.stroke }}
+        {/* Quick swatches always drive the stroke — the most-changed colour. */}
+        <div className="flex items-center gap-1.5">
+          {STROKE_SWATCHES.map((swatch) => (
+            <button
+              key={swatch}
+              type="button"
+              title={`Stroke ${swatch}`}
+              aria-label={`Stroke ${swatch}`}
+              onClick={() => onStyleChange("stroke", swatch)}
+              className={[
+                "h-6 w-6 rounded-full border transition-transform duration-150",
+                "hover:scale-110",
+                style.stroke?.toLowerCase() === swatch
+                  ? "border-brand ring-2 ring-brand/40"
+                  : "border-border",
+              ].join(" ")}
+              style={{ background: swatch }}
             />
-            <input
-              type="color"
-              value={style.stroke}
-              onChange={(e) => onStyleChange("stroke", e.target.value)}
-              className="absolute inset-0 opacity-0"
-              aria-label="Stroke color"
-            />
-          </label>
-
-          <label
-            title="Fill color"
-            className={`relative flex h-9 cursor-pointer items-center gap-2 overflow-hidden rounded-md border px-2 ${
-              isDark
-                ? "border-slate-700 bg-slate-900 text-slate-100"
-                : "border-gray-200 bg-white text-slate-900"
-            } ${style.fillEnabled ? "" : "opacity-40"}`}
-          >
-            <PaintBucket
-              size={ICON_SIZE}
-              className="z-10 text-white drop-shadow"
-            />
-            <span className="z-10 font-syne-mono text-[10px] text-white drop-shadow">
-              {style.fill}
-            </span>
-            <span
-              className="absolute inset-0"
-              style={{ background: style.fill }}
-            />
-            <input
-              type="color"
-              value={style.fill}
-              disabled={!style.fillEnabled}
-              onChange={(e) => onStyleChange("fill", e.target.value)}
-              className="absolute inset-0 opacity-0"
-              aria-label="Fill color"
-            />
-          </label>
+          ))}
         </div>
 
-        <div className="mb-3 flex items-center justify-between">
-          <PaintBucket
-            size={ICON_SIZE}
-            className="text-gray-600 dark:text-slate-300"
-          />
-          <button
-            type="button"
-            onClick={() => onStyleChange("fillEnabled", !style.fillEnabled)}
-            className={`flex h-5 w-9 items-center rounded-full px-1 transition ${
-              style.fillEnabled
-                ? "bg-gray-950 dark:bg-slate-700"
-                : isDark
-                  ? "bg-slate-700"
-                  : "bg-gray-300"
-            }`}
-            title="Toggle fill"
-            aria-label="Toggle fill"
-          >
-            <span
-              className={`h-3 w-3 rounded-full transition ${
-                style.fillEnabled ? "translate-x-4 bg-white" : "bg-slate-100"
-              }`}
-            />
-          </button>
-        </div>
-
-        <div className="mb-3 space-y-2">
-          <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
-            <Minus size={ICON_SIZE} />
-            <span
-              className={`font-syne-mono ${isDark ? "text-slate-100" : "text-gray-800"}`}
-            >
-              {style.strokeWidth}px
-            </span>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="20"
-            value={style.strokeWidth}
-            onChange={(e) =>
-              onStyleChange("strokeWidth", Number(e.target.value))
-            }
-            className="w-full"
-            aria-label="Stroke width"
+        <div className="flex items-center justify-between rounded-card border border-border bg-surface-soft px-2.5 py-2">
+          <span className="flex items-center gap-2 text-[12px] font-medium text-text-muted">
+            <PaintBucket size={ICON_SIZE} />
+            Fill shape
+          </span>
+          <Toggle
+            checked={Boolean(style.fillEnabled)}
+            onChange={() => onStyleChange("fillEnabled", !style.fillEnabled)}
+            label="Toggle fill"
           />
         </div>
+      </section>
 
-        <div className="mb-3 space-y-2">
-          <div
-            className={`flex items-center gap-2 text-xs ${isDark ? "text-slate-300" : "text-gray-600"}`}
-          >
-            <Eye size={ICON_SIZE} />
-            <span
-              className={`font-syne-mono ${isDark ? "text-slate-100" : "text-gray-800"}`}
-            >
-              {opacityPct}%
-            </span>
-          </div>
-          <input
-            type="range"
-            min="10"
-            max="100"
-            step="5"
-            value={opacityPct}
-            onChange={(e) =>
-              onStyleChange("opacity", Number(e.target.value) / 100)
-            }
-            className="w-full"
-            aria-label="Opacity"
-          />
+      {/* ── Stroke width & opacity ───────────────────────────────── */}
+      <section className="space-y-3">
+        <SliderRow
+          icon={Minus}
+          label="Stroke width"
+          min={1}
+          max={20}
+          value={style.strokeWidth}
+          displayValue={`${style.strokeWidth}px`}
+          onChange={(next) => onStyleChange("strokeWidth", next)}
+        />
+        <SliderRow
+          icon={Eye}
+          label="Opacity"
+          min={10}
+          max={100}
+          step={5}
+          value={opacityPct}
+          displayValue={`${opacityPct}%`}
+          onChange={(next) => onStyleChange("opacity", next / 100)}
+        />
+      </section>
+
+      {/* ── Layer — no z-order model exists yet ──────────────────── */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-1.5">
+          <SectionLabel>Layer</SectionLabel>
+          <SoonBadge />
         </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          <IconButton disabled title="Send to back — not available yet">
+            <SendToBack size={ICON_SIZE} />
+          </IconButton>
+          <IconButton disabled title="Send backward — not available yet">
+            <ArrowDown size={ICON_SIZE} />
+          </IconButton>
+          <IconButton disabled title="Bring forward — not available yet">
+            <ArrowUp size={ICON_SIZE} />
+          </IconButton>
+          <IconButton disabled title="Bring to front — not available yet">
+            <BringToFront size={ICON_SIZE} />
+          </IconButton>
+        </div>
+      </section>
 
-        <div
-          className={`my-3 h-px ${isDark ? "bg-slate-700" : "bg-gray-100"}`}
+      {/* ── Shape rendering ──────────────────────────────────────── */}
+      <section className="space-y-2">
+        <SectionLabel>Shape</SectionLabel>
+
+        <Segmented
+          value={style.renderStyle}
+          onChange={(next) => onStyleChange("renderStyle", next)}
+          options={[
+            { value: RENDER_STYLES.ROUGH, label: "Sketchy", icon: Brush },
+            { value: RENDER_STYLES.CLEAN, label: "Clean", icon: PenLine },
+          ]}
         />
 
-        <div className="mb-3 flex gap-2">
-          <IconButton
-            title="Rough"
-            active={style.renderStyle === RENDER_STYLES.ROUGH}
-            onClick={() => onStyleChange("renderStyle", RENDER_STYLES.ROUGH)}
-            isDark={isDark}
-          >
-            <Brush size={ICON_SIZE} />
-          </IconButton>
-          <IconButton
-            title="Clean"
-            active={style.renderStyle === RENDER_STYLES.CLEAN}
-            onClick={() => onStyleChange("renderStyle", RENDER_STYLES.CLEAN)}
-            isDark={isDark}
-          >
-            <PenLine size={ICON_SIZE} />
-          </IconButton>
-        </div>
-
-        <div className="mb-3 flex gap-2">
-          <IconButton
-            title="Round corners"
+        <div className="grid grid-cols-2 gap-1.5">
+          <StyleChip
+            label="Round"
+            icon={CircleDot}
             active={style.edgeStyle === "round"}
             onClick={() => onStyleChange("edgeStyle", "round")}
-            isDark={isDark}
-          >
-            <CircleDot size={ICON_SIZE} />
-          </IconButton>
-          <IconButton
-            title="Sharp corners"
+          />
+          <StyleChip
+            label="Sharp"
+            icon={Square}
             active={style.edgeStyle === "sharp"}
             onClick={() => onStyleChange("edgeStyle", "sharp")}
-            isDark={isDark}
-          >
-            <Square size={ICON_SIZE} />
-          </IconButton>
+          />
         </div>
+      </section>
 
-        <div className="mb-3 flex gap-2">
-          <IconButton
-            title="Solid stroke"
+      {/* ── Line ─────────────────────────────────────────────────── */}
+      <section className="space-y-2">
+        <SectionLabel>Line</SectionLabel>
+
+        <div className="grid grid-cols-3 gap-1.5">
+          <StyleChip
+            label="Solid"
+            icon={Minus}
             active={style.strokeStyle === "solid"}
             onClick={() => onStyleChange("strokeStyle", "solid")}
-            isDark={isDark}
-          >
-            <Minus size={ICON_SIZE} />
-          </IconButton>
-          <IconButton
-            title="Dashed stroke"
+          />
+          <StyleChip
+            label="Dashed"
+            icon={Slash}
             active={style.strokeStyle === "dashed"}
             onClick={() => onStyleChange("strokeStyle", "dashed")}
-            isDark={isDark}
-          >
-            <Slash size={ICON_SIZE} />
-          </IconButton>
-          <IconButton
-            title="Dotted stroke"
+          />
+          <StyleChip
+            label="Dotted"
+            icon={CircleDotDashed}
             active={style.strokeStyle === "dotted"}
             onClick={() => onStyleChange("strokeStyle", "dotted")}
-            isDark={isDark}
-          >
-            <CircleDotDashed size={ICON_SIZE} />
-          </IconButton>
+          />
         </div>
 
+        {/* Bend only applies to lines and arrows, so it appears only for them. */}
         {canBend && (
-          <div className="flex gap-2">
-            <IconButton
-              title="Corner bend"
+          <div className="grid grid-cols-3 gap-1.5">
+            <StyleChip
+              label="Corner"
+              icon={CornerDownRight}
               active={style.bendStyle === "corner"}
               onClick={() => onStyleChange("bendStyle", "corner")}
-            >
-              <CornerDownRight size={ICON_SIZE} />
-            </IconButton>
-            <IconButton
-              title="Straight"
+            />
+            <StyleChip
+              label="Straight"
+              icon={ArrowRight}
               active={style.bendStyle === "straight"}
               onClick={() => onStyleChange("bendStyle", "straight")}
-            >
-              <Minus size={ICON_SIZE} />
-            </IconButton>
-            <IconButton
-              title="Arc"
+            />
+            <StyleChip
+              label="Arc"
+              icon={Droplets}
               active={style.bendStyle === "arc"}
               onClick={() => onStyleChange("bendStyle", "arc")}
-            >
-              <Droplets size={ICON_SIZE} />
-            </IconButton>
+            />
           </div>
         )}
-      </div>
+      </section>
     </div>
+  );
+}
+
+/** Swatch button that opens the native colour picker. */
+function ColorField({ label, icon, value, disabled = false, onChange }) {
+  const Icon = icon;
+
+  return (
+    <label
+      title={`${label} colour`}
+      className={[
+        "relative flex h-9 cursor-pointer items-center gap-2 rounded-button border border-border px-2",
+        "bg-surface-soft transition-colors duration-150 hover:bg-surface-hover",
+        disabled ? "cursor-not-allowed opacity-50" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <Icon size={13} className="shrink-0 text-text-soft" />
+      <span
+        className="h-4 w-4 shrink-0 rounded-full border border-border-strong"
+        style={{ background: value }}
+      />
+      <span className="truncate text-[10px] font-medium text-text-muted uppercase">
+        {value}
+      </span>
+      <input
+        type="color"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        // Stretched over the label rather than visually hidden, so the native
+        // picker pops up anchored to the swatch the user actually clicked.
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+        aria-label={`${label} colour`}
+      />
+    </label>
+  );
+}
+
+/** Labelled toggle chip used by the Shape and Line sections. */
+function StyleChip({ label, icon, active, onClick, disabled = false }) {
+  const Icon = icon;
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={[
+        "flex h-8 items-center justify-center gap-1.5 rounded-button border px-1.5",
+        "text-[11px] font-medium transition-colors duration-150",
+        "disabled:cursor-not-allowed disabled:opacity-40",
+        active
+          ? "border-transparent bg-ink text-on-ink"
+          : "border-border bg-surface-soft text-text-muted hover:bg-surface-hover hover:text-text",
+      ].join(" ")}
+    >
+      <Icon size={13} />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }

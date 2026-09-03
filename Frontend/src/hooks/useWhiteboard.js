@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_STYLE } from "../constants/canvas";
+import {
+  DEFAULT_STYLE,
+  MAX_SCALE,
+  MIN_SCALE,
+  SCALE_BY,
+} from "../constants/canvas";
 import { TOOLS } from "../constants/tools";
 import {
   deleteShapeById,
@@ -30,6 +35,12 @@ export function useWhiteboard() {
   const localBoardId = useMemo(() => resolveLocalBoardId(), []);
   const [collaborationRoomId, setCollaborationRoomId] = useState(() =>
     resolveCollaborationRoomId(),
+  );
+  // Arriving with a room already in the URL means joining someone else's board.
+  // That is the only ownership signal available, and it drives the Host badge.
+  const joinedExistingRoom = useMemo(
+    () => Boolean(resolveCollaborationRoomId()),
+    [],
   );
   const boardId = collaborationRoomId ?? localBoardId;
   const pendingCollaborationSeedRef = useRef(null);
@@ -159,7 +170,31 @@ export function useWhiteboard() {
     clearSelection();
   }, [clearSelection, publishLocalOperation, selectedId, setShapesWithHistory]);
 
-  useKeyboardShortcuts({ undo, redo, onDelete: deleteSelectedShape });
+  /**
+   * Remove every shape, as one undoable step.
+   *
+   * Peers are told shape by shape because DELETE_SHAPE is the only removal
+   * operation the protocol has — there is no "clear board" op to send.
+   */
+  const clearBoard = useCallback(() => {
+    const current = shapesRef.current;
+    if (current.length === 0) return;
+
+    setShapesWithHistory([]);
+    current.forEach((shape) => {
+      publishLocalOperation(OPERATION_TYPES.DELETE_SHAPE, {
+        shapeId: shape.id,
+      });
+    });
+    clearSelection();
+  }, [clearSelection, publishLocalOperation, setShapesWithHistory]);
+
+  useKeyboardShortcuts({
+    undo,
+    redo,
+    onDelete: deleteSelectedShape,
+    setTool,
+  });
 
   const handleStyleChange = useCallback(
     (key, value) => {
@@ -284,6 +319,49 @@ export function useWhiteboard() {
     publishPresence,
   });
 
+  /**
+   * Zoom around the viewport centre.
+   *
+   * The wheel handler zooms around the pointer; the on-screen buttons have no
+   * pointer to anchor to, so they hold the centre of the screen fixed instead —
+   * the world point under the middle of the canvas stays put.
+   */
+  const zoomToScale = useCallback((resolveScale) => {
+    setTransform((prev) => {
+      const requested = resolveScale(prev.scale);
+      const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, requested));
+      if (nextScale === prev.scale) return prev;
+
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      const worldX = (centerX - prev.x) / prev.scale;
+      const worldY = (centerY - prev.y) / prev.scale;
+
+      return {
+        x: centerX - worldX * nextScale,
+        y: centerY - worldY * nextScale,
+        scale: nextScale,
+      };
+    });
+  }, []);
+
+  const zoomIn = useCallback(
+    () => zoomToScale((scale) => scale * SCALE_BY),
+    [zoomToScale],
+  );
+  const zoomOut = useCallback(
+    () => zoomToScale((scale) => scale / SCALE_BY),
+    [zoomToScale],
+  );
+  const setZoom = useCallback(
+    (scale) => zoomToScale(() => scale),
+    [zoomToScale],
+  );
+  const resetZoom = useCallback(
+    () => setTransform({ x: 0, y: 0, scale: 1 }),
+    [],
+  );
+
   const liveCursors = useMemo(
     () =>
       Object.values(remotePresence)
@@ -300,6 +378,31 @@ export function useWhiteboard() {
         ),
     [remotePresence],
   );
+
+  /**
+   * Everyone currently on the board, local user first.
+   *
+   * Presence is the only roster the app has, so it also feeds the avatar stack
+   * and the participants list. Outside a collaboration room this is just the
+   * local user, which is what the design's single-avatar state shows.
+   */
+  const collaborators = useMemo(() => {
+    const local = {
+      userId,
+      username: collaborationUsername ?? "You",
+      isLocal: true,
+      color: undefined,
+    };
+
+    const remote = Object.values(remotePresence).map((event) => ({
+      userId: event.userId,
+      username: event.username ?? "Guest",
+      isLocal: false,
+      color: event.color ?? event.presence?.color,
+    }));
+
+    return [local, ...remote];
+  }, [collaborationUsername, remotePresence, userId]);
 
   return {
     stageRef,
@@ -321,13 +424,20 @@ export function useWhiteboard() {
     eraserPoints,
     erasingIds,
     liveCursors,
+    collaborators,
     undo,
     redo,
+    clearBoard,
+    zoomIn,
+    zoomOut,
+    setZoom,
+    resetZoom,
     collaboration: {
       boardId,
       localBoardId,
       roomId: collaborationRoomId,
       isEnabled: Boolean(collaborationRoomId),
+      isRoomOwner: !joinedExistingRoom,
       link: collaborationLink,
       linkCopied: collaborationLinkCopied,
       userId,

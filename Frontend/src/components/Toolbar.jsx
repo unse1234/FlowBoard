@@ -14,25 +14,39 @@ import {
   Unlock,
   Zap,
 } from "lucide-react";
-import { useThemeContext } from "../features/theme/ThemeProvider.jsx";
 import { TOOLS } from "../constants/tools.js";
+import { Divider, IconButton } from "./ui/index.js";
 
-const ICON_SIZE = 18;
+const ICON_SIZE = 17;
 
+/**
+ * The drawing tools, in the order the design shows them. `opensFile` marks the
+ * image tool, which must pick a file before it becomes the active tool.
+ */
 const TOOL_BUTTONS = [
-  { id: TOOLS.SELECT, title: "Select", Icon: MousePointer2 },
-  { id: TOOLS.RECT, title: "Rectangle", Icon: Square },
-  { id: TOOLS.CIRCLE, title: "Ellipse", Icon: Circle },
-  { id: TOOLS.DIAMOND, title: "Diamond", Icon: Diamond },
-  { id: TOOLS.LINE, title: "Line", Icon: Minus },
-  { id: TOOLS.ARROW, title: "Arrow", Icon: ArrowRight },
-  { id: TOOLS.PEN, title: "Pen", Icon: Pencil },
-  { id: TOOLS.TEXT, title: "Text", Icon: Type },
+  { id: TOOLS.SELECT, title: "Select", shortcut: "V", Icon: MousePointer2 },
+  { id: TOOLS.RECT, title: "Rectangle", shortcut: "R", Icon: Square },
+  { id: TOOLS.CIRCLE, title: "Ellipse", shortcut: "O", Icon: Circle },
+  { id: TOOLS.DIAMOND, title: "Diamond", shortcut: "D", Icon: Diamond },
+  { id: TOOLS.LINE, title: "Line", shortcut: "L", Icon: Minus },
+  { id: TOOLS.ARROW, title: "Arrow", shortcut: "A", Icon: ArrowRight },
+  { id: TOOLS.PEN, title: "Draw", shortcut: "P", Icon: Pencil },
+  { id: TOOLS.TEXT, title: "Text", shortcut: "T", Icon: Type },
   { id: TOOLS.IMAGE, title: "Image", Icon: ImagePlus, opensFile: true },
-  { id: TOOLS.LASER, title: "Laser", Icon: Zap },
-  { id: TOOLS.ERASER, title: "Eraser", Icon: Eraser },
+  { id: TOOLS.LASER, title: "Laser pointer", shortcut: "K", Icon: Zap },
+  { id: TOOLS.ERASER, title: "Eraser", shortcut: "E", Icon: Eraser },
 ];
 
+/**
+ * Toolbar — the floating tool strip.
+ *
+ * Desktop: a horizontal pill centred at the top of the canvas.
+ * Mobile: the same strip is not shown here at all — the mobile design puts
+ * tools in a bottom sheet (see ToolsSheet), with an optional floating vertical
+ * strip on the right for the compact variant.
+ *
+ * @param {'horizontal'|'vertical'} orientation
+ */
 export default function Toolbar({
   tool,
   setTool,
@@ -40,97 +54,90 @@ export default function Toolbar({
   setToolLocked,
   pendingImageAsset,
   onImageFileSelected,
+  orientation = "horizontal",
+  className = "",
 }) {
-  const { isDark } = useThemeContext();
   const fileInputRef = useRef(null);
+  const isVertical = orientation === "vertical";
 
   const handleToolClick = (button) => {
     if (button.opensFile) {
       fileInputRef.current?.click();
       return;
     }
-
     setTool(button.id);
-  };
-
-  const toolbarBase = isDark
-    ? "border-slate-700 bg-slate-900 text-slate-100"
-    : "border-gray-200 bg-white text-slate-950";
-
-  const inactiveButtonBase = isDark
-    ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-    : "border-gray-100 bg-gray-100 text-gray-800 hover:bg-gray-200";
-
-  const getButtonClasses = (isActive) => {
-    if (isActive) {
-      return isDark ? "bg-slate-700 text-white" : "bg-gray-950 text-white";
-    }
-
-    return isDark
-      ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-      : "border-gray-100 bg-gray-100 text-gray-800 hover:bg-gray-200";
   };
 
   return (
     <div
-      className={`fixed top-3 right-1/2 z-50 flex translate-x-1/2 items-center gap-1 rounded-lg p-1.5 shadow-lg ${toolbarBase}`}
+      role="toolbar"
+      aria-label="Drawing tools"
+      aria-orientation={isVertical ? "vertical" : "horizontal"}
+      className={[
+        "flex items-center gap-0.5 rounded-panel border border-border bg-surface p-1.5 shadow-panel",
+        isVertical
+          ? "flex-col"
+          : "fb-scroll-none max-w-[calc(100vw-1.5rem)] overflow-x-auto",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {TOOL_BUTTONS.map((button) => {
         const Icon = button.Icon;
-        const isActive = tool === button.id;
         const isPendingImage = button.id === TOOLS.IMAGE && pendingImageAsset;
 
         return (
-          <button
+          <IconButton
             key={button.id}
-            type="button"
-            onClick={() => handleToolClick(button)}
+            size="lg"
+            active={tool === button.id}
             title={
-              isPendingImage ? "Click canvas to place image" : button.title
+              isPendingImage
+                ? "Click the canvas to place the image"
+                : button.shortcut
+                  ? `${button.title} (${button.shortcut})`
+                  : button.title
             }
-            aria-label={button.title}
-            className={`grid h-9 w-9 place-items-center rounded-md transition ${getButtonClasses(isActive)} ${isPendingImage ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+            className={isPendingImage ? "ring-2 ring-brand" : ""}
+            onClick={() => handleToolClick(button)}
           >
             <Icon size={ICON_SIZE} strokeWidth={2} />
-          </button>
+          </IconButton>
         );
       })}
 
-      <div className="mx-1 h-6 w-px bg-gray-200 dark:bg-slate-700" />
+      <Divider
+        vertical={!isVertical}
+        className={isVertical ? "my-1 w-6" : "mx-1"}
+      />
 
-      <button
-        type="button"
-        onClick={() => setToolLocked((prev) => !prev)}
-        className={`grid h-9 w-9 place-items-center rounded-md transition ${
-          toolLocked
-            ? isDark
-              ? "bg-slate-700 text-white"
-              : "bg-gray-950 text-white"
-            : inactiveButtonBase
-        }`}
+      <IconButton
+        size="lg"
+        active={toolLocked}
         title={
           toolLocked
-            ? "Keep tool active after drawing"
-            : "Switch to select after drawing"
+            ? "Tool stays active after drawing"
+            : "Switch back to Select after drawing"
         }
-        aria-label="Toggle tool lock"
+        onClick={() => setToolLocked((locked) => !locked)}
       >
         {toolLocked ? (
           <Lock size={ICON_SIZE} strokeWidth={2} />
         ) : (
           <Unlock size={ICON_SIZE} strokeWidth={2} />
         )}
-      </button>
+      </IconButton>
 
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => {
-          const [file] = e.target.files ?? [];
+        onChange={(event) => {
+          const [file] = event.target.files ?? [];
           if (file) onImageFileSelected(file);
-          e.target.value = "";
+          event.target.value = "";
         }}
       />
     </div>

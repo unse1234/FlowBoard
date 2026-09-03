@@ -8,6 +8,17 @@ export const RENDER_STYLES = {
   CLEAN: "clean",
 };
 
+// Quick-pick stroke colours, shared by the desktop style panel and the mobile
+// tools sheet so both offer the same palette.
+export const STROKE_SWATCHES = [
+  "#111827",
+  "#2563eb",
+  "#dc2626",
+  "#f59e0b",
+  "#16a34a",
+  "#a855f7",
+];
+
 // Default styling applied to new shapes
 export const DEFAULT_STYLE = {
   stroke: "#111827",

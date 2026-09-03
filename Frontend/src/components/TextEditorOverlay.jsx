@@ -69,7 +69,7 @@ export default function TextEditorOverlay({
           e.currentTarget.blur();
         }
       }}
-      className="fixed resize-none overflow-hidden border border-slate-500 bg-transparent p-0.5 outline-none text-current"
+      className="fixed resize-none overflow-hidden border-2 border-brand bg-transparent p-0.5 outline-none text-current"
       style={{
         left: editorStyle.left,
         top: editorStyle.top,

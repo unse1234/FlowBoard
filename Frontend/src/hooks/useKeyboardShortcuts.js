@@ -1,20 +1,40 @@
 import { useEffect } from "react";
+import { TOOLS } from "../constants/tools";
 
 // Prevent keyboard shortcuts from interfering with form input operations
 const FORM_TAGS = ["INPUT", "TEXTAREA", "SELECT"];
 
 /**
+ * Single-key tool shortcuts, matching the hints shown in the toolbar tooltips.
+ * Keep the two in step — a tooltip that promises a key that does nothing is
+ * worse than no tooltip.
+ */
+const TOOL_SHORTCUTS = {
+  v: TOOLS.SELECT,
+  r: TOOLS.RECT,
+  o: TOOLS.CIRCLE,
+  d: TOOLS.DIAMOND,
+  l: TOOLS.LINE,
+  a: TOOLS.ARROW,
+  p: TOOLS.PEN,
+  t: TOOLS.TEXT,
+  k: TOOLS.LASER,
+  e: TOOLS.ERASER,
+};
+
+/**
  * useKeyboardShortcuts Hook - Handles global keyboard shortcuts
  *
- * Listens for arrow key input to trigger undo (left) and redo (right) operations.
- * Disabled when focus is on form elements to prevent interfering with text editing.
+ * Undo/redo respond to both the arrow keys and Ctrl/Cmd+Z, delete removes the
+ * selection, and unmodified letter keys switch tools.
  *
  * @param {Object} config - Keyboard action handlers
- * @param {Function} config.undo - Function to execute on left arrow press
- * @param {Function} config.redo - Function to execute on right arrow press
- * @param {Function} config.onDelete - Function to execute on delete/backspace
+ * @param {Function} config.undo - Undo the last change
+ * @param {Function} config.redo - Redo the last undone change
+ * @param {Function} config.onDelete - Remove the current selection
+ * @param {Function} [config.setTool] - Activate a tool by id
  */
-export function useKeyboardShortcuts({ undo, redo, onDelete }) {
+export function useKeyboardShortcuts({ undo, redo, onDelete, setTool }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       const activeElement = document.activeElement;
@@ -23,18 +43,37 @@ export function useKeyboardShortcuts({ undo, redo, onDelete }) {
         return;
       }
 
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+
       if (e.key === "ArrowLeft") {
         undo();
+        return;
       }
       if (e.key === "ArrowRight") {
         redo();
+        return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
         onDelete?.();
+        return;
+      }
+
+      const shortcutTool = TOOL_SHORTCUTS[e.key.toLowerCase()];
+      if (shortcutTool && setTool) {
+        setTool(shortcutTool);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onDelete, redo, undo]);
+  }, [onDelete, redo, setTool, undo]);
 }

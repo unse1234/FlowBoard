@@ -49,7 +49,6 @@ export default function WhiteboardCanvas({
   eraserPoints,
   liveCursors,
   registerShapeRef,
-  theme,
   onWheel,
   onMouseDown,
   onMouseMove,
@@ -79,7 +78,9 @@ export default function WhiteboardCanvas({
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
-      style={{ backgroundColor: theme === "dark" ? "#000000" : "#ffffff" }}
+      // The stage stays transparent; the wrapping element paints `bg-canvas`,
+      // so the canvas follows the theme tokens like the rest of the shell.
+      style={{ backgroundColor: "transparent" }}
     >
       <Layer>
         {shapes.map((shape) => (
