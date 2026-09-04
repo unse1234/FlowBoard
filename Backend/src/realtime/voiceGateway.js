@@ -1,6 +1,15 @@
 const { SOCKET_EVENTS } = require("./socketEvents");
 
 function registerVoiceGateway(io, { logger = console }) {
+  // Tracks which socket currently represents a given user in a given voice
+  // room, so 1:1 signaling (offer/answer/ICE) can be routed directly to that
+  // socket instead of being broadcast to the whole room and filtered
+  // client-side. Broadcasting SDP offers/answers and ICE candidates (which
+  // can reveal local network addresses) to every participant is unnecessary
+  // fan-out and leaks connection metadata to sockets they were never meant
+  // for.
+  const voiceSocketsByUser = new Map();
+
   io.on("connection", (socket) => {
     socket.on(SOCKET_EVENTS.VOICE_JOIN, async (payload, acknowledge) => {
       const roomId = sanitizeBoardId(payload?.roomId);
@@ -31,6 +40,7 @@ function registerVoiceGateway(io, { logger = console }) {
       socket.data.voiceRoomId = roomId;
       socket.data.voiceUser = user;
       socket.join(voiceRoom);
+      voiceSocketsByUser.set(voiceUserKey(roomId, user.id), socket.id);
 
       acknowledge?.({ ok: true, roomId });
       socket.to(voiceRoom).emit(SOCKET_EVENTS.VOICE_JOIN, {
@@ -53,6 +63,7 @@ function registerVoiceGateway(io, { logger = console }) {
           userId,
         });
         socket.leave(getVoiceRoom(roomId));
+        removeVoiceSocket(voiceSocketsByUser, roomId, userId, socket.id);
       }
 
       socket.data.voiceRoomId = null;
@@ -74,7 +85,18 @@ function registerVoiceGateway(io, { logger = console }) {
         return;
       }
 
-      socket.to(getVoiceRoom(roomId)).emit(SOCKET_EVENTS.VOICE_OFFER, {
+      const targetSocketId = voiceSocketsByUser.get(
+        voiceUserKey(roomId, targetId),
+      );
+      if (!targetSocketId) {
+        acknowledge?.({
+          ok: false,
+          error: "Target participant is not in this voice room.",
+        });
+        return;
+      }
+
+      io.to(targetSocketId).emit(SOCKET_EVENTS.VOICE_OFFER, {
         roomId,
         userId: senderId,
         targetId,
@@ -97,7 +119,18 @@ function registerVoiceGateway(io, { logger = console }) {
         return;
       }
 
-      socket.to(getVoiceRoom(roomId)).emit(SOCKET_EVENTS.VOICE_ANSWER, {
+      const targetSocketId = voiceSocketsByUser.get(
+        voiceUserKey(roomId, targetId),
+      );
+      if (!targetSocketId) {
+        acknowledge?.({
+          ok: false,
+          error: "Target participant is not in this voice room.",
+        });
+        return;
+      }
+
+      io.to(targetSocketId).emit(SOCKET_EVENTS.VOICE_ANSWER, {
         roomId,
         userId: senderId,
         targetId,
@@ -120,7 +153,18 @@ function registerVoiceGateway(io, { logger = console }) {
         return;
       }
 
-      socket.to(getVoiceRoom(roomId)).emit(SOCKET_EVENTS.VOICE_ICE, {
+      const targetSocketId = voiceSocketsByUser.get(
+        voiceUserKey(roomId, targetId),
+      );
+      if (!targetSocketId) {
+        acknowledge?.({
+          ok: false,
+          error: "Target participant is not in this voice room.",
+        });
+        return;
+      }
+
+      io.to(targetSocketId).emit(SOCKET_EVENTS.VOICE_ICE, {
         roomId,
         userId: senderId,
         targetId,
@@ -134,12 +178,26 @@ function registerVoiceGateway(io, { logger = console }) {
       const roomId = sanitizeBoardId(socket.data.voiceRoomId);
       if (!roomId) return;
 
+      const userId = socket.data.voiceUser?.id ?? socket.id;
+      removeVoiceSocket(voiceSocketsByUser, roomId, userId, socket.id);
+
       socket.to(getVoiceRoom(roomId)).emit(SOCKET_EVENTS.VOICE_LEAVE, {
         roomId,
-        userId: socket.data.voiceUser?.id ?? socket.id,
+        userId,
       });
     });
   });
+}
+
+function voiceUserKey(roomId, userId) {
+  return `${roomId}::${userId}`;
+}
+
+function removeVoiceSocket(map, roomId, userId, socketId) {
+  const key = voiceUserKey(roomId, userId);
+  if (map.get(key) === socketId) {
+    map.delete(key);
+  }
 }
 
 function getVoiceRoom(roomId) {

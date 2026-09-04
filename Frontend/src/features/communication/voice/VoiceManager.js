@@ -31,8 +31,10 @@ export class VoiceManager {
   #analyser = null;
   #speakingMonitorId = null;
   #audioElements = new Map();
+  #remoteSpeakingMonitors = new Map();
   #localParticipant = null;
   #isJoined = false;
+  #iceServers;
 
   constructor({
     roomId,
@@ -53,6 +55,7 @@ export class VoiceManager {
     this.#roomId = roomId;
     this.#userId = userId;
     this.#username = username || "Guest";
+    this.#iceServers = iceServers;
     this.#mediaManager = new MediaManager();
     this.#signalingService = new SignalingService({ url: signalingUrl, auth });
     this.#setupSignalingHandlers();
@@ -404,7 +407,9 @@ export class VoiceManager {
     const existing = this.#peerManagers.get(remoteId);
     if (existing) return existing;
 
-    const peerManager = new PeerManager();
+    const peerManager = new PeerManager(
+      this.#iceServers ? { iceServers: this.#iceServers } : undefined,
+    );
     this.#peerManagers.set(remoteId, peerManager);
 
     if (this.#mediaManager.hasStream()) {
@@ -428,15 +433,24 @@ export class VoiceManager {
       participant.mediaStream = stream;
       participant.connectionState = "connected";
       this.#attachRemoteAudio(remoteId, stream);
+      this.#startRemoteSpeakingMonitor(remoteId, stream);
       this.#emit(VOICE_EVENTS.PARTICIPANT_UPDATED, participant);
       this.#emit(VOICE_EVENTS.PARTICIPANTS_CHANGED, this.participants);
     });
 
     peerManager.onConnectionStateChange((state) => {
       const participant = this.#participants.get(remoteId);
-      if (!participant) return;
-      participant.connectionState = state;
-      this.#emit(VOICE_EVENTS.PARTICIPANT_UPDATED, participant);
+      if (participant) {
+        participant.connectionState = state;
+        this.#emit(VOICE_EVENTS.PARTICIPANT_UPDATED, participant);
+      }
+
+      // A failed/closed connection is dead weight: drop it so the next
+      // remote "join" (e.g. after their reconnect) starts from a clean
+      // peer instead of reusing a connection that can never recover.
+      if (state === "failed" || state === "closed") {
+        this.#closePeer(remoteId);
+      }
     });
 
     return peerManager;
@@ -449,13 +463,13 @@ export class VoiceManager {
     peerManager.close();
     this.#peerManagers.delete(remoteId);
     this.#detachRemoteAudio(remoteId);
+    this.#stopRemoteSpeakingMonitor(remoteId);
   }
 
   #closeAllPeers() {
-    for (const peerManager of this.#peerManagers.values()) {
-      peerManager.close();
+    for (const remoteId of Array.from(this.#peerManagers.keys())) {
+      this.#closePeer(remoteId);
     }
-    this.#peerManagers.clear();
   }
 
   #attachLocalStream(stream) {
@@ -523,6 +537,51 @@ export class VoiceManager {
     }
 
     this.#analyser = null;
+  }
+
+  #startRemoteSpeakingMonitor(remoteId, stream) {
+    if (!stream?.getAudioTracks().length) return;
+    if (this.#remoteSpeakingMonitors.has(remoteId)) return;
+
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = SPEAKING_SAMPLES * 2;
+    source.connect(analyser);
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const monitor = { audioContext, frameId: null, speaking: false };
+
+    const tick = () => {
+      const participant = this.#participants.get(remoteId);
+      if (!participant || !this.#remoteSpeakingMonitors.has(remoteId)) return;
+
+      analyser.getByteFrequencyData(data);
+      const max = Math.max(...data) / 255;
+      const speaking = max > SPEAKING_THRESHOLD;
+
+      if (monitor.speaking !== speaking) {
+        monitor.speaking = speaking;
+        participant.isSpeaking = speaking;
+        this.#emit(VOICE_EVENTS.PARTICIPANT_UPDATED, participant);
+      }
+
+      monitor.frameId = requestAnimationFrame(tick);
+    };
+
+    monitor.frameId = requestAnimationFrame(tick);
+    this.#remoteSpeakingMonitors.set(remoteId, monitor);
+  }
+
+  #stopRemoteSpeakingMonitor(remoteId) {
+    const monitor = this.#remoteSpeakingMonitors.get(remoteId);
+    if (!monitor) return;
+
+    if (monitor.frameId) {
+      cancelAnimationFrame(monitor.frameId);
+    }
+    monitor.audioContext.close().catch(() => {});
+    this.#remoteSpeakingMonitors.delete(remoteId);
   }
 
   #attachRemoteAudio(remoteId, stream) {
