@@ -10,6 +10,11 @@ import {
 const SPEAKING_THRESHOLD = 0.03;
 const SPEAKING_SAMPLES = 128;
 
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BACKOFF_MS = [1000, 3000, 6000];
+const DISCONNECTED_GRACE_MS = 8000;
+const MAX_BUFFERED_ICE_CANDIDATES = 32;
+
 const VOICE_EVENTS = Object.freeze({
   PARTICIPANTS_CHANGED: "participantsChanged",
   PARTICIPANT_UPDATED: "participantUpdated",
@@ -35,6 +40,10 @@ export class VoiceManager {
   #localParticipant = null;
   #isJoined = false;
   #iceServers;
+  #reconnectAttempts = new Map();
+  #reconnectTimers = new Map();
+  #disconnectGraceTimers = new Map();
+  #pendingRemoteIceCandidates = new Map();
 
   constructor({
     roomId,
@@ -335,6 +344,7 @@ export class VoiceManager {
     if (!remoteId || remoteId === this.#userId) return;
 
     this.#closePeer(remoteId);
+    this.#pendingRemoteIceCandidates.delete(remoteId);
     this.#participants.delete(remoteId);
     this.#emit(VOICE_EVENTS.PARTICIPANTS_CHANGED, this.participants);
   }
@@ -381,11 +391,29 @@ export class VoiceManager {
     if (payload?.targetId !== this.#userId) return;
 
     const peerManager = this.#peerManagers.get(remoteId);
-    if (!peerManager) return;
+    if (!peerManager) {
+      // The peer manager for this remote user hasn't been created yet
+      // (e.g. the candidate arrived before the offer/answer that would
+      // trigger its creation). Buffer it instead of dropping it silently
+      // so it can be applied once the peer manager exists.
+      this.#bufferPendingIceCandidate(remoteId, payload.candidate);
+      return;
+    }
 
     peerManager
       .addIceCandidate(payload.candidate)
       .catch((error) => this.#emit(VOICE_EVENTS.ERROR, error));
+  }
+
+  #bufferPendingIceCandidate(remoteId, candidate) {
+    if (!candidate) return;
+
+    const queue = this.#pendingRemoteIceCandidates.get(remoteId) ?? [];
+    queue.push(candidate);
+    if (queue.length > MAX_BUFFERED_ICE_CANDIDATES) {
+      queue.shift();
+    }
+    this.#pendingRemoteIceCandidates.set(remoteId, queue);
   }
 
   #createPeerAndOffer(remoteId) {
@@ -445,18 +473,57 @@ export class VoiceManager {
         this.#emit(VOICE_EVENTS.PARTICIPANT_UPDATED, participant);
       }
 
-      // A failed/closed connection is dead weight: drop it so the next
-      // remote "join" (e.g. after their reconnect) starts from a clean
-      // peer instead of reusing a connection that can never recover.
-      if (state === "failed" || state === "closed") {
-        this.#closePeer(remoteId);
+      if (state === "connected") {
+        this.#reconnectAttempts.delete(remoteId);
+        this.#clearDisconnectGraceTimer(remoteId);
+        // A previously scheduled recovery attempt is now moot if the
+        // connection recovered on its own before the backoff timer fired.
+        this.#clearReconnectTimer(remoteId);
+        return;
       }
+
+      if (state === "failed") {
+        // "failed" is the spec-defined terminal ICE state and never fires
+        // as a side effect of our own close() calls, so it's safe to
+        // unconditionally treat as a signal to recover.
+        this.#clearDisconnectGraceTimer(remoteId);
+        this.#attemptPeerRecovery(remoteId);
+        return;
+      }
+
+      if (state === "disconnected") {
+        // Often transient (the ICE agent may recover on its own), but some
+        // browsers/platforms can get stuck here indefinitely without ever
+        // reporting "failed". Give it a grace period before treating it as
+        // failed too.
+        this.#startDisconnectGraceTimer(remoteId);
+        return;
+      }
+
+      // "closed" only ever happens as a result of code we already ran
+      // (our own close(), recreatePeerConnection(), or exhausted retries),
+      // so no recovery action is taken here to avoid a self-triggered loop.
     });
+
+    if (this.#pendingRemoteIceCandidates.has(remoteId)) {
+      const pendingCandidates = this.#pendingRemoteIceCandidates.get(remoteId);
+      this.#pendingRemoteIceCandidates.delete(remoteId);
+      for (const candidate of pendingCandidates) {
+        peerManager
+          .addIceCandidate(candidate)
+          .catch((error) => this.#emit(VOICE_EVENTS.ERROR, error));
+      }
+    }
 
     return peerManager;
   }
 
   #closePeer(remoteId) {
+    this.#reconnectAttempts.delete(remoteId);
+    this.#clearReconnectTimer(remoteId);
+    this.#clearDisconnectGraceTimer(remoteId);
+    this.#pendingRemoteIceCandidates.delete(remoteId);
+
     const peerManager = this.#peerManagers.get(remoteId);
     if (!peerManager) return;
 
@@ -464,6 +531,81 @@ export class VoiceManager {
     this.#peerManagers.delete(remoteId);
     this.#detachRemoteAudio(remoteId);
     this.#stopRemoteSpeakingMonitor(remoteId);
+  }
+
+  #attemptPeerRecovery(remoteId) {
+    const peerManager = this.#peerManagers.get(remoteId);
+    if (!peerManager || !this.#isJoined) return;
+
+    const attempts = this.#reconnectAttempts.get(remoteId) ?? 0;
+    if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.#closePeer(remoteId);
+      return;
+    }
+
+    this.#reconnectAttempts.set(remoteId, attempts + 1);
+    this.#detachRemoteAudio(remoteId);
+    this.#stopRemoteSpeakingMonitor(remoteId);
+    // A candidate buffered against the old (now-failed) ICE session would
+    // corrupt the freshly recreated connection if replayed into it.
+    this.#pendingRemoteIceCandidates.delete(remoteId);
+    // Ensure only one backoff timer is ever pending per peer: if recovery
+    // is re-triggered (e.g. "failed" fires again, or the disconnect-grace
+    // timer fires close to a "failed" event) before the previous backoff
+    // elapsed, replace it rather than letting both run.
+    this.#clearReconnectTimer(remoteId);
+
+    const delay =
+      RECONNECT_BACKOFF_MS[Math.min(attempts, RECONNECT_BACKOFF_MS.length - 1)];
+
+    const timerId = setTimeout(async () => {
+      this.#reconnectTimers.delete(remoteId);
+
+      const currentPeerManager = this.#peerManagers.get(remoteId);
+      if (!currentPeerManager || !this.#isJoined) return;
+
+      try {
+        await currentPeerManager.recreatePeerConnection();
+        if (this.#shouldInitiateOffer(remoteId)) {
+          this.#createPeerAndOffer(remoteId);
+        }
+      } catch (error) {
+        this.#emit(VOICE_EVENTS.ERROR, error);
+      }
+    }, delay);
+
+    this.#reconnectTimers.set(remoteId, timerId);
+  }
+
+  #clearReconnectTimer(remoteId) {
+    const timerId = this.#reconnectTimers.get(remoteId);
+    if (timerId) {
+      clearTimeout(timerId);
+      this.#reconnectTimers.delete(remoteId);
+    }
+  }
+
+  #startDisconnectGraceTimer(remoteId) {
+    if (this.#disconnectGraceTimers.has(remoteId)) return;
+
+    const timerId = setTimeout(() => {
+      this.#disconnectGraceTimers.delete(remoteId);
+
+      const peerManager = this.#peerManagers.get(remoteId);
+      if (peerManager?.connectionState === "disconnected") {
+        this.#attemptPeerRecovery(remoteId);
+      }
+    }, DISCONNECTED_GRACE_MS);
+
+    this.#disconnectGraceTimers.set(remoteId, timerId);
+  }
+
+  #clearDisconnectGraceTimer(remoteId) {
+    const timerId = this.#disconnectGraceTimers.get(remoteId);
+    if (timerId) {
+      clearTimeout(timerId);
+      this.#disconnectGraceTimers.delete(remoteId);
+    }
   }
 
   #closeAllPeers() {
