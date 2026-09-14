@@ -15,6 +15,8 @@ import { buildBoardMenuItems } from "../components/layout/boardMenuItems.js";
 import { buildCanvasMenuItems } from "../components/layout/canvasMenuItems.js";
 import ShortcutsDialog from "../components/panels/ShortcutsDialog";
 import JoinRoomDialog from "../components/collab/JoinRoomDialog";
+import SharePanel from "../components/collab/SharePanel";
+import VoicePill from "../components/collab/VoicePill";
 import PeoplePanel from "../components/panels/PeoplePanel";
 import { ActionList, IconButton, Island, Menu, Sheet } from "../components/ui/index.js";
 import { TOOLS } from "../constants/tools.js";
@@ -203,7 +205,7 @@ export default function BoardPage() {
   const isDark = theme === "dark";
   const hasShapes = shapes.length > 0;
   const hasSelection = selectedShapes.length > 0;
-  const { startCollaboration, isEnabled: isShared } = collaboration;
+  const { startCollaboration, copyCollaborationLink, isEnabled: isShared } = collaboration;
 
   useConnectionToasts(collaboration.status);
 
@@ -227,26 +229,40 @@ export default function BoardPage() {
   useShortcuts(shellShortcuts);
 
   // ── Board actions with feedback ────────────────────────────────────────
-  const handleShare = useCallback(async () => {
+  /** Create the room and copy its link; the join dialog follows for a name. */
+  const handleCreateLink = useCallback(async () => {
     const { copied } = await startCollaboration();
+
+    toast(
+      copied
+        ? {
+            id: "share",
+            tone: "success",
+            title: "Live link copied",
+            description: "Anyone with the link can join and edit.",
+          }
+        : {
+            id: "share",
+            tone: "warning",
+            title: "Live link created",
+            description: "Copy it from Share, or from your browser's address bar.",
+          },
+    );
+  }, [startCollaboration, toast]);
+
+  /** Copy confirms in place on the button; only a failure needs a toast. */
+  const handleCopyLink = useCallback(async () => {
+    const copied = await copyCollaborationLink();
 
     if (!copied) {
       toast({
         id: "share",
         tone: "warning",
-        title: isShared ? "Couldn't copy the link" : "Live link created",
-        description: "Copy it from your browser's address bar.",
+        title: "Couldn't copy the link",
+        description: "Select the link and copy it yourself.",
       });
-      return;
     }
-
-    toast({
-      id: "share",
-      tone: "success",
-      title: isShared ? "Link copied" : "Live link copied",
-      description: isShared ? undefined : "Anyone with the link can join and edit.",
-    });
-  }, [isShared, startCollaboration, toast]);
+  }, [copyCollaborationLink, toast]);
 
   const handleExport = useCallback(async () => {
     toast({ id: "export", tone: "loading", title: "Exporting image…", duration: Infinity });
@@ -346,6 +362,13 @@ export default function BoardPage() {
   const openMenuSheet = useCallback(() => openSheet(SHEETS.MENU), [openSheet]);
   const openPeopleSheet = useCallback(() => openSheet(SHEETS.PEOPLE), [openSheet]);
   const openStyleSheet = useCallback(() => openSheet(SHEETS.STYLE), [openSheet]);
+  const openShareSheet = useCallback(() => openSheet(SHEETS.SHARE), [openSheet]);
+
+  // As on desktop, close the sheet before the join dialog asks for a name.
+  const createLinkFromSheet = useCallback(async () => {
+    closeSheet();
+    await handleCreateLink();
+  }, [closeSheet, handleCreateLink]);
 
   const deleteAndCloseSheet = useCallback(() => {
     deleteSelection();
@@ -454,8 +477,11 @@ export default function BoardPage() {
             collaborators={collaborators}
             voice={voiceModel}
             isShared={isShared}
+            link={collaboration.link}
+            linkCopied={collaboration.linkCopied}
             menuItems={menuItems}
-            onShare={handleShare}
+            onCreateLink={handleCreateLink}
+            onCopyLink={handleCopyLink}
           />
 
           {/* ── Inspector — only when there is something to style ──── */}
@@ -535,8 +561,14 @@ export default function BoardPage() {
             onRedo={redo}
             onOpenMenu={openMenuSheet}
             onOpenPeople={openPeopleSheet}
-            onShare={handleShare}
+            onOpenShare={openShareSheet}
           />
+
+          {voiceModel.isJoined || voiceModel.isJoining ? (
+            <div className="fixed right-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+3.75rem)] z-40">
+              <VoicePill voice={voiceModel} onOpenPeople={openPeopleSheet} />
+            </div>
+          ) : null}
 
           <div className="fixed inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 flex items-center justify-center gap-2">
             {toolbar}
@@ -590,7 +622,30 @@ export default function BoardPage() {
               collaborators={collaborators}
               voice={voiceModel}
               isShared={isShared}
-              onShare={handleShare}
+              onShare={openShareSheet}
+            />
+          </Sheet>
+
+          <Sheet
+            open={sheet === SHEETS.SHARE}
+            onClose={closeSheet}
+            title="Share this board"
+            description={
+              isShared
+                ? "Anyone with the link can join and edit."
+                : "Draw and talk with others in real time."
+            }
+          >
+            <SharePanel
+              touch
+              showTitle={false}
+              isShared={isShared}
+              link={collaboration.link}
+              linkCopied={collaboration.linkCopied}
+              status={collaboration.status}
+              collaborators={collaborators}
+              onCreateLink={createLinkFromSheet}
+              onCopyLink={handleCopyLink}
             />
           </Sheet>
 

@@ -25,7 +25,7 @@ function MobileTopBar({
   onRedo,
   onOpenMenu,
   onOpenPeople,
-  onShare,
+  onOpenShare,
 }) {
   return (
     <div className="pointer-events-none fixed inset-x-2 top-[max(0.5rem,env(safe-area-inset-top))] z-40 flex items-start justify-between gap-2">
@@ -59,7 +59,8 @@ function MobileTopBar({
           tooltip={false}
           active
           tone="primary"
-          onClick={onShare}
+          aria-haspopup="dialog"
+          onClick={onOpenShare}
         >
           <Share2 size={18} strokeWidth={2} />
         </IconButton>

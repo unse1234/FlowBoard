@@ -8,6 +8,7 @@ import { useIsCoarsePointer, useIsDesktop, useIsTabletUp } from "./useMediaQuery
 export const SHEETS = Object.freeze({
   STYLE: "style",
   PEOPLE: "people",
+  SHARE: "share",
   MENU: "menu",
 });
 
