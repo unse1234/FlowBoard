@@ -73,6 +73,21 @@ export const DOCK_LAYOUTS = Object.freeze({
     [TOOLS.TEXT, TOOLS.NOTE],
     [{ flyout: "more", label: "More tools", tools: [TOOLS.LASER, TOOLS.IMAGE], lock: true }],
   ],
+  // Tablet-width touch: like compact, but Hand moves into More (two fingers
+  // pan) so the 44px dock clears the view island at 768px.
+  compactTouch: [
+    [TOOLS.SELECT],
+    [{ flyout: "shapes", label: "Shapes", tools: SHAPE_TOOLS }, TOOLS.PEN, TOOLS.ERASER],
+    [TOOLS.TEXT, TOOLS.NOTE],
+    [
+      {
+        flyout: "more",
+        label: "More tools",
+        tools: [TOOLS.PAN, TOOLS.LASER, TOOLS.IMAGE],
+        lock: true,
+      },
+    ],
+  ],
   touch: [
     [TOOLS.SELECT],
     [{ flyout: "shapes", label: "Shapes", tools: SHAPE_TOOLS }, TOOLS.PEN, TOOLS.ERASER, TOOLS.TEXT],

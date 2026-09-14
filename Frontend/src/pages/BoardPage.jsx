@@ -629,7 +629,13 @@ export default function BoardPage() {
           <div className="fixed inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 flex items-center justify-center gap-2">
             {toolbar}
             <Island className="shrink-0 rounded-xl p-0.5">
-              <IconButton label="Style" size="xl" tooltip={false} onClick={openStyleSheet}>
+              <IconButton
+                label="Style"
+                size="xl"
+                tooltip={false}
+                className="max-[23.75rem]:size-10"
+                onClick={openStyleSheet}
+              >
                 <Palette size={20} strokeWidth={1.75} />
               </IconButton>
             </Island>

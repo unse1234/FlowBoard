@@ -133,35 +133,6 @@
   --shadow-popover: var(--fb-shadow-popover);
   --shadow-dialog: var(--fb-shadow-dialog);
 
-  /* ── Legacy aliases ──────────────────────────────────────────────────────
-     Keep pre-redesign components rendering sensibly while they are replaced.
-     Delete once nothing references them. */
-  --font-body: var(--font-sans);
-  --font-display: var(--font-sans);
-  --color-surface-soft: var(--fb-surface-muted);
-  --color-surface-hover: var(--fb-hover);
-  --color-surface-sunken: var(--fb-surface-muted);
-  --color-brand: var(--fb-ink);
-  --color-brand-hover: var(--fb-ink);
-  --color-brand-soft: var(--fb-accent-soft);
-  --color-on-brand: var(--fb-on-ink);
-  --color-ink-soft: var(--fb-ink);
-  --color-pill: var(--fb-surface);
-  --color-on-pill: var(--fb-text);
-  --color-border-hand: var(--fb-border);
-  --color-success-bg: var(--fb-success-soft);
-  --color-warning-bg: var(--fb-warning-soft);
-  --color-danger-bg: var(--fb-danger-soft);
-  --color-info-bg: var(--fb-info-soft);
-  --radius-button: 8px;
-  --radius-card: 8px;
-  --radius-panel: 12px;
-  --radius-pill: 9999px;
-  --shadow-raised: var(--fb-shadow-island);
-  --shadow-panel: var(--fb-shadow-island);
-  --shadow-sheet: var(--fb-shadow-dialog);
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* ─── Light palette — paper and ink ───────────────────────────────────────── */
@@ -556,17 +527,6 @@ input[type="range"]:disabled {
 }
 .fb-speaking {
   animation: fb-pulse-ring 1.6s ease-out infinite;
-}
-
-/* Legacy entrance classes, used by components not yet redesigned. */
-.fb-animate-sheet {
-  animation: fb-sheet-in 280ms var(--ease-out);
-}
-.fb-animate-fade {
-  animation: fb-fade-in 150ms var(--ease-out);
-}
-.fb-animate-pop {
-  animation: fb-pop-in 160ms var(--ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -21,6 +21,14 @@ export function useShortcuts(shortcuts) {
 
   useEffect(() => {
     const handleKeyDown = (event) => {
+      // A control that handled the key itself — a menu, a segmented control,
+      // the tool dock's arrow navigation — has already claimed it.
+      if (event.defaultPrevented) return;
+
+      // Board shortcuts never reach through an open dialog or sheet: Delete
+      // pressed in the shortcuts dialog must not delete the selection behind it.
+      if (document.querySelector('[aria-modal="true"]')) return;
+
       const editable =
         isEditableTarget(event.target) || isEditableTarget(document.activeElement);
 

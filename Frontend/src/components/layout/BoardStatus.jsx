@@ -64,9 +64,9 @@ function BoardStatus({ status, participantCount = 1, compact = false, className 
         ) : (
           <StatusDot tone={meta.tone} />
         )}
-        <span>{meta.label}</span>
+        <span className="truncate">{meta.label}</span>
         {showCount ? (
-          <span className="tabular-nums text-text-soft">· {participantCount} here</span>
+          <span className="tabular-nums text-text-muted">· {participantCount} here</span>
         ) : null}
       </span>
     </Tooltip>

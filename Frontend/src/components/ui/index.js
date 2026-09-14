@@ -14,7 +14,6 @@ export { IconButton } from "./IconButton.jsx";
 export { Island } from "./Island.jsx";
 export { Kbd, KbdCombo } from "./Kbd.jsx";
 export { Menu } from "./Menu.jsx";
-export { Panel, SectionLabel } from "./Panel.jsx";
 export { Popover } from "./Popover.jsx";
 export { Segmented } from "./Segmented.jsx";
 export { Sheet } from "./Sheet.jsx";

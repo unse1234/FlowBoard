@@ -17,6 +17,13 @@ const ACTIVE_STROKE = 2.25;
 const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /**
+ * On phones narrower than 380px, 44px targets no longer fit six tools plus the
+ * style button inside the side gutters; 40px still clears touch guidance.
+ */
+const NARROW_TOUCH_BUTTON = "max-[23.75rem]:size-10";
+const NARROW_TOUCH_DIVIDER = "max-[23.75rem]:mx-0.5";
+
+/**
  * Arrow-key focus movement for a row of buttons (the ARIA toolbar pattern).
  * Propagation stops so the board's own arrow shortcuts (nudge, undo) do not
  * also fire.
@@ -77,7 +84,8 @@ function Toolbar({
     setLastShapeTool(tool);
   }
 
-  const layout = DOCK_LAYOUTS[variant] ?? DOCK_LAYOUTS.full;
+  const layout =
+    DOCK_LAYOUTS[variant === "compact" && touch ? "compactTouch" : variant] ?? DOCK_LAYOUTS.full;
   const size = touch ? "xl" : "lg";
   const iconSize = touch ? 20 : 18;
 
@@ -155,7 +163,9 @@ function Toolbar({
     >
       {layout.map((group, groupIndex) => (
         <Fragment key={groupIndex}>
-          {groupIndex > 0 ? <Divider vertical className="mx-1" /> : null}
+          {groupIndex > 0 ? (
+            <Divider vertical className={cx("mx-1", touch && NARROW_TOUCH_DIVIDER)} />
+          ) : null}
           {group.map(renderEntry)}
         </Fragment>
       ))}
@@ -190,6 +200,7 @@ function ToolButton({ id, active, size, iconSize, onSelect }) {
       size={size}
       active={active}
       pressed={active}
+      className={size === "xl" ? NARROW_TOUCH_BUTTON : undefined}
       onClick={() => onSelect(id)}
     >
       <Icon size={iconSize} strokeWidth={active ? ACTIVE_STROKE : ICON_STROKE} />
@@ -209,6 +220,7 @@ function LockButton({ locked, size, iconSize, onToggle }) {
       tone="soft"
       active={locked}
       pressed={locked}
+      className={size === "xl" ? NARROW_TOUCH_BUTTON : undefined}
       onClick={onToggle}
     >
       <Icon size={iconSize} strokeWidth={ICON_STROKE} />
@@ -264,6 +276,7 @@ function ToolFlyout({
         active={containsActive}
         pressed={containsActive}
         aria-expanded={open}
+        className={size === "xl" ? NARROW_TOUCH_BUTTON : undefined}
         onClick={handleTrigger}
       >
         <Icon size={iconSize} strokeWidth={containsActive ? ACTIVE_STROKE : ICON_STROKE} />
