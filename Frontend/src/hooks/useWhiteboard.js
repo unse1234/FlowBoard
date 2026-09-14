@@ -503,6 +503,12 @@ export function useWhiteboard() {
     [clearSelection],
   );
 
+  /** Drop an image that was picked but not yet placed. */
+  const cancelPendingImage = useCallback(() => {
+    setPendingImageAsset(null);
+    setTool(TOOLS.SELECT);
+  }, []);
+
   const copyCollaborationLink = useCallback(async () => {
     if (!collaborationLink || !navigator.clipboard) return false;
 
@@ -812,6 +818,7 @@ export function useWhiteboard() {
     collaboration,
     handleStyleChange,
     handleImageFileSelected,
+    cancelPendingImage,
     ...events,
   };
 }

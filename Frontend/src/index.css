@@ -302,53 +302,58 @@
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/* Layered as `base` so utilities can override it. Tailwind v4 emits utilities
+   in `@layer utilities`, and unlayered CSS beats every layer regardless of
+   specificity — an unlayered focus ring could never be turned off. */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-body {
-  margin: 0;
-  background: var(--fb-bg);
-  color: var(--fb-text);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 18px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
+  body {
+    margin: 0;
+    background: var(--fb-bg);
+    color: var(--fb-text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 18px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
 
-#root {
-  overflow: hidden;
-}
+  #root {
+    overflow: hidden;
+  }
 
-/* The shell owns all scrolling; the canvas must never rubber-band the page. */
-html,
-body {
-  overscroll-behavior: none;
-}
+  /* The shell owns all scrolling; the canvas must never rubber-band the page. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
 
-button {
-  -webkit-tap-highlight-color: transparent;
-}
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-::selection {
-  background: var(--fb-accent);
-  color: #111111;
-}
+  ::selection {
+    background: var(--fb-accent);
+    color: #111111;
+  }
 
-/* ─── Focus ring ──────────────────────────────────────────────────────────── */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--fb-focus);
-  outline-offset: 2px;
+  /* Focus ring */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--fb-focus);
+    outline-offset: 2px;
+  }
 }
 
 /* ─── Range inputs ────────────────────────────────────────────────────────── */

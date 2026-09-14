@@ -1,39 +1,17 @@
 import { useMemo } from "react";
-import { TOOLS } from "../constants/tools.js";
+import { TOOL_SHORTCUTS } from "../constants/toolMeta.js";
+import {
+  BOARD_SHORTCUTS,
+  NUDGE_STEP,
+  NUDGE_STEP_LARGE,
+} from "../features/shortcuts/boardShortcuts.js";
 import { useShortcuts } from "../features/shortcuts/useShortcuts.js";
 
 /**
- * Single-key tool shortcuts, matching the hints shown in the toolbar tooltips.
- * Keep the two in step — a tooltip that promises a key that does nothing is
- * worse than no tooltip.
- */
-const TOOL_SHORTCUTS = {
-  v: TOOLS.SELECT,
-  r: TOOLS.RECT,
-  o: TOOLS.CIRCLE,
-  d: TOOLS.DIAMOND,
-  l: TOOLS.LINE,
-  a: TOOLS.ARROW,
-  p: TOOLS.PEN,
-  t: TOOLS.TEXT,
-  n: TOOLS.NOTE,
-  h: TOOLS.PAN,
-  k: TOOLS.LASER,
-  e: TOOLS.ERASER,
-};
-
-/** Board units moved per arrow press, and per arrow press with shift held. */
-const NUDGE_STEP = 1;
-const NUDGE_STEP_LARGE = 10;
-
-/**
- * useKeyboardShortcuts — the board's key bindings, as data.
+ * useKeyboardShortcuts — binds the board's shortcut tables to handlers.
  *
- * The arrow keys do double duty. They have always meant undo and redo here, and
- * people rely on that, but arrows are also how you nudge a selection on every
- * other canvas tool. Both fit: with something selected the arrows move it, and
- * with an empty selection they fall back to undo and redo. Ctrl+Z is unaffected
- * either way, so the primary spelling of undo never moves.
+ * The bindings themselves are data in `features/shortcuts/boardShortcuts.js`
+ * and `constants/toolMeta.js`; this hook only decides what each action does.
  *
  * @param {Object} config
  * @param {Function} config.undo
@@ -70,104 +48,54 @@ export function useKeyboardShortcuts({
       fallback?.();
     };
 
-    const bindings = [
-      { key: "z", ctrl: true, shift: true, description: "Redo", handler: () => redo() },
-      { key: "z", ctrl: true, description: "Undo", handler: () => undo() },
-      {
-        key: "a",
-        ctrl: true,
-        description: "Select all",
-        handler: () => onSelectAll?.(),
-      },
-      {
-        key: "Escape",
-        description: "Clear selection",
-        handler: () => onClearSelection?.(),
-      },
+    const handlers = {
+      redo: () => redo(),
+      undo: () => undo(),
+      selectAll: () => onSelectAll?.(),
+      clearSelection: () => onClearSelection?.(),
 
-      // Large nudges first is not required — modifier matching is strict — but
-      // keeping the pairs adjacent makes the table readable.
-      {
-        key: "ArrowLeft",
-        shift: true,
-        description: "Nudge left",
-        handler: nudgeOr(-NUDGE_STEP_LARGE, 0),
-      },
-      {
-        key: "ArrowRight",
-        shift: true,
-        description: "Nudge right",
-        handler: nudgeOr(NUDGE_STEP_LARGE, 0),
-      },
-      {
-        key: "ArrowUp",
-        shift: true,
-        description: "Nudge up",
-        handler: nudgeOr(0, -NUDGE_STEP_LARGE),
-      },
-      {
-        key: "ArrowDown",
-        shift: true,
-        description: "Nudge down",
-        handler: nudgeOr(0, NUDGE_STEP_LARGE),
-      },
+      nudgeLeftLarge: nudgeOr(-NUDGE_STEP_LARGE, 0),
+      nudgeRightLarge: nudgeOr(NUDGE_STEP_LARGE, 0),
+      nudgeUpLarge: nudgeOr(0, -NUDGE_STEP_LARGE),
+      nudgeDownLarge: nudgeOr(0, NUDGE_STEP_LARGE),
 
-      {
-        key: "ArrowLeft",
-        description: "Nudge left, or undo with nothing selected",
-        handler: nudgeOr(-NUDGE_STEP, 0, undo),
-      },
-      {
-        key: "ArrowRight",
-        description: "Nudge right, or redo with nothing selected",
-        handler: nudgeOr(NUDGE_STEP, 0, redo),
-      },
-      { key: "ArrowUp", description: "Nudge up", handler: nudgeOr(0, -NUDGE_STEP) },
-      { key: "ArrowDown", description: "Nudge down", handler: nudgeOr(0, NUDGE_STEP) },
+      nudgeLeft: nudgeOr(-NUDGE_STEP, 0, undo),
+      nudgeRight: nudgeOr(NUDGE_STEP, 0, redo),
+      nudgeUp: nudgeOr(0, -NUDGE_STEP),
+      nudgeDown: nudgeOr(0, NUDGE_STEP),
 
-      { key: "c", ctrl: true, description: "Copy", handler: () => onCopy?.() },
-      { key: "x", ctrl: true, description: "Cut", handler: () => onCut?.() },
-      { key: "v", ctrl: true, description: "Paste", handler: () => onPaste?.() },
-      {
-        key: "d",
-        ctrl: true,
-        description: "Duplicate",
-        handler: () => onDuplicate?.(),
-      },
+      copy: () => onCopy?.(),
+      cut: () => onCut?.(),
+      paste: () => onPaste?.(),
+      duplicate: () => onDuplicate?.(),
 
-      {
-        key: "g",
-        ctrl: true,
-        shift: true,
-        description: "Ungroup",
-        handler: () => onUngroup?.(),
-      },
-      { key: "g", ctrl: true, description: "Group", handler: () => onGroup?.() },
+      ungroup: () => onUngroup?.(),
+      group: () => onGroup?.(),
 
-      {
-        key: "]",
-        ctrl: true,
-        description: "Bring to front",
-        handler: () => onBringToFront?.(),
-      },
-      {
-        key: "[",
-        ctrl: true,
-        description: "Send to back",
-        handler: () => onSendToBack?.(),
-      },
-      { key: "]", description: "Bring forward", handler: () => onBringForward?.() },
-      { key: "[", description: "Send backward", handler: () => onSendBackward?.() },
+      bringToFront: () => onBringToFront?.(),
+      sendToBack: () => onSendToBack?.(),
+      bringForward: () => onBringForward?.(),
+      sendBackward: () => onSendBackward?.(),
 
-      { key: "Delete", description: "Delete selection", handler: () => onDelete?.() },
-      { key: "Backspace", description: "Delete selection", handler: () => onDelete?.() },
-    ];
+      delete: () => onDelete?.(),
+    };
+
+    const bindings = BOARD_SHORTCUTS.map(
+      ({ action, key, ctrl, shift, alt, description }) => ({
+        key,
+        ctrl,
+        shift,
+        alt,
+        description,
+        handler: handlers[action],
+      }),
+    );
 
     if (setTool) {
-      for (const [key, tool] of Object.entries(TOOL_SHORTCUTS)) {
+      for (const [tool, key] of Object.entries(TOOL_SHORTCUTS)) {
         bindings.push({
-          key,
-          description: "Select the " + tool + " tool",
+          key: key.toLowerCase(),
+          description: `Select the ${tool} tool`,
           handler: () => setTool(tool),
         });
       }

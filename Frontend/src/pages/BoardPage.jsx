@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Palette, PanelRightClose, SlidersHorizontal } from "lucide-react";
 import Minimap from "../components/Minimap";
 import StylePanel from "../components/StylePanel";
@@ -10,6 +10,7 @@ import EmptyCanvasHint from "../components/layout/EmptyCanvasHint";
 import MobileTopBar from "../components/layout/MobileTopBar";
 import WorkspaceHeader from "../components/layout/WorkspaceHeader";
 import { buildBoardMenuItems } from "../components/layout/boardMenuItems.js";
+import ShortcutsDialog from "../components/panels/ShortcutsDialog";
 import VoiceChatPanel from "../components/panels/VoiceChatPanel";
 import { ActionList, IconButton, Island, Sheet } from "../components/ui/index.js";
 import { SHAPE_LABELS, STYLEABLE_TOOLS, TOOL_LABELS } from "../constants/toolMeta.js";
@@ -21,6 +22,8 @@ import {
   exportBoardImage,
   getExportFileName,
 } from "../features/export/exportBoardImage.js";
+import { SHOW_SHORTCUTS_COMBO } from "../features/shortcuts/boardShortcuts.js";
+import { useShortcuts } from "../features/shortcuts/useShortcuts.js";
 import { useThemeContext } from "../features/theme/themeContext.js";
 import { useToast } from "../features/toasts/toastContext.js";
 import { SHEETS, useUiLayout } from "../hooks/useUiLayout";
@@ -32,6 +35,27 @@ const INSPECTOR_TOP = 68;
 /** Space kept under the inspector: the minimap (12 + 122 + 8) or the bottom row. */
 const INSPECTOR_BOTTOM_WITH_MINIMAP = 142;
 const INSPECTOR_BOTTOM = 68;
+
+/** Tools that place something at a point, and so get a precise cursor. */
+const CROSSHAIR_TOOLS = new Set([
+  TOOLS.RECT,
+  TOOLS.CIRCLE,
+  TOOLS.DIAMOND,
+  TOOLS.LINE,
+  TOOLS.ARROW,
+  TOOLS.PEN,
+  TOOLS.NOTE,
+  TOOLS.IMAGE,
+  TOOLS.LASER,
+  TOOLS.ERASER,
+]);
+
+function getCanvasCursor(tool, isPanMode) {
+  if (isPanMode) return "grab";
+  if (tool === TOOLS.TEXT) return "text";
+  if (CROSSHAIR_TOOLS.has(tool)) return "crosshair";
+  return undefined;
+}
 
 /**
  * Voice state and actions, reduced to what the UI needs.
@@ -153,6 +177,24 @@ export default function BoardPage() {
   const hasShapes = shapes.length > 0;
   const { startCollaboration, isEnabled: isShared } = collaboration;
 
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
+  const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
+
+  // "?" is Shift+/ on most layouts, and modifier matching is strict.
+  const shellShortcuts = useMemo(
+    () => [
+      {
+        key: SHOW_SHORTCUTS_COMBO,
+        shift: true,
+        description: "Keyboard shortcuts",
+        handler: openShortcuts,
+      },
+    ],
+    [openShortcuts],
+  );
+  useShortcuts(shellShortcuts);
+
   const handleShare = useCallback(async () => {
     const { copied } = await startCollaboration();
 
@@ -220,6 +262,8 @@ export default function BoardPage() {
         onToggleGrid: toggleGrid,
         onToggleTheme: toggleTheme,
         onToggleMinimap: toggleMinimap,
+        // Keyboard shortcuts only mean something where a keyboard is likely.
+        onShowShortcuts: isTabletUp ? openShortcuts : undefined,
         onClearBoard: handleClearBoard,
       }),
     [
@@ -229,7 +273,9 @@ export default function BoardPage() {
       hasShapes,
       isDark,
       isDesktop,
+      isTabletUp,
       minimapVisible,
+      openShortcuts,
       toggleGrid,
       toggleMinimap,
       toggleTheme,
@@ -263,13 +309,15 @@ export default function BoardPage() {
 
   const toolbar = (
     <Toolbar
+      variant={isDesktop ? "full" : isTabletUp ? "compact" : "touch"}
+      touch={isCoarsePointer}
       tool={tool}
       setTool={board.setTool}
       toolLocked={board.toolLocked}
       setToolLocked={board.setToolLocked}
       pendingImageAsset={board.pendingImageAsset}
       onImageFileSelected={board.handleImageFileSelected}
-      className="max-w-full!"
+      onCancelImage={board.cancelPendingImage}
     />
   );
 
@@ -278,7 +326,7 @@ export default function BoardPage() {
       {/* ── Canvas ───────────────────────────────────────────────── */}
       <div
         className="absolute inset-0 z-0"
-        style={{ cursor: board.isPanMode ? "grab" : undefined }}
+        style={{ cursor: getCanvasCursor(tool, board.isPanMode) }}
       >
         <WhiteboardCanvas
           stageRef={stageRef}
@@ -393,12 +441,7 @@ export default function BoardPage() {
             />
           </div>
 
-          <div
-            className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2"
-            style={isDesktop ? undefined : { maxWidth: "calc(100vw - 28rem)" }}
-          >
-            {toolbar}
-          </div>
+          <div className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2">{toolbar}</div>
 
           {showMinimap ? (
             <div className="fixed bottom-3 right-3 z-40">
@@ -426,8 +469,8 @@ export default function BoardPage() {
             onShare={handleShare}
           />
 
-          <div className="fixed inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 flex items-center gap-2">
-            <div className="min-w-0 flex-1">{toolbar}</div>
+          <div className="fixed inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 flex items-center justify-center gap-2">
+            {toolbar}
             <Island className="shrink-0 rounded-xl p-0.5">
               <IconButton label="Style" size="xl" tooltip={false} onClick={openStyleSheet}>
                 <Palette size={20} strokeWidth={1.75} />
@@ -458,6 +501,8 @@ export default function BoardPage() {
           </Sheet>
         </>
       )}
+
+      <ShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
     </div>
   );
 }

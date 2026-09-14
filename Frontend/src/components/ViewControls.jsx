@@ -74,7 +74,8 @@ function ViewControls({
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   const percent = Math.round(scale * 100);
-  const size = touch ? "xl" : "md";
+  // 36px on desktop so the island matches the tool dock's height.
+  const size = touch ? "xl" : "lg";
   const atMax = scale >= MAX_SCALE - 0.001;
   const atMin = scale <= MIN_SCALE + 0.001;
 
@@ -144,7 +145,7 @@ function ViewControls({
         className={cx(
           "flex min-w-14 items-center justify-center gap-0.5 rounded-md px-1.5",
           "text-label tabular-nums text-text transition-colors duration-150 hover:bg-hover",
-          touch ? "h-11" : "h-8",
+          touch ? "h-11" : "h-9",
           menuOpen && "bg-pressed",
         )}
       >
