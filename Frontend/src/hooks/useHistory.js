@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useHistory({
   shapes,
@@ -10,6 +10,22 @@ export function useHistory({
   const redoStack = useRef([]);
   const shapesRef = useRef(shapes);
 
+  // Stack depths mirrored into state only so undo and redo controls can show a
+  // disabled state. They change in the same batch as the shapes they record,
+  // and bail out when unchanged, so they add no render of their own.
+  const [depths, setDepths] = useState({ undo: 0, redo: 0 });
+
+  const syncDepths = useCallback(() => {
+    const undoDepth = history.current.length;
+    const redoDepth = redoStack.current.length;
+
+    setDepths((current) =>
+      current.undo === undoDepth && current.redo === redoDepth
+        ? current
+        : { undo: undoDepth, redo: redoDepth },
+    );
+  }, []);
+
   useEffect(() => {
     shapesRef.current = shapes;
   }, [shapes]);
@@ -19,8 +35,9 @@ export function useHistory({
       history.current.push(structuredClone(snapshot));
       if (history.current.length > maxLength) history.current.shift();
       redoStack.current = [];
+      syncDepths();
     },
-    [maxLength],
+    [maxLength, syncDepths],
   );
 
   const setShapesWithHistory = useCallback(
@@ -48,7 +65,8 @@ export function useHistory({
     redoStack.current.push(structuredClone(current));
     setShapes(previous);
     clearSelection();
-  }, [clearSelection, setShapes]);
+    syncDepths();
+  }, [clearSelection, setShapes, syncDepths]);
 
   const redo = useCallback(() => {
     if (!redoStack.current.length) return;
@@ -59,12 +77,15 @@ export function useHistory({
     history.current.push(structuredClone(current));
     setShapes(next);
     clearSelection();
-  }, [clearSelection, setShapes]);
+    syncDepths();
+  }, [clearSelection, setShapes, syncDepths]);
 
   return {
     setShapesWithHistory,
     saveHistoryCheckpoint,
     undo,
     redo,
+    canUndo: depths.undo > 0,
+    canRedo: depths.redo > 0,
   };
 }

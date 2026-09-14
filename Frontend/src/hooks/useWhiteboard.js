@@ -111,6 +111,7 @@ export function useWhiteboard() {
 
   const {
     userId,
+    userColor,
     username: collaborationUsername,
     status: collaborationStatus,
     remotePresence,
@@ -167,8 +168,14 @@ export function useWhiteboard() {
     transformerRef,
   });
 
-  const { setShapesWithHistory, saveHistoryCheckpoint, undo, redo } =
-    useHistory({
+  const {
+    setShapesWithHistory,
+    saveHistoryCheckpoint,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useHistory({
       shapes,
       setShapes,
       clearSelection,
@@ -497,10 +504,10 @@ export function useWhiteboard() {
   );
 
   const copyCollaborationLink = useCallback(async () => {
-    if (!collaborationLink) return false;
+    if (!collaborationLink || !navigator.clipboard) return false;
 
     try {
-      await navigator.clipboard?.writeText(collaborationLink);
+      await navigator.clipboard.writeText(collaborationLink);
       setCollaborationLinkCopied(true);
       window.setTimeout(() => setCollaborationLinkCopied(false), 1600);
       return true;
@@ -509,10 +516,16 @@ export function useWhiteboard() {
     }
   }, [collaborationLink]);
 
+  /**
+   * Create a room for this board (or reuse the current one) and copy its link.
+   *
+   * @returns {Promise<{ link: string, copied: boolean }>} `copied` is false when
+   *   clipboard access is unavailable, so the UI can point at the address bar.
+   */
   const startCollaboration = useCallback(async () => {
     if (collaborationRoomId) {
-      await copyCollaborationLink();
-      return collaborationLink;
+      const copied = await copyCollaborationLink();
+      return { link: collaborationLink, copied };
     }
 
     const roomId = createCollaborationRoomId();
@@ -526,15 +539,20 @@ export function useWhiteboard() {
     setCollaborationLinkCopied(false);
     window.history.replaceState(null, "", link);
 
+    let copied = false;
+
     try {
-      await navigator.clipboard?.writeText(link);
-      setCollaborationLinkCopied(true);
-      window.setTimeout(() => setCollaborationLinkCopied(false), 1600);
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(link);
+        copied = true;
+        setCollaborationLinkCopied(true);
+        window.setTimeout(() => setCollaborationLinkCopied(false), 1600);
+      }
     } catch {
-      // The link is still shown in the UI if clipboard access is unavailable.
+      // The link is already in the address bar, which the UI points to.
     }
 
-    return link;
+    return { link, copied };
   }, [collaborationLink, collaborationRoomId, copyCollaborationLink]);
 
   const events = useWhiteboardEvents({
@@ -672,23 +690,78 @@ export function useWhiteboard() {
    * and the participants list. Outside a collaboration room this is just the
    * local user, which is what the design's single-avatar state shows.
    */
+  // Presence events arrive on every remote cursor move, but the roster only
+  // changes when someone joins, leaves or renames. Keying the memo on a
+  // serialised roster keeps the avatar stack and people list from re-rendering
+  // at cursor rate.
+  const remoteRosterKey = JSON.stringify(
+    Object.values(remotePresence).map((event) => [
+      event.userId,
+      event.username ?? "Guest",
+      event.color ?? event.presence?.color ?? null,
+    ]),
+  );
+
   const collaborators = useMemo(() => {
+    // The local user carries the same colour peers see on their cursor.
     const local = {
       userId,
       username: collaborationUsername ?? "You",
       isLocal: true,
-      color: undefined,
+      color: userColor,
     };
 
-    const remote = Object.values(remotePresence).map((event) => ({
-      userId: event.userId,
-      username: event.username ?? "Guest",
-      isLocal: false,
-      color: event.color ?? event.presence?.color,
-    }));
+    const remote = JSON.parse(remoteRosterKey).map(
+      ([remoteUserId, username, color]) => ({
+        userId: remoteUserId,
+        username,
+        isLocal: false,
+        color: color ?? undefined,
+      }),
+    );
 
     return [local, ...remote];
-  }, [collaborationUsername, remotePresence, userId]);
+  }, [collaborationUsername, remoteRosterKey, userColor, userId]);
+
+  // Memoised so chrome that only reads collaboration state does not re-render
+  // with every drawing frame.
+  const collaboration = useMemo(
+    () => ({
+      boardId,
+      localBoardId,
+      roomId: collaborationRoomId,
+      isEnabled: Boolean(collaborationRoomId),
+      isRoomOwner: !joinedExistingRoom,
+      link: collaborationLink,
+      linkCopied: collaborationLinkCopied,
+      userId,
+      username: collaborationUsername,
+      userColor,
+      status: collaborationStatus,
+      startCollaboration,
+      copyCollaborationLink,
+    }),
+    [
+      boardId,
+      collaborationLink,
+      collaborationLinkCopied,
+      collaborationRoomId,
+      collaborationStatus,
+      collaborationUsername,
+      copyCollaborationLink,
+      joinedExistingRoom,
+      localBoardId,
+      startCollaboration,
+      userColor,
+      userId,
+    ],
+  );
+
+  /** Current shapes without subscribing to them — for one-off actions like export. */
+  const getShapes = useCallback(() => shapesRef.current, []);
+
+  /** The live Konva stage, read at call time rather than during render. */
+  const getStage = useCallback(() => stageRef.current, []);
 
   return {
     stageRef,
@@ -716,7 +789,13 @@ export function useWhiteboard() {
     collaborators,
     undo,
     redo,
+    canUndo,
+    canRedo,
     clearBoard,
+    deleteSelection: deleteSelectedShapes,
+    selectAll,
+    getShapes,
+    getStage,
     layerActions,
     groupActions,
     alignmentActions,
@@ -730,20 +809,7 @@ export function useWhiteboard() {
     setZoom,
     resetZoom,
     fitToScreen,
-    collaboration: {
-      boardId,
-      localBoardId,
-      roomId: collaborationRoomId,
-      isEnabled: Boolean(collaborationRoomId),
-      isRoomOwner: !joinedExistingRoom,
-      link: collaborationLink,
-      linkCopied: collaborationLinkCopied,
-      userId,
-      username: collaborationUsername,
-      status: collaborationStatus,
-      startCollaboration,
-      copyCollaborationLink,
-    },
+    collaboration,
     handleStyleChange,
     handleImageFileSelected,
     ...events,

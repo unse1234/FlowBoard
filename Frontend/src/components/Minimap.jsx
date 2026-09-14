@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo, useRef } from "react";
 import { Layer, Rect, Stage } from "react-konva";
 import { getShapeBounds, getShapesBoundingBox } from "../domain/geometry/bounds.js";
 import { getVisibleWorldBounds } from "../domain/geometry/viewport.js";
+import { Island } from "./ui/index.js";
 
 const MINIMAP_WIDTH = 180;
 const MINIMAP_HEIGHT = 120;
@@ -16,7 +17,7 @@ const PADDING_RATIO = 0.08;
  * board — which changes the viewport rectangle on every frame — does not
  * re-render one node per shape alongside it.
  */
-const MinimapShapes = memo(function MinimapShapes({ shapes, frame, scale }) {
+const MinimapShapes = memo(function MinimapShapes({ shapes, frame, scale, color }) {
   return (
     <>
       {shapes.map((shape) => {
@@ -30,8 +31,7 @@ const MinimapShapes = memo(function MinimapShapes({ shapes, frame, scale }) {
             y={(bounds.y - frame.y) * scale}
             width={Math.max(1, bounds.width * scale)}
             height={Math.max(1, bounds.height * scale)}
-            fill="#94a3b8"
-            opacity={0.7}
+            fill={color}
             cornerRadius={1}
             listening={false}
           />
@@ -54,9 +54,13 @@ const MinimapShapes = memo(function MinimapShapes({ shapes, frame, scale }) {
  *
  * The frame is derived from the content alone, so it stays still while you pan;
  * the viewport rectangle is clamped so it stays visible even when the view is
- * somewhere the content is not.
+ * somewhere the content is not. Pointer events (not mouse events) so it also
+ * works on touch laptops and large tablets.
+ *
+ * Hidden from assistive tech: fit, zoom and pan controls offer the same
+ * navigation without a pointer.
  */
-export default function Minimap({ shapes, transform, viewportSize, onNavigate }) {
+function Minimap({ shapes, transform, viewportSize, palette, onNavigate }) {
   const isDraggingRef = useRef(false);
 
   const frame = useMemo(() => {
@@ -93,7 +97,7 @@ export default function Minimap({ shapes, transform, viewportSize, onNavigate })
     [frame, onNavigate, scale],
   );
 
-  const handleMouseDown = useCallback(
+  const handlePointerDown = useCallback(
     (event) => {
       isDraggingRef.current = true;
       navigateToPointer(event);
@@ -101,7 +105,7 @@ export default function Minimap({ shapes, transform, viewportSize, onNavigate })
     [navigateToPointer],
   );
 
-  const handleMouseMove = useCallback(
+  const handlePointerMove = useCallback(
     (event) => {
       if (!isDraggingRef.current) return;
 
@@ -126,37 +130,43 @@ export default function Minimap({ shapes, transform, viewportSize, onNavigate })
   };
 
   return (
-    <div
-      className="overflow-hidden rounded-panel border border-border bg-surface shadow-panel"
-      style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT, cursor: "pointer" }}
-      aria-label="Board overview"
+    <Island
+      aria-hidden="true"
+      className="fb-rise cursor-pointer touch-none overflow-hidden"
+      style={{ width: MINIMAP_WIDTH + 2, height: MINIMAP_HEIGHT + 2 }}
     >
       <Stage
         width={MINIMAP_WIDTH}
         height={MINIMAP_HEIGHT}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={stopDragging}
-        onMouseLeave={stopDragging}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerLeave={stopDragging}
       >
         <Layer>
-          <MinimapShapes shapes={shapes} frame={frame} scale={scale} />
+          <MinimapShapes
+            shapes={shapes}
+            frame={frame}
+            scale={scale}
+            color={palette.minimapShape}
+          />
 
-          {/* The viewport, as a tinted pane rather than a solid block, so the
-              shapes it covers stay readable underneath it. */}
+          {/* The viewport as a tinted pane, so shapes under it stay readable. */}
           <Rect
             x={Math.max(0, Math.min(viewRect.x, MINIMAP_WIDTH - 4))}
             y={Math.max(0, Math.min(viewRect.y, MINIMAP_HEIGHT - 4))}
             width={Math.min(viewRect.width, MINIMAP_WIDTH)}
             height={Math.min(viewRect.height, MINIMAP_HEIGHT)}
-            stroke="#2563eb"
+            stroke={palette.selection}
             strokeWidth={1.5}
-            fill="#2563eb"
-            opacity={0.18}
+            fill={palette.selectionFill}
+            cornerRadius={2}
             listening={false}
           />
         </Layer>
       </Stage>
-    </div>
+    </Island>
   );
 }
+
+export default memo(Minimap);

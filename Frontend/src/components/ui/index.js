@@ -3,13 +3,14 @@
  * Import from "…/components/ui/index.js" rather than individual files.
  * Reference: docs/design-system.md §9.
  */
+export { ActionList } from "./ActionList.jsx";
 export { Avatar, AvatarStack } from "./Avatar.jsx";
 export { Badge, StatusDot } from "./Badge.jsx";
 export { Button } from "./Button.jsx";
-export { EmptyNote, SoonBadge } from "./ComingSoon.jsx";
 export { cx } from "./cx.js";
 export { Dialog } from "./Dialog.jsx";
 export { Divider } from "./Divider.jsx";
+export { EmptyNote } from "./EmptyNote.jsx";
 export { IconButton } from "./IconButton.jsx";
 export { Island } from "./Island.jsx";
 export { Kbd, KbdCombo } from "./Kbd.jsx";

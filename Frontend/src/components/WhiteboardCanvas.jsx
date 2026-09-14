@@ -1,4 +1,5 @@
-import { Stage, Layer, Transformer } from "react-konva";
+import { Group, Stage, Layer, Transformer } from "react-konva";
+import { OVERLAY_NAME } from "../features/export/exportBoardImage.js";
 import ShapeRenderer from "./ShapeRenderer";
 import LineEditor from "./LineEditor";
 import PointerTrails from "./PointerTrails";
@@ -97,11 +98,15 @@ export default function WhiteboardCanvas({
       style={{ backgroundColor: "transparent" }}
     >
       <Layer>
-        <CanvasGrid
-          transform={transform}
-          viewportSize={viewportSize}
-          gridSize={gridSize}
-        />
+        {/* Interaction chrome is grouped under OVERLAY_NAME so image export can
+            hide it; the groups sit at the origin, so nothing inside moves. */}
+        <Group name={OVERLAY_NAME}>
+          <CanvasGrid
+            transform={transform}
+            viewportSize={viewportSize}
+            gridSize={gridSize}
+          />
+        </Group>
 
         {shapes.map((shape) => (
           <ShapeRenderer
@@ -122,28 +127,30 @@ export default function WhiteboardCanvas({
           />
         ))}
 
-        <LineEditor
-          selectedShape={bendableShape}
-          scale={transform.scale}
-          onAnchorDragStart={onAnchorDragStart}
-          onAnchorDragMove={onAnchorDragMove}
-        />
+        <Group name={OVERLAY_NAME}>
+          <LineEditor
+            selectedShape={bendableShape}
+            scale={transform.scale}
+            onAnchorDragStart={onAnchorDragStart}
+            onAnchorDragMove={onAnchorDragMove}
+          />
 
-        <SelectionRect bounds={marquee} scale={transform.scale} />
+          <SelectionRect bounds={marquee} scale={transform.scale} />
 
-        <SnapGuides
-          guides={snapGuides}
-          transform={transform}
-          viewportSize={viewportSize}
-        />
+          <SnapGuides
+            guides={snapGuides}
+            transform={transform}
+            viewportSize={viewportSize}
+          />
 
-        <PointerTrails
-          laserPoints={laserPoints}
-          eraserPoints={eraserPoints}
-          scale={transform.scale}
-        />
+          <PointerTrails
+            laserPoints={laserPoints}
+            eraserPoints={eraserPoints}
+            scale={transform.scale}
+          />
 
-        <LiveCursors cursors={liveCursors} />
+          <LiveCursors cursors={liveCursors} />
+        </Group>
 
         {/* Transformer for shape scaling/rotation, constrained to at least 5px. */}
         <Transformer
