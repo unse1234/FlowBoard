@@ -30,7 +30,7 @@ import {
 } from "../domain/geometry/alignment.js";
 import { getShapesBoundingBox } from "../domain/geometry/bounds.js";
 import { loadImageAsset } from "../domain/images/imageAssets";
-import { moveShapeTo, updateShapeStyle } from "../domain/shapes/shapeOperations";
+import { applyStylePatch, moveShapeTo } from "../domain/shapes/shapeOperations";
 import { PersistenceManager } from "../features/persistence/PersistenceManager.js";
 import { LocalStorageAdapter } from "../features/persistence/storage/LocalStorageAdapter.js";
 import {
@@ -441,30 +441,38 @@ export function useWhiteboard() {
     setTool,
   });
 
+  /**
+   * Change style — of the selection, and of what the active tool draws next.
+   *
+   * Takes `(key, value)` or a patch object, so a control that sets several keys
+   * at once (a fill swatch sets the colour and turns fill on) is one undo step
+   * and one operation.
+   */
   const handleStyleChange = useCallback(
-    (key, value) => {
+    (keyOrPatch, value) => {
+      const patch =
+        keyOrPatch !== null && typeof keyOrPatch === "object"
+          ? keyOrPatch
+          : { [keyOrPatch]: value };
+
       setActiveStyle((prev) => ({
         ...prev,
-        [key]: value,
+        ...patch,
       }));
 
-      if (key === "fontFamily") setFont(value);
+      if (patch.fontFamily !== undefined) setFont(patch.fontFamily);
       if (selectedShapeIds.length === 0) return;
+
+      const apply = (shape) => applyStylePatch(shape, patch);
 
       // One shape keeps the dedicated CHANGE_STYLE operation it has always used;
       // more than one goes through the batch path as a single edit.
       if (selectedShapeIds.length === 1) {
-        updateShape(
-          selectedShapeIds[0],
-          (shape) => updateShapeStyle(shape, { [key]: value }),
-          OPERATION_TYPES.CHANGE_STYLE,
-        );
+        updateShape(selectedShapeIds[0], apply, OPERATION_TYPES.CHANGE_STYLE);
         return;
       }
 
-      updateShapes(selectedShapeIds, (shape) =>
-        updateShapeStyle(shape, { [key]: value }),
-      );
+      updateShapes(selectedShapeIds, apply);
     },
     [selectedShapeIds, updateShape, updateShapes],
   );

@@ -9,10 +9,10 @@ const MIN_VISIBLE_SPACING = 6;
  *
  * Only the lines crossing the visible region are built, so the node count stays
  * tied to the size of the window rather than to how far the board has been
- * panned. The colour is a mid neutral at low opacity, which reads correctly on
- * both the light and dark canvas without needing the theme.
+ * panned. `color` is the theme's translucent grid token, so the grid sits at
+ * the same visual weight on the paper and graphite canvases.
  */
-export default function CanvasGrid({ transform, viewportSize, gridSize }) {
+export default function CanvasGrid({ transform, viewportSize, gridSize, color }) {
   if (!gridSize || gridSize * transform.scale < MIN_VISIBLE_SPACING) return null;
 
   const view = getVisibleWorldBounds(transform, viewportSize);
@@ -30,9 +30,8 @@ export default function CanvasGrid({ transform, viewportSize, gridSize }) {
       <Line
         key={`v${x}`}
         points={[x, view.y, x, bottom]}
-        stroke="#94a3b8"
+        stroke={color}
         strokeWidth={strokeWidth}
-        opacity={0.25}
         listening={false}
       />,
     );
@@ -43,9 +42,8 @@ export default function CanvasGrid({ transform, viewportSize, gridSize }) {
       <Line
         key={`h${y}`}
         points={[view.x, y, right, y]}
-        stroke="#94a3b8"
+        stroke={color}
         strokeWidth={strokeWidth}
-        opacity={0.25}
         listening={false}
       />,
     );

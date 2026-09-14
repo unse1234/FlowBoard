@@ -1,19 +1,21 @@
 import { useCallback, useMemo, useState } from "react";
-import { Palette, PanelRightClose, SlidersHorizontal } from "lucide-react";
+import { Palette, SlidersHorizontal } from "lucide-react";
 import Minimap from "../components/Minimap";
-import StylePanel from "../components/StylePanel";
 import TextEditorOverlay from "../components/TextEditorOverlay";
 import Toolbar from "../components/Toolbar";
 import ViewControls from "../components/ViewControls";
 import WhiteboardCanvas from "../components/WhiteboardCanvas";
+import Inspector, { SelectionActions } from "../components/inspector/Inspector";
+import InspectorPanel from "../components/inspector/InspectorPanel";
+import { getInspectorModel } from "../components/inspector/inspectorModel.js";
 import EmptyCanvasHint from "../components/layout/EmptyCanvasHint";
 import MobileTopBar from "../components/layout/MobileTopBar";
 import WorkspaceHeader from "../components/layout/WorkspaceHeader";
 import { buildBoardMenuItems } from "../components/layout/boardMenuItems.js";
+import { buildCanvasMenuItems } from "../components/layout/canvasMenuItems.js";
 import ShortcutsDialog from "../components/panels/ShortcutsDialog";
 import VoiceChatPanel from "../components/panels/VoiceChatPanel";
-import { ActionList, IconButton, Island, Sheet } from "../components/ui/index.js";
-import { SHAPE_LABELS, STYLEABLE_TOOLS, TOOL_LABELS } from "../constants/toolMeta.js";
+import { ActionList, IconButton, Island, Menu, Sheet } from "../components/ui/index.js";
 import { TOOLS } from "../constants/tools.js";
 import { getCanvasPalette } from "../design/canvasTokens.js";
 import { useVoice } from "../features/communication/voice/useVoice.js";
@@ -29,6 +31,7 @@ import { useToast } from "../features/toasts/toastContext.js";
 import { SHEETS, useUiLayout } from "../hooks/useUiLayout";
 import { useViewportSize } from "../hooks/useViewportSize";
 import { useWhiteboard } from "../hooks/useWhiteboard";
+import { getBaseShapeStyle } from "../utils/styleUtils";
 
 /** Inspector top edge: 12px inset + 44px header island + 12px gap. */
 const INSPECTOR_TOP = 68;
@@ -106,13 +109,6 @@ function useVoiceModel(voice) {
   );
 }
 
-function getInspectorTitle(tool, selectedShapes) {
-  if (selectedShapes.length > 1) return `${selectedShapes.length} selected`;
-  if (selectedShapes.length === 1) return SHAPE_LABELS[selectedShapes[0].type] ?? "Selection";
-
-  return STYLEABLE_TOOLS.has(tool) ? `${TOOL_LABELS[tool]} defaults` : "Style";
-}
-
 /**
  * BoardPage — the application shell.
  *
@@ -123,7 +119,7 @@ function getInspectorTitle(tool, selectedShapes) {
  *
  * Two presentations are built from the same state:
  *   - tablet and desktop (≥ 768): header islands, contextual inspector, bottom
- *     row of view controls, tool dock and minimap
+ *     row of view controls, tool dock and minimap, right-click canvas menu
  *   - phone: compact top bar, bottom dock, and sheets for style, people and
  *     the board menu
  */
@@ -137,6 +133,7 @@ export default function BoardPage() {
     transform,
     selectedShape,
     selectedShapes,
+    activeStyle,
     stageRef,
     getShapes,
     getStage,
@@ -147,6 +144,14 @@ export default function BoardPage() {
     canRedo,
     gridEnabled,
     toggleGrid,
+    clipboard,
+    layerActions,
+    groupActions,
+    alignmentActions,
+    deleteSelection,
+    selectAll,
+    fitToScreen,
+    handleStyleChange,
   } = board;
 
   const voice = useVoice({
@@ -175,8 +180,10 @@ export default function BoardPage() {
   const palette = getCanvasPalette(theme);
   const isDark = theme === "dark";
   const hasShapes = shapes.length > 0;
+  const hasSelection = selectedShapes.length > 0;
   const { startCollaboration, isEnabled: isShared } = collaboration;
 
+  // ── Keyboard shortcuts dialog ──────────────────────────────────────────
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
@@ -195,6 +202,7 @@ export default function BoardPage() {
   );
   useShortcuts(shellShortcuts);
 
+  // ── Board actions with feedback ────────────────────────────────────────
   const handleShare = useCallback(async () => {
     const { copied } = await startCollaboration();
 
@@ -282,30 +290,70 @@ export default function BoardPage() {
     ],
   );
 
+  // ── Canvas context menu (pointer devices) ──────────────────────────────
+  const [contextMenuPoint, setContextMenuPoint] = useState(null);
+  const closeContextMenu = useCallback(() => setContextMenuPoint(null), []);
+
+  const handleContextMenu = useCallback(
+    (event) => {
+      event.preventDefault();
+      // A touch long-press is not a right-click; phones and tablets get
+      // visible selection actions instead.
+      if (isCoarsePointer) return;
+      setContextMenuPoint({ x: event.clientX, y: event.clientY });
+    },
+    [isCoarsePointer],
+  );
+
+  const canvasMenuItems = buildCanvasMenuItems({
+    hasSelection,
+    hasShapes,
+    clipboard,
+    layerActions,
+    groupActions,
+    onDelete: deleteSelection,
+    onSelectAll: selectAll,
+    onFitToScreen: fitToScreen,
+    gridEnabled,
+    onToggleGrid: toggleGrid,
+  });
+
+  // ── Sheets (phone) ─────────────────────────────────────────────────────
   const openMenuSheet = useCallback(() => openSheet(SHEETS.MENU), [openSheet]);
   const openPeopleSheet = useCallback(() => openSheet(SHEETS.PEOPLE), [openSheet]);
   const openStyleSheet = useCallback(() => openSheet(SHEETS.STYLE), [openSheet]);
 
-  const selectionCount = selectedShapes.length;
-  const hasInspectorContext = selectionCount > 0 || STYLEABLE_TOOLS.has(tool);
-  const inspectorTitle = getInspectorTitle(tool, selectedShapes);
+  const deleteAndCloseSheet = useCallback(() => {
+    deleteSelection();
+    closeSheet();
+  }, [closeSheet, deleteSelection]);
+
+  // ── Inspector ──────────────────────────────────────────────────────────
+  const inspectorModel = useMemo(
+    () => getInspectorModel({ tool, selectedShapes }),
+    [selectedShapes, tool],
+  );
+
+  // Stored style, not the theme-adjusted render style, so swatches match.
+  const shapeStyle = useMemo(
+    () => (selectedShape ? getBaseShapeStyle(selectedShape) : activeStyle),
+    [activeStyle, selectedShape],
+  );
+
   const showMinimap = isDesktop && minimapVisible && hasShapes;
+
+  const inspectorPosition = useMemo(
+    () => ({
+      top: INSPECTOR_TOP,
+      maxHeight: `calc(100dvh - ${
+        INSPECTOR_TOP + (showMinimap ? INSPECTOR_BOTTOM_WITH_MINIMAP : INSPECTOR_BOTTOM)
+      }px)`,
+    }),
+    [showMinimap],
+  );
+
   const showEmptyHint =
     !hasShapes && !board.editingTextShape && (tool === TOOLS.SELECT || tool === TOOLS.PAN);
-
-  const stylePanel = (
-    <StylePanel
-      compact
-      tool={tool}
-      selectedShape={selectedShape}
-      selectionCount={selectionCount}
-      activeStyle={board.activeStyle}
-      onStyleChange={board.handleStyleChange}
-      layerActions={board.layerActions}
-      groupActions={board.groupActions}
-      alignmentActions={board.alignmentActions}
-    />
-  );
 
   const toolbar = (
     <Toolbar
@@ -327,6 +375,7 @@ export default function BoardPage() {
       <div
         className="absolute inset-0 z-0"
         style={{ cursor: getCanvasCursor(tool, board.isPanMode) }}
+        onContextMenu={handleContextMenu}
       >
         <WhiteboardCanvas
           stageRef={stageRef}
@@ -345,6 +394,8 @@ export default function BoardPage() {
           laserPoints={board.laserPoints}
           eraserPoints={board.eraserPoints}
           liveCursors={board.liveCursors}
+          palette={palette}
+          isCoarsePointer={isCoarsePointer}
           registerShapeRef={board.registerShapeRef}
           onWheel={board.handleWheel}
           onMouseDown={board.handleMouseDown}
@@ -384,39 +435,24 @@ export default function BoardPage() {
           />
 
           {/* ── Inspector — only when there is something to style ──── */}
-          {hasInspectorContext && inspectorOpen ? (
-            <Island
-              as="aside"
-              aria-label="Style"
-              className="fb-rise fixed right-3 z-40 flex w-64 flex-col overflow-hidden"
-              style={{
-                top: INSPECTOR_TOP,
-                maxHeight: `calc(100dvh - ${
-                  INSPECTOR_TOP + (showMinimap ? INSPECTOR_BOTTOM_WITH_MINIMAP : INSPECTOR_BOTTOM)
-                }px)`,
-              }}
-            >
-              <header className="flex h-11 shrink-0 items-center gap-2 border-b border-divider pl-3 pr-1">
-                <h2 className="min-w-0 flex-1 truncate text-title text-text">{inspectorTitle}</h2>
-                <IconButton
-                  label="Hide style panel"
-                  tooltipPlacement="left"
-                  onClick={toggleInspector}
-                >
-                  <PanelRightClose size={16} strokeWidth={1.75} />
-                </IconButton>
-              </header>
-              <div className="fb-scroll min-h-0 overflow-y-auto p-3">{stylePanel}</div>
-            </Island>
+          {inspectorModel && inspectorOpen ? (
+            <Inspector
+              model={inspectorModel}
+              shapeStyle={shapeStyle}
+              onStyleChange={handleStyleChange}
+              layerActions={layerActions}
+              groupActions={groupActions}
+              alignmentActions={alignmentActions}
+              onDuplicate={clipboard.duplicate}
+              onDelete={deleteSelection}
+              onHide={toggleInspector}
+              style={inspectorPosition}
+            />
           ) : null}
 
-          {hasInspectorContext && !inspectorOpen ? (
+          {inspectorModel && !inspectorOpen ? (
             <Island className="fixed right-3 z-40 p-1" style={{ top: INSPECTOR_TOP }}>
-              <IconButton
-                label="Show style panel"
-                tooltipPlacement="left"
-                onClick={toggleInspector}
-              >
+              <IconButton label="Show inspector" tooltipPlacement="left" onClick={toggleInspector}>
                 <SlidersHorizontal size={16} strokeWidth={1.75} />
               </IconButton>
             </Island>
@@ -434,7 +470,7 @@ export default function BoardPage() {
               onZoomOut={board.zoomOut}
               onSetZoom={board.setZoom}
               onResetZoom={board.resetZoom}
-              onFitToScreen={board.fitToScreen}
+              onFitToScreen={fitToScreen}
               canFitToScreen={hasShapes}
               showZoomButtons={isDesktop}
               touch={isCoarsePointer}
@@ -454,6 +490,15 @@ export default function BoardPage() {
               />
             </div>
           ) : null}
+
+          <Menu
+            open={Boolean(contextMenuPoint)}
+            onClose={closeContextMenu}
+            anchorPoint={contextMenuPoint ?? undefined}
+            placement="bottom-start"
+            label="Canvas actions"
+            items={canvasMenuItems}
+          />
         </>
       ) : (
         <>
@@ -478,8 +523,36 @@ export default function BoardPage() {
             </Island>
           </div>
 
-          <Sheet open={sheet === SHEETS.STYLE} onClose={closeSheet} title={inspectorTitle}>
-            {stylePanel}
+          <Sheet
+            open={sheet === SHEETS.STYLE}
+            onClose={closeSheet}
+            title={inspectorModel?.title ?? "Style"}
+            description={inspectorModel?.subtitle}
+            headerAction={
+              inspectorModel?.mode === "selection" ? (
+                <SelectionActions
+                  touch
+                  onDuplicate={clipboard.duplicate}
+                  onDelete={deleteAndCloseSheet}
+                />
+              ) : null
+            }
+          >
+            {inspectorModel ? (
+              <InspectorPanel
+                touch
+                model={inspectorModel}
+                shapeStyle={shapeStyle}
+                onStyleChange={handleStyleChange}
+                layerActions={layerActions}
+                groupActions={groupActions}
+                alignmentActions={alignmentActions}
+              />
+            ) : (
+              <p className="py-6 text-center text-body text-text-muted">
+                Select a shape, or pick a drawing tool, to style it.
+              </p>
+            )}
           </Sheet>
 
           <Sheet

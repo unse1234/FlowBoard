@@ -7,7 +7,7 @@ import { getVisibleWorldBounds } from "../../domain/geometry/viewport.js";
  * Each guide spans the visible region rather than just the two shapes involved,
  * which is what makes it read as an alignment line rather than a connector.
  */
-export default function SnapGuides({ guides, transform, viewportSize }) {
+export default function SnapGuides({ guides, transform, viewportSize, color }) {
   if (!guides || guides.length === 0) return null;
 
   const view = getVisibleWorldBounds(transform, viewportSize);
@@ -24,7 +24,7 @@ export default function SnapGuides({ guides, transform, viewportSize }) {
               ? [guide.position, view.y, guide.position, view.y + view.height]
               : [view.x, guide.position, view.x + view.width, guide.position]
           }
-          stroke="#f43f5e"
+          stroke={color}
           strokeWidth={strokeWidth}
           dash={dash}
           listening={false}

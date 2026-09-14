@@ -13,12 +13,19 @@ import {
   normalizeShapeIdSet,
 } from "../domain/board/shapeIdentity.js";
 
+/** Minimum on-screen size a transform may shrink a shape to. */
+const MIN_TRANSFORM_SIZE = 5;
+
 /**
  * WhiteboardCanvas Component
  *
  * Main Konva stage rendering all shapes, editor UI, and pointer trails.
  * Handles canvas events (wheel, mouse) and delegates shape interaction to handlers.
  * Transformer is constrained to prevent micro-shapes (< 5px).
+ *
+ * Interaction chrome (selection handles, marquee, guides, grid, trails) is
+ * painted from `palette` — the theme's canvas tokens — and handles grow on
+ * coarse pointers so they can be grabbed with a finger.
  *
  * @param {Object} stageRef - React ref to Konva Stage node
  * @param {Object} transformerRef - React ref to Konva Transformer node
@@ -30,6 +37,8 @@ import {
  * @param {Object} marquee - Drag-selection rectangle in world space, or null
  * @param {Array} laserPoints - Laser pointer trail points
  * @param {Array} eraserPoints - Eraser trail points
+ * @param {Object} palette - Canvas colour tokens (design/canvasTokens.js)
+ * @param {boolean} isCoarsePointer - Enlarge handles for touch
  * @param {Function} registerShapeRef - Register shape node references
  * @param {Function} onWheel - Scroll event handler (zoom)
  * @param {Function} onMouseDown - Canvas mouse down handler
@@ -58,6 +67,8 @@ export default function WhiteboardCanvas({
   laserPoints,
   eraserPoints,
   liveCursors,
+  palette,
+  isCoarsePointer = false,
   registerShapeRef,
   onWheel,
   onMouseDown,
@@ -105,6 +116,7 @@ export default function WhiteboardCanvas({
             transform={transform}
             viewportSize={viewportSize}
             gridSize={gridSize}
+            color={palette.grid}
           />
         </Group>
 
@@ -131,35 +143,49 @@ export default function WhiteboardCanvas({
           <LineEditor
             selectedShape={bendableShape}
             scale={transform.scale}
+            palette={palette}
+            touch={isCoarsePointer}
             onAnchorDragStart={onAnchorDragStart}
             onAnchorDragMove={onAnchorDragMove}
           />
 
-          <SelectionRect bounds={marquee} scale={transform.scale} />
+          <SelectionRect bounds={marquee} scale={transform.scale} palette={palette} />
 
           <SnapGuides
             guides={snapGuides}
             transform={transform}
             viewportSize={viewportSize}
+            color={palette.guide}
           />
 
           <PointerTrails
             laserPoints={laserPoints}
             eraserPoints={eraserPoints}
             scale={transform.scale}
+            laserColor={palette.laser}
+            eraserColor={palette.eraserTrail}
           />
 
           <LiveCursors cursors={liveCursors} />
         </Group>
 
-        {/* Transformer for shape scaling/rotation, constrained to at least 5px. */}
+        {/* Transformer for shape scaling, constrained to at least 5px. */}
         <Transformer
           ref={transformerRef}
           rotateEnabled={false}
           flipEnabled={false}
           ignoreStroke
+          borderStroke={palette.selection}
+          borderStrokeWidth={1.5}
+          anchorStroke={palette.selection}
+          anchorFill={palette.handleFill}
+          anchorStrokeWidth={1.5}
+          anchorSize={isCoarsePointer ? 14 : 9}
+          anchorCornerRadius={isCoarsePointer ? 7 : 2}
           boundBoxFunc={(oldBox, newBox) =>
-            newBox.width < 5 || newBox.height < 5 ? oldBox : newBox
+            newBox.width < MIN_TRANSFORM_SIZE || newBox.height < MIN_TRANSFORM_SIZE
+              ? oldBox
+              : newBox
           }
         />
       </Layer>

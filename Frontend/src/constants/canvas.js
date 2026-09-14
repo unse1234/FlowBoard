@@ -53,6 +53,40 @@ export const NOTE_SWATCHES = [
   "#fed7aa",
 ];
 
+// Fill colours: white plus the note pastels, so fills and notes share a family.
+export const FILL_SWATCHES = ["#ffffff", ...NOTE_SWATCHES];
+
+// Spoken names for swatches, used as their accessible labels.
+export const COLOR_NAMES = {
+  "#111827": "Ink",
+  "#2563eb": "Blue",
+  "#dc2626": "Red",
+  "#f59e0b": "Amber",
+  "#16a34a": "Green",
+  "#a855f7": "Purple",
+  "#ffffff": "White",
+  "#fef08a": "Yellow",
+  "#bfdbfe": "Sky",
+  "#bbf7d0": "Mint",
+  "#fecaca": "Rose",
+  "#e9d5ff": "Lilac",
+  "#fed7aa": "Peach",
+};
+
+// Text size presets. Notes start at S (16) and text at M (24) — the defaults.
+export const FONT_SIZE_PRESETS = [
+  { value: 16, label: "S" },
+  { value: 24, label: "M" },
+  { value: 32, label: "L" },
+  { value: 48, label: "XL" },
+];
+
+// Canvas faces. Both are always loaded: Inter by index.css, Excalifont locally.
+export const FONT_FAMILIES = [
+  { value: "Inter", label: "Sans" },
+  { value: "Excalifont", label: "Hand" },
+];
+
 // Default styling applied to new shapes
 export const DEFAULT_STYLE = {
   stroke: "#111827",

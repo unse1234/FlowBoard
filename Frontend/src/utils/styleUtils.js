@@ -69,6 +69,20 @@ export const getShapeStyle = (shape) => {
 };
 
 /**
+ * The stored style merged over the defaults, without the dark-mode stroke flip.
+ *
+ * Style controls compare against this rather than getShapeStyle, so the ink
+ * swatch stays selected on the dark canvas where ink strokes render white.
+ *
+ * @param {Object} shape
+ * @returns {Object}
+ */
+export const getBaseShapeStyle = (shape) => ({
+  ...DEFAULT_STYLE,
+  ...(shape?.style ?? {}),
+});
+
+/**
  * Converts stroke style setting to Konva dash array format
  * Used for visual patterns: dashed (- - -), dotted (· · ·), or solid
  *

@@ -55,5 +55,16 @@ export const BOARD_SHORTCUTS = Object.freeze([
   { action: "delete", key: "Backspace", combo: "Backspace", description: "Delete selection" },
 ]);
 
+/**
+ * Display combo for an action — the first binding when it has several — so
+ * buttons and menus can show the real key without restating it.
+ *
+ * @param {string} action
+ * @returns {string | undefined}
+ */
+export function getShortcutCombo(action) {
+  return BOARD_SHORTCUTS.find((binding) => binding.action === action)?.combo;
+}
+
 /** Opens the shortcuts dialog; bound by the shell, which owns that dialog. */
 export const SHOW_SHORTCUTS_COMBO = "?";

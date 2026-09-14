@@ -1,3 +1,4 @@
+import { DEFAULT_STYLE } from "../../constants/canvas.js";
 import { TOOLS } from "../../constants/tools.js";
 import { getBox } from "../../utils/shapeUtils.js";
 import { BOX_SHAPES, LINE_SHAPES } from "./shapeTypes.js";
@@ -102,3 +103,26 @@ export const updateShapeStyle = (shape, stylePatch) =>
       ...stylePatch,
     },
   });
+
+/**
+ * Apply a style patch the way the user means it.
+ *
+ * A text shape's box was measured at its current font size, and Konva stops
+ * drawing lines that overflow a fixed-height text node — so growing the font
+ * alone would clip the text. Resizing the font therefore scales the box with
+ * it. Notes are cards whose size the user chose, so they keep it.
+ */
+export const applyStylePatch = (shape, stylePatch) => {
+  const next = updateShapeStyle(shape, stylePatch);
+  if (shape.type !== TOOLS.TEXT || stylePatch.fontSize === undefined) return next;
+
+  const previous = shape.style?.fontSize ?? DEFAULT_STYLE.fontSize;
+  const ratio = previous > 0 ? stylePatch.fontSize / previous : 1;
+  if (!Number.isFinite(ratio) || ratio === 1) return next;
+
+  return {
+    ...next,
+    width: shape.width * ratio,
+    height: shape.height * ratio,
+  };
+};

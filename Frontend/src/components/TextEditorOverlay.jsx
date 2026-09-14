@@ -75,7 +75,7 @@ export default function TextEditorOverlay({
         }
       }}
       className={[
-        "fixed resize-none border-2 border-brand bg-transparent p-0.5 outline-none text-current",
+        "fixed resize-none rounded-sm border-2 border-selection bg-transparent p-0.5 outline-none text-current",
         autoGrow ? "overflow-hidden" : "fb-scroll overflow-y-auto",
       ].join(" ")}
       style={{
