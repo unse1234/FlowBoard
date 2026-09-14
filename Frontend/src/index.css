@@ -127,7 +127,6 @@
 
   /* The brand tile is identity, so it does not theme. */
   --color-brand-tile: #222222;
-  --color-brand-glyph: #fff083;
 
   --shadow-island: var(--fb-shadow-island);
   --shadow-popover: var(--fb-shadow-popover);
