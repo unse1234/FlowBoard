@@ -3,6 +3,10 @@ import ShapeRenderer from "./ShapeRenderer";
 import LineEditor from "./LineEditor";
 import PointerTrails from "./PointerTrails";
 import LiveCursors from "../features/realtime/components/LiveCursors";
+import CanvasGrid from "./canvas/CanvasGrid";
+import SelectionRect from "./canvas/SelectionRect";
+import SnapGuides from "./canvas/SnapGuides";
+import { getBendableSelection } from "../domain/selection/selectionModel.js";
 import {
   isShapeIdEqual,
   normalizeShapeIdSet,
@@ -21,7 +25,8 @@ import {
  * @param {Array} shapes - Array of shapes to render
  * @param {string} tool - Currently selected tool
  * @param {Array} erasingIds - IDs of shapes marked for erasure
- * @param {Object} selectedShape - Currently selected shape
+ * @param {Array} selectedShapes - Currently selected shapes
+ * @param {Object} marquee - Drag-selection rectangle in world space, or null
  * @param {Array} laserPoints - Laser pointer trail points
  * @param {Array} eraserPoints - Eraser trail points
  * @param {Function} registerShapeRef - Register shape node references
@@ -43,8 +48,12 @@ export default function WhiteboardCanvas({
   shapes,
   tool,
   erasingIds,
-  selectedShape,
+  selectedShapes,
   editingTextShape,
+  marquee,
+  snapGuides,
+  gridSize,
+  isPanMode,
   laserPoints,
   eraserPoints,
   liveCursors,
@@ -65,6 +74,11 @@ export default function WhiteboardCanvas({
 }) {
   const erasingShapeIds = normalizeShapeIdSet(erasingIds);
 
+  // Breakpoint handles belong to a lone line or arrow. Once it is part of a
+  // wider selection the Transformer is driving it instead, and showing both
+  // sets of handles at once would be ambiguous.
+  const bendableShape = getBendableSelection(selectedShapes);
+
   return (
     <Stage
       ref={stageRef}
@@ -83,11 +97,18 @@ export default function WhiteboardCanvas({
       style={{ backgroundColor: "transparent" }}
     >
       <Layer>
+        <CanvasGrid
+          transform={transform}
+          viewportSize={viewportSize}
+          gridSize={gridSize}
+        />
+
         {shapes.map((shape) => (
           <ShapeRenderer
             key={shape.id}
             shape={shape}
             tool={tool}
+            isPanMode={isPanMode}
             isErasing={erasingShapeIds.has(String(shape.id))}
             isEditing={isShapeIdEqual(editingTextShape?.id, shape.id)}
             registerShapeRef={registerShapeRef}
@@ -102,10 +123,18 @@ export default function WhiteboardCanvas({
         ))}
 
         <LineEditor
-          selectedShape={selectedShape}
+          selectedShape={bendableShape}
           scale={transform.scale}
           onAnchorDragStart={onAnchorDragStart}
           onAnchorDragMove={onAnchorDragMove}
+        />
+
+        <SelectionRect bounds={marquee} scale={transform.scale} />
+
+        <SnapGuides
+          guides={snapGuides}
+          transform={transform}
+          viewportSize={viewportSize}
         />
 
         <PointerTrails

@@ -3,6 +3,7 @@ import StylePanel from "../components/StylePanel";
 import TextEditorOverlay from "../components/TextEditorOverlay";
 import Toolbar from "../components/Toolbar";
 import WhiteboardCanvas from "../components/WhiteboardCanvas";
+import Minimap from "../components/Minimap";
 import { ViewControls, ZoomPill } from "../components/ViewControls";
 import ToolsSheet from "../components/mobile/ToolsSheet";
 import LeftRail from "../components/layout/LeftRail";
@@ -87,7 +88,10 @@ export default function BoardPage() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-bg font-body text-text">
       {/* ── Canvas ───────────────────────────────────────────────── */}
-      <div className="absolute inset-0 z-0 bg-canvas">
+      <div
+        className="absolute inset-0 z-0 bg-canvas"
+        style={{ cursor: board.isPanMode ? "grab" : undefined }}
+      >
         <WhiteboardCanvas
           stageRef={board.stageRef}
           transformerRef={board.transformerRef}
@@ -96,8 +100,12 @@ export default function BoardPage() {
           shapes={board.shapes}
           tool={board.tool}
           erasingIds={board.erasingIds}
-          selectedShape={board.selectedShape}
+          selectedShapes={board.selectedShapes}
           editingTextShape={board.editingTextShape}
+          marquee={board.marquee}
+          snapGuides={board.snapGuides}
+          gridSize={board.gridSize}
+          isPanMode={board.isPanMode}
           laserPoints={board.laserPoints}
           eraserPoints={board.eraserPoints}
           liveCursors={board.liveCursors}
@@ -178,8 +186,12 @@ export default function BoardPage() {
           <StylePanel
             tool={board.tool}
             selectedShape={board.selectedShape}
+            selectionCount={board.selectedShapes.length}
             activeStyle={board.activeStyle}
             onStyleChange={board.handleStyleChange}
+            layerActions={board.layerActions}
+            groupActions={board.groupActions}
+            alignmentActions={board.alignmentActions}
           />
         </aside>
       )}
@@ -213,6 +225,20 @@ export default function BoardPage() {
         />
       </div>
 
+      {/* Minimap sits above the view controls, desktop only — at phone width
+          it would cost more screen than it saves. */}
+      <div
+        className="fixed bottom-16 z-40 hidden lg:block"
+        style={{ right: rightInset + 12 }}
+      >
+        <Minimap
+          shapes={board.shapes}
+          transform={board.transform}
+          viewportSize={viewportSize}
+          onNavigate={board.centerOn}
+        />
+      </div>
+
       <div
         className="fixed bottom-3 z-40 hidden lg:block"
         style={{ right: rightInset + 12 }}
@@ -221,6 +247,8 @@ export default function BoardPage() {
           scale={board.transform.scale}
           onZoomIn={board.zoomIn}
           onZoomOut={board.zoomOut}
+          onFitToScreen={board.fitToScreen}
+          canFitToScreen={board.shapes.length > 0}
         />
       </div>
 
@@ -280,6 +308,8 @@ export default function BoardPage() {
           onToggleTheme={toggleTheme}
           collaboration={board.collaboration}
           onClearBoard={board.clearBoard}
+          gridEnabled={board.gridEnabled}
+          onToggleGrid={board.toggleGrid}
           shapeCount={board.shapes.length}
         />
       </Sheet>
@@ -296,6 +326,8 @@ export default function BoardPage() {
           onToggleTheme={toggleTheme}
           collaboration={board.collaboration}
           onClearBoard={board.clearBoard}
+          gridEnabled={board.gridEnabled}
+          onToggleGrid={board.toggleGrid}
           shapeCount={board.shapes.length}
         />
       </Dialog>

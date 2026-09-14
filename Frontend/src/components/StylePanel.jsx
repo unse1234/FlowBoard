@@ -9,6 +9,7 @@ import {
   CornerDownRight,
   Droplets,
   Eye,
+  Group,
   Minus,
   PaintBucket,
   PenLine,
@@ -16,17 +17,18 @@ import {
   Slash,
   SlidersHorizontal,
   Square,
+  Ungroup,
 } from "lucide-react";
 import { RENDER_STYLES, STROKE_SWATCHES } from "../constants/canvas";
 import { TOOLS } from "../constants/tools";
 import { getShapeStyle } from "../utils/styleUtils";
+import AlignmentPanel from "./AlignmentPanel.jsx";
 import { isBendable } from "../utils/shapeUtils";
 import {
   IconButton,
   SectionLabel,
   Segmented,
   SliderRow,
-  SoonBadge,
   Toggle,
 } from "./ui/index.js";
 
@@ -38,17 +40,22 @@ const ICON_SIZE = 15;
  * Edits the selected shape when there is one, otherwise the style that new
  * shapes will be created with — the header says which.
  *
- * The Layer section is in the design but there is no z-order model on shapes
- * yet (draw order is array order, with no reordering operation in the realtime
- * protocol), so those four controls render disabled.
+ * The Layer section rearranges the shape array, which is what draw order
+ * actually is. It applies to the whole selection, so it is disabled only when
+ * nothing is selected.
  */
 export default function StylePanel({
   tool,
   selectedShape,
+  selectionCount = selectedShape ? 1 : 0,
   activeStyle,
   onStyleChange,
+  layerActions,
+  groupActions,
+  alignmentActions,
   compact = false,
 }) {
+  const canReorder = selectionCount > 0;
   const style = selectedShape ? getShapeStyle(selectedShape) : activeStyle;
   const opacityPct = Math.round((style.opacity ?? 1) * 100);
 
@@ -61,7 +68,11 @@ export default function StylePanel({
       {!compact && (
         <div className="flex items-center justify-between">
           <SectionLabel>
-            {selectedShape ? "Selection" : "Tool style"}
+            {selectionCount > 1
+              ? `Selection (${selectionCount})`
+              : selectedShape
+                ? "Selection"
+                : "Tool style"}
           </SectionLabel>
           <SlidersHorizontal size={14} className="text-text-soft" />
         </div>
@@ -142,25 +153,60 @@ export default function StylePanel({
         />
       </section>
 
-      {/* ── Layer — no z-order model exists yet ──────────────────── */}
+      {/* ── Layer ────────────────────────────────────────────────── */}
       <section className="space-y-2">
-        <div className="flex items-center gap-1.5">
-          <SectionLabel>Layer</SectionLabel>
-          <SoonBadge />
-        </div>
+        <SectionLabel>Layer</SectionLabel>
         <div className="grid grid-cols-4 gap-1.5">
-          <IconButton disabled title="Send to back — not available yet">
+          <IconButton
+            disabled={!canReorder}
+            title="Send to back (Ctrl+[)"
+            onClick={layerActions?.sendToBack}
+          >
             <SendToBack size={ICON_SIZE} />
           </IconButton>
-          <IconButton disabled title="Send backward — not available yet">
+          <IconButton
+            disabled={!canReorder}
+            title="Send backward ([)"
+            onClick={layerActions?.sendBackward}
+          >
             <ArrowDown size={ICON_SIZE} />
           </IconButton>
-          <IconButton disabled title="Bring forward — not available yet">
+          <IconButton
+            disabled={!canReorder}
+            title="Bring forward (])"
+            onClick={layerActions?.bringForward}
+          >
             <ArrowUp size={ICON_SIZE} />
           </IconButton>
-          <IconButton disabled title="Bring to front — not available yet">
+          <IconButton
+            disabled={!canReorder}
+            title="Bring to front (Ctrl+])"
+            onClick={layerActions?.bringToFront}
+          >
             <BringToFront size={ICON_SIZE} />
           </IconButton>
+        </div>
+      </section>
+
+      {/* ── Align — only meaningful with more than one shape ─────── */}
+      <AlignmentPanel alignmentActions={alignmentActions} />
+
+      {/* ── Group ────────────────────────────────────────────────── */}
+      <section className="space-y-2">
+        <SectionLabel>Group</SectionLabel>
+        <div className="grid grid-cols-2 gap-1.5">
+          <StyleChip
+            label="Group"
+            icon={Group}
+            disabled={!groupActions?.canGroup}
+            onClick={groupActions?.group}
+          />
+          <StyleChip
+            label="Ungroup"
+            icon={Ungroup}
+            disabled={!groupActions?.canUngroup}
+            onClick={groupActions?.ungroup}
+          />
         </div>
       </section>
 

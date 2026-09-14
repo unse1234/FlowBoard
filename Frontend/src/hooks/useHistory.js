@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 export function useHistory({
   shapes,
   setShapes,
-  setSelectedId,
+  clearSelection,
   maxLength = 50,
 }) {
   const history = useRef([]);
@@ -47,8 +47,8 @@ export function useHistory({
 
     redoStack.current.push(structuredClone(current));
     setShapes(previous);
-    setSelectedId(null);
-  }, [setSelectedId, setShapes]);
+    clearSelection();
+  }, [clearSelection, setShapes]);
 
   const redo = useCallback(() => {
     if (!redoStack.current.length) return;
@@ -58,8 +58,8 @@ export function useHistory({
 
     history.current.push(structuredClone(current));
     setShapes(next);
-    setSelectedId(null);
-  }, [setSelectedId, setShapes]);
+    clearSelection();
+  }, [clearSelection, setShapes]);
 
   return {
     setShapesWithHistory,

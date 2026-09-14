@@ -1,17 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_STYLE,
+  GRID_SIZE,
   MAX_SCALE,
   MIN_SCALE,
   SCALE_BY,
 } from "../constants/canvas";
 import { TOOLS } from "../constants/tools";
+import { normalizeShapeIdSet } from "../domain/board/shapeIdentity.js";
 import {
-  deleteShapeById,
+  assignGroupId,
+  clearGroupId,
+  hasGroupedShape,
+} from "../domain/board/shapeGrouping.js";
+import { createClientId } from "../features/shared/id/createClientId.js";
+import {
+  bringShapesToFront,
+  moveShapesBackward,
+  moveShapesForward,
+  sendShapesToBack,
+} from "../domain/board/shapeOrdering.js";
+import {
+  deleteShapesById,
   updateShapeById,
 } from "../domain/board/shapeMutations";
+import {
+  getAlignmentPositions,
+  getDistributionPositions,
+} from "../domain/geometry/alignment.js";
+import { getShapesBoundingBox } from "../domain/geometry/bounds.js";
 import { loadImageAsset } from "../domain/images/imageAssets";
-import { updateShapeStyle } from "../domain/shapes/shapeOperations";
+import { moveShapeTo, updateShapeStyle } from "../domain/shapes/shapeOperations";
 import { PersistenceManager } from "../features/persistence/PersistenceManager.js";
 import { LocalStorageAdapter } from "../features/persistence/storage/LocalStorageAdapter.js";
 import {
@@ -23,7 +42,9 @@ import {
 import { useRealtimeCollaboration } from "../features/realtime/hooks/useRealtimeCollaboration.js";
 import { OPERATION_TYPES } from "../features/realtime/operations/operationTypes.js";
 import { useBoardSelection } from "./useBoardSelection";
+import { useCanvasPan } from "./useCanvasPan";
 import { useHistory } from "./useHistory";
+import { useClipboard } from "./useClipboard";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useShapeRegistry } from "./useShapeRegistry";
 import { useWhiteboardEvents } from "./useWhiteboardEvents";
@@ -56,6 +77,14 @@ export function useWhiteboard() {
     [],
   );
 
+  const { isSpaceHeld, isSpaceHeldRef } = useCanvasPan();
+  const [gridEnabled, setGridEnabled] = useState(false);
+
+  // Read from inside the drag handlers, which stay stable across renders.
+  const gridSizeRef = useRef(0);
+  useEffect(() => {
+    gridSizeRef.current = gridEnabled ? GRID_SIZE : 0;
+  }, [gridEnabled]);
   const [tool, setTool] = useState(TOOLS.SELECT);
   const [activeStyle, setActiveStyle] = useState(DEFAULT_STYLE);
   const [font, setFont] = useState(DEFAULT_STYLE.fontFamily);
@@ -92,9 +121,11 @@ export function useWhiteboard() {
   useEffect(() => {
     if (!collaborationRoomId || !pendingCollaborationSeedRef.current) return;
 
-    pendingCollaborationSeedRef.current.forEach((shape) => {
-      publishLocalOperation(OPERATION_TYPES.CREATE_SHAPE, { shape });
-    });
+    if (pendingCollaborationSeedRef.current.length > 0) {
+      publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, {
+        shapes: pendingCollaborationSeedRef.current,
+      });
+    }
     pendingCollaborationSeedRef.current = null;
   }, [collaborationRoomId, publishLocalOperation]);
 
@@ -114,20 +145,24 @@ export function useWhiteboard() {
   }, [boardId, persistenceManager, shapes]);
 
   const {
-    selectedId,
-    setSelectedId,
+    selectedShapeIds,
     selectedShape,
+    selectedShapes,
     editingTextId,
     editingTextShape,
     selectShape,
+    selectShapes,
+    toggleShapeSelection,
+    addShapesToSelection,
+    removeShapesFromSelection,
     clearSelection,
     activateTextEditing,
     finishTextEditing,
   } = useBoardSelection(shapes);
 
   const { registerShapeRef } = useShapeRegistry({
-    selectedId,
-    selectedShape,
+    selectedShapeIds,
+    selectedShapes,
     editingTextId,
     transformerRef,
   });
@@ -136,7 +171,7 @@ export function useWhiteboard() {
     useHistory({
       shapes,
       setShapes,
-      setSelectedId,
+      clearSelection,
     });
 
   const updateShape = useCallback(
@@ -160,31 +195,221 @@ export function useWhiteboard() {
     [publishLocalOperation, setShapesWithHistory],
   );
 
-  const deleteSelectedShape = useCallback(() => {
-    if (!selectedId) return;
+  /**
+   * Edit many shapes as one undoable step and one operation.
+   *
+   * The updater runs synchronously inside setShapesWithHistory, so the patches
+   * it produces are collected before this function returns.
+   */
+  const updateShapes = useCallback(
+    (ids, updater) => {
+      const targets = normalizeShapeIdSet(ids);
+      if (targets.size === 0) return;
 
-    setShapesWithHistory((prev) => deleteShapeById(prev, selectedId));
-    publishLocalOperation(OPERATION_TYPES.DELETE_SHAPE, {
-      shapeId: selectedId,
+      const patches = [];
+
+      setShapesWithHistory((prev) =>
+        prev.map((shape) => {
+          if (!targets.has(String(shape.id))) return shape;
+
+          const next = updater(shape);
+          patches.push({ shapeId: String(shape.id), patch: next });
+          return next;
+        }),
+      );
+
+      if (patches.length === 0) return;
+
+      publishLocalOperation(OPERATION_TYPES.UPDATE_SHAPES, { patches });
+    },
+    [publishLocalOperation, setShapesWithHistory],
+  );
+
+  const deleteSelectedShapes = useCallback(() => {
+    if (selectedShapeIds.length === 0) return;
+
+    setShapesWithHistory((prev) => deleteShapesById(prev, selectedShapeIds));
+    publishLocalOperation(OPERATION_TYPES.DELETE_SHAPES, {
+      shapeIds: selectedShapeIds,
     });
     clearSelection();
-  }, [clearSelection, publishLocalOperation, selectedId, setShapesWithHistory]);
+  }, [clearSelection, publishLocalOperation, selectedShapeIds, setShapesWithHistory]);
 
   /**
-   * Remove every shape, as one undoable step.
+   * Move the selection through the z-order.
    *
-   * Peers are told shape by shape because DELETE_SHAPE is the only removal
-   * operation the protocol has — there is no "clear board" op to send.
+   * Draw order is array order, so this rearranges the array rather than writing
+   * a z-index onto shapes. The ordering helpers return the original array when
+   * nothing could move, which both keeps the change out of the undo history and
+   * suppresses a pointless operation to peers.
    */
+  const reorderSelection = useCallback(
+    (operationType) => {
+      if (selectedShapeIds.length === 0) return;
+
+      const reorder = {
+        [OPERATION_TYPES.BRING_FORWARD]: moveShapesForward,
+        [OPERATION_TYPES.SEND_BACKWARD]: moveShapesBackward,
+        [OPERATION_TYPES.BRING_TO_FRONT]: bringShapesToFront,
+        [OPERATION_TYPES.SEND_TO_BACK]: sendShapesToBack,
+      }[operationType];
+
+      let changed = false;
+
+      setShapesWithHistory((prev) => {
+        const next = reorder(prev, selectedShapeIds);
+        changed = next !== prev;
+        return next;
+      });
+
+      if (!changed) return;
+
+      publishLocalOperation(operationType, { shapeIds: selectedShapeIds });
+    },
+    [publishLocalOperation, selectedShapeIds, setShapesWithHistory],
+  );
+
+  const layerActions = useMemo(
+    () => ({
+      bringForward: () => reorderSelection(OPERATION_TYPES.BRING_FORWARD),
+      sendBackward: () => reorderSelection(OPERATION_TYPES.SEND_BACKWARD),
+      bringToFront: () => reorderSelection(OPERATION_TYPES.BRING_TO_FRONT),
+      sendToBack: () => reorderSelection(OPERATION_TYPES.SEND_TO_BACK),
+    }),
+    [reorderSelection],
+  );
+
+  /**
+   * Group the selection under a fresh id.
+   *
+   * Grouping is a field on each shape rather than a container, so this is an
+   * ordinary multi-shape patch: the array stays flat and z-order is untouched.
+   */
+  const groupSelection = useCallback(() => {
+    if (selectedShapeIds.length < 2) return;
+
+    const groupId = createClientId("grp");
+    let changed = false;
+
+    setShapesWithHistory((prev) => {
+      const next = assignGroupId(prev, selectedShapeIds, groupId);
+      changed = next !== prev;
+      return next;
+    });
+
+    if (!changed) return;
+
+    publishLocalOperation(OPERATION_TYPES.GROUP, {
+      groupId,
+      shapeIds: selectedShapeIds,
+    });
+  }, [publishLocalOperation, selectedShapeIds, setShapesWithHistory]);
+
+  const ungroupSelection = useCallback(() => {
+    if (selectedShapeIds.length === 0) return;
+
+    let changed = false;
+
+    setShapesWithHistory((prev) => {
+      const next = clearGroupId(prev, { ids: selectedShapeIds });
+      changed = next !== prev;
+      return next;
+    });
+
+    if (!changed) return;
+
+    publishLocalOperation(OPERATION_TYPES.UNGROUP, { shapeIds: selectedShapeIds });
+  }, [publishLocalOperation, selectedShapeIds, setShapesWithHistory]);
+
+  const groupActions = useMemo(
+    () => ({
+      group: groupSelection,
+      ungroup: ungroupSelection,
+      canGroup: selectedShapeIds.length > 1,
+      canUngroup: hasGroupedShape(selectedShapes),
+    }),
+    [groupSelection, selectedShapeIds.length, selectedShapes, ungroupSelection],
+  );
+
+  /**
+   * Apply a map of id to position as one undoable step.
+   *
+   * Both aligning and distributing reduce to exactly this, and an empty map
+   * means the shapes were already in place — so nothing is recorded or sent.
+   */
+  const applyPositions = useCallback(
+    (positions) => {
+      if (positions.size === 0) return;
+
+      updateShapes([...positions.keys()], (shape) =>
+        moveShapeTo(shape, positions.get(String(shape.id))),
+      );
+    },
+    [updateShapes],
+  );
+
+  const alignmentActions = useMemo(
+    () => ({
+      align: (alignment) =>
+        applyPositions(getAlignmentPositions(selectedShapes, alignment)),
+      distribute: (axis) =>
+        applyPositions(getDistributionPositions(selectedShapes, axis)),
+      canAlign: selectedShapes.length > 1,
+      canDistribute: selectedShapes.length > 2,
+    }),
+    [applyPositions, selectedShapes],
+  );
+
+  const toggleGrid = useCallback(() => setGridEnabled((enabled) => !enabled), []);
+
+  /** Put a world point in the middle of the screen, without changing the zoom. */
+  const centerOn = useCallback((point) => {
+    setTransform((prev) => ({
+      ...prev,
+      x: window.innerWidth / 2 - point.x * prev.scale,
+      y: window.innerHeight / 2 - point.y * prev.scale,
+    }));
+  }, []);
+
+  const clipboard = useClipboard({
+    shapesRef,
+    selectedShapeIds,
+    setShapesWithHistory,
+    publishLocalOperation,
+    selectShapes,
+    deleteSelectedShapes,
+  });
+
+  const selectAll = useCallback(() => {
+    selectShapes(shapesRef.current.map((shape) => shape.id));
+  }, [selectShapes]);
+
+  /**
+   * Move the selection by a fixed amount.
+   *
+   * @returns {boolean} false when there was nothing to nudge, so the caller can
+   *   fall back to another meaning for the same key.
+   */
+  const nudgeSelection = useCallback(
+    (dx, dy) => {
+      if (selectedShapeIds.length === 0) return false;
+
+      updateShapes(selectedShapeIds, (shape) =>
+        moveShapeTo(shape, { x: shape.x + dx, y: shape.y + dy }),
+      );
+      return true;
+    },
+    [selectedShapeIds, updateShapes],
+  );
+
+  /** Remove every shape, as one undoable step and one operation. */
   const clearBoard = useCallback(() => {
     const current = shapesRef.current;
     if (current.length === 0) return;
 
     setShapesWithHistory([]);
-    current.forEach((shape) => {
-      publishLocalOperation(OPERATION_TYPES.DELETE_SHAPE, {
-        shapeId: shape.id,
-      });
+    publishLocalOperation(OPERATION_TYPES.DELETE_SHAPES, {
+      shapeIds: current.map((shape) => shape.id),
     });
     clearSelection();
   }, [clearSelection, publishLocalOperation, setShapesWithHistory]);
@@ -192,7 +417,20 @@ export function useWhiteboard() {
   useKeyboardShortcuts({
     undo,
     redo,
-    onDelete: deleteSelectedShape,
+    onDelete: deleteSelectedShapes,
+    onSelectAll: selectAll,
+    onClearSelection: clearSelection,
+    onNudge: nudgeSelection,
+    onBringForward: layerActions.bringForward,
+    onSendBackward: layerActions.sendBackward,
+    onBringToFront: layerActions.bringToFront,
+    onSendToBack: layerActions.sendToBack,
+    onGroup: groupSelection,
+    onUngroup: ungroupSelection,
+    onCopy: clipboard.copy,
+    onCut: clipboard.cut,
+    onPaste: clipboard.paste,
+    onDuplicate: clipboard.duplicate,
     setTool,
   });
 
@@ -204,15 +442,24 @@ export function useWhiteboard() {
       }));
 
       if (key === "fontFamily") setFont(value);
-      if (!selectedId) return;
+      if (selectedShapeIds.length === 0) return;
 
-      updateShape(
-        selectedId,
-        (shape) => updateShapeStyle(shape, { [key]: value }),
-        OPERATION_TYPES.CHANGE_STYLE,
+      // One shape keeps the dedicated CHANGE_STYLE operation it has always used;
+      // more than one goes through the batch path as a single edit.
+      if (selectedShapeIds.length === 1) {
+        updateShape(
+          selectedShapeIds[0],
+          (shape) => updateShapeStyle(shape, { [key]: value }),
+          OPERATION_TYPES.CHANGE_STYLE,
+        );
+        return;
+      }
+
+      updateShapes(selectedShapeIds, (shape) =>
+        updateShapeStyle(shape, { [key]: value }),
       );
     },
-    [selectedId, updateShape],
+    [selectedShapeIds, updateShape, updateShapes],
   );
 
   const findErasableNode = useCallback((node) => {
@@ -299,14 +546,18 @@ export function useWhiteboard() {
     activeStyle,
     transform,
     setTransform,
-    shapes,
+    shapesRef,
     setShapes,
     pendingImageAsset,
     setPendingImageAsset,
     setShapesWithHistory,
     saveHistoryCheckpoint,
-    setSelectedId,
+    selectedShapeIds,
     selectShape,
+    selectShapes,
+    toggleShapeSelection,
+    addShapesToSelection,
+    removeShapesFromSelection,
     clearSelection,
     activateTextEditing,
     finishTextEditing,
@@ -314,6 +565,8 @@ export function useWhiteboard() {
     setEraserPoints,
     setErasingIds,
     getErasableShapeId,
+    gridSizeRef,
+    isSpaceHeldRef,
     updateShape,
     publishLocalOperation,
     publishPresence,
@@ -361,6 +614,39 @@ export function useWhiteboard() {
     () => setTransform({ x: 0, y: 0, scale: 1 }),
     [],
   );
+
+  /**
+   * Frame every shape on the board.
+   *
+   * A board whose content has no extent in one axis (a single point, a perfectly
+   * horizontal line) would divide by zero, so those axes fall back to scale 1
+   * and only the centring applies.
+   */
+  const fitToScreen = useCallback(() => {
+    const bounds = getShapesBoundingBox(shapesRef.current);
+    if (!bounds) return;
+
+    const padding = 80;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const availableWidth = Math.max(1, viewportWidth - padding * 2);
+    const availableHeight = Math.max(1, viewportHeight - padding * 2);
+
+    const scaleX = bounds.width > 0 ? availableWidth / bounds.width : Infinity;
+    const scaleY = bounds.height > 0 ? availableHeight / bounds.height : Infinity;
+    const fitted = Math.min(scaleX, scaleY);
+
+    const nextScale = Number.isFinite(fitted)
+      ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, fitted))
+      : 1;
+
+    setTransform({
+      scale: nextScale,
+      x: viewportWidth / 2 - (bounds.x + bounds.width / 2) * nextScale,
+      y: viewportHeight / 2 - (bounds.y + bounds.height / 2) * nextScale,
+    });
+  }, []);
 
   const liveCursors = useMemo(
     () =>
@@ -410,7 +696,10 @@ export function useWhiteboard() {
     registerShapeRef,
     tool,
     setTool,
+    isPanMode: isSpaceHeld || tool === TOOLS.PAN,
     selectedShape,
+    selectedShapes,
+    selectedShapeIds,
     editingTextShape,
     activeStyle,
     font,
@@ -428,10 +717,19 @@ export function useWhiteboard() {
     undo,
     redo,
     clearBoard,
+    layerActions,
+    groupActions,
+    alignmentActions,
+    clipboard,
+    gridEnabled,
+    gridSize: gridEnabled ? GRID_SIZE : 0,
+    toggleGrid,
+    centerOn,
     zoomIn,
     zoomOut,
     setZoom,
     resetZoom,
+    fitToScreen,
     collaboration: {
       boardId,
       localBoardId,

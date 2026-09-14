@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Arrow, Ellipse, Group, Line, Rect, Text } from "react-konva";
-import { RENDER_STYLES } from "../../constants/canvas";
+import { NOTE_DEFAULTS, RENDER_STYLES } from "../../constants/canvas";
 import { TOOLS } from "../../constants/tools";
 import { getBox, getLinePoints } from "../../utils/shapeUtils";
-import { getShapeStyle, getStrokeDash } from "../../utils/styleUtils";
+import { getReadableInk, getShapeStyle, getStrokeDash } from "../../utils/styleUtils";
 import ImageShape from "./ImageShape";
 
 const hashShapeId = (id) =>
@@ -309,9 +309,62 @@ const TextShape = ({ shape, nodeProps, isEditing }) => {
   );
 };
 
+/**
+ * A sticky note: an opaque card that owns its own text.
+ *
+ * The text colour is derived from the note's fill rather than taken from
+ * `style.stroke`, because getShapeStyle flips dark strokes to white in dark
+ * mode — which would paint white text onto a pale yellow note.
+ *
+ * Notes render identically in both the sketchy and clean strategies; a wobbly
+ * sticky reads as a mistake rather than a style.
+ */
+const NoteShape = ({ shape, nodeProps, isEditing }) => {
+  const style = getShapeStyle(shape);
+  const fill = shape.style?.fill ?? NOTE_DEFAULTS.fill;
+  const padding = NOTE_DEFAULTS.padding;
+
+  return (
+    <BoxGroup shape={shape} nodeProps={nodeProps}>
+      {(box) => (
+        <>
+          <Rect
+            width={box.width}
+            height={box.height}
+            fill={fill}
+            cornerRadius={2}
+            opacity={style.opacity}
+            shadowColor="#0f172a"
+            shadowOpacity={0.18}
+            shadowBlur={8}
+            shadowOffsetY={3}
+          />
+          <Text
+            x={padding}
+            y={padding}
+            width={Math.max(0, box.width - padding * 2)}
+            height={Math.max(0, box.height - padding * 2)}
+            text={shape.text || ""}
+            visible={!isEditing}
+            fontFamily={style.fontFamily}
+            fontSize={style.fontSize}
+            fill={getReadableInk(fill)}
+            opacity={style.opacity}
+            lineHeight={1.3}
+            wrap="word"
+            ellipsis
+            listening={false}
+          />
+        </>
+      )}
+    </BoxGroup>
+  );
+};
+
 const SHARED_RENDERERS = {
   [TOOLS.TEXT]: TextShape,
   [TOOLS.IMAGE]: ImageShape,
+  [TOOLS.NOTE]: NoteShape,
 };
 
 const CLEAN_RENDERERS = {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TOOLS } from "../constants/tools.js";
 import {
   getTextEditorStyle,
   measureTextArea,
@@ -24,13 +25,17 @@ export default function TextEditorOverlay({
     });
   }, [shape?.id]);
 
+  // A note is a fixed card, so its editor scrolls inside the card instead of
+  // growing past its edge. Everything else grows to fit what was typed.
+  const autoGrow = shape?.type !== TOOLS.NOTE;
+
   useEffect(() => {
     const textarea = textareaRef.current;
-    if (!textarea) return;
+    if (!textarea || !autoGrow) return;
 
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight + 4}px`;
-  }, [value, shape?.id]);
+  }, [autoGrow, value, shape?.id]);
 
   if (!shape) return null;
 
@@ -69,12 +74,16 @@ export default function TextEditorOverlay({
           e.currentTarget.blur();
         }
       }}
-      className="fixed resize-none overflow-hidden border-2 border-brand bg-transparent p-0.5 outline-none text-current"
+      className={[
+        "fixed resize-none border-2 border-brand bg-transparent p-0.5 outline-none text-current",
+        autoGrow ? "overflow-hidden" : "fb-scroll overflow-y-auto",
+      ].join(" ")}
       style={{
         left: editorStyle.left,
         top: editorStyle.top,
         width: editorStyle.width,
         minHeight: editorStyle.minHeight,
+        height: editorStyle.height,
         zIndex: 1000,
         fontSize: editorStyle.fontSize,
         fontFamily: editorStyle.fontFamily,

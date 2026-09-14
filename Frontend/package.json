@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test:realtime": "node --test src/features/realtime/operations/*.test.js src/features/persistence/*.test.js",
+    "test:realtime": "node --test src/**/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

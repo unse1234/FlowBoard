@@ -1,40 +1,92 @@
 import { useCallback, useMemo, useState } from "react";
-import { getSelectedShapes } from "../domain/selection/selectionModel";
+import { isShapeIdEqual, normalizeShapeIdSet } from "../domain/board/shapeIdentity.js";
+import {
+  addToSelection,
+  getSelectedShapes,
+  toggleSelection,
+} from "../domain/selection/selectionModel.js";
 
+/**
+ * Board selection.
+ *
+ * `selectedIds` is the raw click order and can briefly name a shape a peer has
+ * just deleted. Actions use `selectedShapeIds` instead, which is derived by
+ * matching against the live board — so stale ids resolve away on their own and
+ * there is no reconciliation effect to run on every shape change.
+ */
 export function useBoardSelection(shapes) {
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [editingTextId, setEditingTextId] = useState(null);
 
-  const { selectedShape, editingTextShape } = useMemo(
-    () => getSelectedShapes({ shapes, selectedId, editingTextId }),
-    [editingTextId, selectedId, shapes]
+  const { selectedShapes, selectedShape, editingTextShape } = useMemo(
+    () => getSelectedShapes({ shapes, selectedIds, editingTextId }),
+    [editingTextId, selectedIds, shapes],
+  );
+
+  const selectedShapeIds = useMemo(
+    () => selectedShapes.map((shape) => String(shape.id)),
+    [selectedShapes],
   );
 
   const selectShape = useCallback((id) => {
-    setSelectedId(id);
+    setSelectedIds(id === null || id === undefined ? [] : [String(id)]);
+  }, []);
+
+  const selectShapes = useCallback((ids) => {
+    setSelectedIds(Array.from(normalizeShapeIdSet(ids)));
+  }, []);
+
+  const toggleShapeSelection = useCallback((id) => {
+    setSelectedIds((current) => toggleSelection(current, id));
+  }, []);
+
+  const addShapesToSelection = useCallback((ids) => {
+    setSelectedIds((current) => addToSelection(current, ids));
+  }, []);
+
+  const removeShapesFromSelection = useCallback((ids) => {
+    const removed = normalizeShapeIdSet(ids);
+
+    setSelectedIds((current) => {
+      const next = current.filter((id) => !removed.has(String(id)));
+
+      return next.length === current.length ? current : next;
+    });
   }, []);
 
   const clearSelection = useCallback(() => {
-    setSelectedId(null);}, []);
+    setSelectedIds((current) => (current.length === 0 ? current : []));
+  }, []);
+
+  const isSelected = useCallback(
+    (id) => selectedIds.some((selected) => isShapeIdEqual(selected, id)),
+    [selectedIds],
+  );
 
   const activateTextEditing = useCallback((id) => {
-    setSelectedId(id);
+    setSelectedIds([String(id)]);
     setEditingTextId(id);
   }, []);
 
   const finishTextEditing = useCallback((id = null) => {
-    if (id) setSelectedId(id);
+    if (id) setSelectedIds([String(id)]);
     setEditingTextId(null);
   }, []);
 
   return {
-    selectedId,
-    setSelectedId,
+    selectedIds,
+    selectedShapeIds,
     selectedShape,
+    selectedShapes,
     editingTextId,
     editingTextShape,
     selectShape,
+    selectShapes,
+    toggleShapeSelection,
+    addShapesToSelection,
+    removeShapesFromSelection,
     clearSelection,
+    isSelected,
     activateTextEditing,
     finishTextEditing,
   };

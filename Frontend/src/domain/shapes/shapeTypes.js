@@ -1,4 +1,4 @@
-import { TOOLS } from "../../constants/tools";
+import { TOOLS } from "../../constants/tools.js";
 
 export const DRAWABLE_TOOLS = new Set([
   TOOLS.RECT,
@@ -15,7 +15,11 @@ export const BOX_SHAPES = new Set([
   TOOLS.CIRCLE,
   TOOLS.DIAMOND,
   TOOLS.IMAGE,
+  TOOLS.NOTE,
 ]);
+
+/** Shapes whose body is edited through the text overlay. */
+export const TEXT_EDITABLE_SHAPES = new Set([TOOLS.TEXT, TOOLS.NOTE]);
 
 export const LINE_SHAPES = new Set([TOOLS.LINE, TOOLS.ARROW, TOOLS.PEN]);
 

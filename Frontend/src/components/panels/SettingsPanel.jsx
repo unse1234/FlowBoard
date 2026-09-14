@@ -20,15 +20,17 @@ import {
 /**
  * SettingsPanel — board and workspace settings.
  *
- * Theme, sharing and the room identity are real and wired. Grid, export,
- * board deletion and permissions exist in the design but have no
- * implementation, so they render as disabled rows carrying a "Soon" marker.
+ * Theme, the canvas grid, sharing and the room identity are real and wired.
+ * Export and permissions exist in the design but have no implementation, so they
+ * render as disabled rows carrying a "Soon" marker.
  */
 export default function SettingsPanel({
   theme,
   onToggleTheme,
   collaboration,
   onClearBoard,
+  gridEnabled = false,
+  onToggleGrid,
   shapeCount = 0,
 }) {
   const isDark = theme === "dark";
@@ -56,9 +58,14 @@ export default function SettingsPanel({
         <SettingRow
           icon={Grid3x3}
           label="Canvas grid"
-          description="Snap and background grid"
-          soon
-          control={<Toggle checked={false} disabled label="Canvas grid" />}
+          description="Background grid, and snapping to it while dragging"
+          control={
+            <Toggle
+              checked={gridEnabled}
+              onChange={onToggleGrid}
+              label="Canvas grid"
+            />
+          }
         />
       </section>
 

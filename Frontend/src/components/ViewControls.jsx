@@ -114,12 +114,18 @@ export function ZoomPill({ scale, onSetZoom, onResetZoom, onUndo, onRedo }) {
 }
 
 /**
- * ViewControls — bottom-right cluster: zoom out/in and fullscreen.
+ * ViewControls — bottom-right cluster: fit, zoom out/in and fullscreen.
  *
- * "Fit to screen" is in the design but needs a bounding box across every shape
- * type, which the geometry layer does not expose yet, so it renders disabled.
+ * "Fit to screen" is disabled on an empty board, since there is nothing to
+ * frame — getShapesBoundingBox returns null and the action would be a no-op.
  */
-export function ViewControls({ scale, onZoomIn, onZoomOut }) {
+export function ViewControls({
+  scale,
+  onZoomIn,
+  onZoomOut,
+  onFitToScreen,
+  canFitToScreen = false,
+}) {
   const [isFullscreen, setIsFullscreen] = useState(
     () => typeof document !== "undefined" && Boolean(document.fullscreenElement),
   );
@@ -150,7 +156,11 @@ export function ViewControls({ scale, onZoomIn, onZoomOut }) {
         "border border-border bg-pill text-on-pill shadow-panel",
       ].join(" ")}
     >
-      <PillButton disabled title="Fit to screen — not available yet">
+      <PillButton
+        title={canFitToScreen ? "Fit to screen" : "Fit to screen — board is empty"}
+        disabled={!canFitToScreen}
+        onClick={onFitToScreen}
+      >
         <Scan size={15} />
       </PillButton>
 

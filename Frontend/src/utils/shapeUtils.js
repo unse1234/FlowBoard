@@ -1,7 +1,7 @@
-import { TOOLS } from "../constants/tools";
-import { BENDABLE_SHAPES, BOX_SHAPES, LINE_SHAPES } from "../domain/shapes/shapeTypes";
-import { getDistanceToSegment } from "./geometry";
-import { getShapeStyle } from "./styleUtils";
+import { TOOLS } from "../constants/tools.js";
+import { BENDABLE_SHAPES, BOX_SHAPES, LINE_SHAPES } from "../domain/shapes/shapeTypes.js";
+import { getDistanceToSegment } from "./geometry.js";
+import { getShapeStyle } from "./styleUtils.js";
 
 /**
  * Identifies if a shape is line-like (line, arrow, or pen)

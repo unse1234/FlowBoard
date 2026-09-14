@@ -1,4 +1,9 @@
-const { OPERATION_TYPES, SUPPORTED_OPERATION_TYPES } = require("./operationTypes");
+const {
+  OPERATION_TYPES,
+  ORDERING_OPERATION_TYPES,
+  SINGLE_PATCH_OPERATION_TYPES,
+  SUPPORTED_OPERATION_TYPES,
+} = require("./operationTypes");
 
 function validateOperation(operation) {
   if (!operation || typeof operation !== "object") {
@@ -33,36 +38,117 @@ function validateOperation(operation) {
 }
 
 function validatePayload(operation) {
-  const { payload, type } = operation;
+  const payload = operation.payload;
+  const type = operation.type;
 
   if (type === OPERATION_TYPES.CREATE_SHAPE) {
     if (!payload.shape || typeof payload.shape !== "object") {
       return { valid: false, reason: "CREATE_SHAPE requires payload.shape." };
     }
 
-    if (!isNonEmptyString(String(payload.shape.id ?? ""))) {
+    if (!isShapeId(payload.shape.id)) {
       return { valid: false, reason: "CREATE_SHAPE requires shape.id." };
     }
 
     return { valid: true };
   }
 
-  if (
-    type === OPERATION_TYPES.DELETE_SHAPE ||
-    type === OPERATION_TYPES.UPDATE_SHAPE ||
-    type === OPERATION_TYPES.MOVE_SHAPE ||
-    type === OPERATION_TYPES.ROTATE_SHAPE ||
-    type === OPERATION_TYPES.RESIZE_SHAPE ||
-    type === OPERATION_TYPES.CHANGE_STYLE ||
-    type === OPERATION_TYPES.BRING_FORWARD ||
-    type === OPERATION_TYPES.SEND_BACKWARD
-  ) {
-    if (!isNonEmptyString(String(payload.shapeId ?? ""))) {
-      return { valid: false, reason: `${type} requires payload.shapeId.` };
+  if (type === OPERATION_TYPES.CREATE_SHAPES) {
+    if (!Array.isArray(payload.shapes) || payload.shapes.length === 0) {
+      return { valid: false, reason: "CREATE_SHAPES requires a non-empty payload.shapes." };
+    }
+
+    const everyShapeIsValid = payload.shapes.every(
+      (shape) => shape && typeof shape === "object" && isShapeId(shape.id),
+    );
+    if (!everyShapeIsValid) {
+      return { valid: false, reason: "CREATE_SHAPES requires every shape to have an id." };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.UPDATE_SHAPES) {
+    if (!Array.isArray(payload.patches) || payload.patches.length === 0) {
+      return { valid: false, reason: "UPDATE_SHAPES requires a non-empty payload.patches." };
+    }
+
+    const everyPatchIsValid = payload.patches.every(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        isShapeId(entry.shapeId) &&
+        entry.patch &&
+        typeof entry.patch === "object",
+    );
+    if (!everyPatchIsValid) {
+      return {
+        valid: false,
+        reason: "UPDATE_SHAPES requires every entry to have shapeId and patch.",
+      };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.DELETE_SHAPES) {
+    if (!hasShapeIdList(payload.shapeIds)) {
+      return { valid: false, reason: "DELETE_SHAPES requires a non-empty payload.shapeIds." };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.GROUP) {
+    if (!isShapeId(payload.groupId)) {
+      return { valid: false, reason: "GROUP requires payload.groupId." };
+    }
+
+    if (!hasShapeIdList(payload.shapeIds)) {
+      return { valid: false, reason: "GROUP requires a non-empty payload.shapeIds." };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.UNGROUP) {
+    if (!isShapeId(payload.groupId) && !hasShapeIdList(payload.shapeIds)) {
+      return { valid: false, reason: "UNGROUP requires payload.groupId or payload.shapeIds." };
+    }
+
+    return { valid: true };
+  }
+
+  // Ordering ops accept either form: shapeId is the original single-shape
+  // spelling and must keep validating, shapeIds is the multi-select one.
+  if (ORDERING_OPERATION_TYPES.has(type)) {
+    if (!isShapeId(payload.shapeId) && !hasShapeIdList(payload.shapeIds)) {
+      return {
+        valid: false,
+        reason: type + " requires payload.shapeId or payload.shapeIds.",
+      };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.DELETE_SHAPE || SINGLE_PATCH_OPERATION_TYPES.has(type)) {
+    if (!isShapeId(payload.shapeId)) {
+      return { valid: false, reason: type + " requires payload.shapeId." };
     }
   }
 
   return { valid: true };
+}
+
+function hasShapeIdList(value) {
+  return Array.isArray(value) && value.length > 0 && value.every(isShapeId);
+}
+
+function isShapeId(value) {
+  if (value === null || value === undefined || value === "") return false;
+
+  return isNonEmptyString(String(value));
 }
 
 function isNonEmptyString(value) {

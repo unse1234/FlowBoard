@@ -1,4 +1,4 @@
-import { DEFAULT_STYLE } from "../constants/canvas";
+import { DEFAULT_STYLE } from "../constants/canvas.js";
 import { ThemeManager } from "../features/theme/ThemeManager.js";
 
 const themeManager = new ThemeManager();
@@ -31,6 +31,19 @@ const isDarkColor = (color) => {
   const brightness = rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114;
   return brightness < 128;
 };
+
+/**
+ * Picks text ink that stays readable on a given background.
+ *
+ * Notes carry their own fill, so their text cannot use the themed stroke colour
+ * — getShapeStyle flips dark strokes to white in dark mode, which would put
+ * white text on a pale yellow note.
+ *
+ * @param {string} background - Background colour the text sits on
+ * @returns {string} A readable ink colour
+ */
+export const getReadableInk = (background) =>
+  isDarkColor(background) ? "#f8fafc" : "#111827";
 
 /**
  * Merges shape's custom style with global default style

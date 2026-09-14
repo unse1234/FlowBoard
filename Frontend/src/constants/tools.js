@@ -7,6 +7,7 @@ export const TOOLS = {
   LINE: "line",
   ARROW: "arrow",
   PEN: "pen",
+  NOTE: "note",
   TEXT: "text",
   IMAGE: "image",
   ERASER: "eraser",

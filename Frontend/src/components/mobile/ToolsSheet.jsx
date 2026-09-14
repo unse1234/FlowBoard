@@ -11,6 +11,7 @@ import {
   MousePointer2,
   Pencil,
   Square,
+  StickyNote,
   Type,
   Unlock,
   Zap,
@@ -45,7 +46,10 @@ const TAB_TOOLS = {
     { id: TOOLS.LINE, label: "Line", Icon: Minus },
     { id: TOOLS.ARROW, label: "Arrow", Icon: ArrowRight },
   ],
-  text: [{ id: TOOLS.TEXT, label: "Text", Icon: Type }],
+  text: [
+    { id: TOOLS.TEXT, label: "Text", Icon: Type },
+    { id: TOOLS.NOTE, label: "Note", Icon: StickyNote },
+  ],
   more: [
     { id: TOOLS.IMAGE, label: "Image", Icon: ImagePlus, opensFile: true },
   ],
