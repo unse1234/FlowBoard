@@ -7,21 +7,26 @@ import { isBendable } from "../utils/shapeUtils";
  *
  * Displays interactive line editing UI for bendable shapes (line, arrow).
  * Shows skeleton line and draggable breakpoints for precise line manipulation.
- * Scales all elements based on current zoom level for consistent visibility.
+ * Scales all elements based on current zoom level for consistent visibility,
+ * and enlarges the breakpoints on touch so a finger can grab them.
  *
  * @param {Object} selectedShape - Currently selected bendable shape
  * @param {number} scale - Current canvas zoom scale
+ * @param {Object} palette - Canvas colour tokens
+ * @param {boolean} touch - Coarse pointer
  * @param {Function} onAnchorDragMove - Callback when breakpoint is dragged
  */
 export default function LineEditor({
   selectedShape,
   scale,
+  palette,
+  touch = false,
   onAnchorDragStart,
   onAnchorDragMove,
 }) {
   if (!isBendable(selectedShape)) return null;
 
-  const handleRadius = 6 / scale;
+  const handleRadius = (touch ? 9 : 5.5) / scale;
   const skeletonWidth = 1.5 / scale;
   const style = getShapeStyle(selectedShape);
 
@@ -32,7 +37,7 @@ export default function LineEditor({
         x={selectedShape.x}
         y={selectedShape.y}
         points={selectedShape.points}
-        stroke="#2563eb"
+        stroke={palette.selection}
         strokeWidth={skeletonWidth}
         dash={[8 / scale, 6 / scale]}
         tension={style.bendStyle === "arc" ? 0.45 : 0}
@@ -49,9 +54,9 @@ export default function LineEditor({
             x={selectedShape.x + point}
             y={selectedShape.y + selectedShape.points[index + 1]}
             radius={handleRadius}
-            fill="#ffffff"
-            stroke="#2563eb"
-            strokeWidth={2 / scale}
+            fill={palette.handleFill}
+            stroke={palette.selection}
+            strokeWidth={1.5 / scale}
             draggable
             onMouseDown={(e) => {
               e.cancelBubble = true;

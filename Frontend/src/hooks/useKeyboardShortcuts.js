@@ -1,79 +1,126 @@
-import { useEffect } from "react";
-import { TOOLS } from "../constants/tools";
-
-// Prevent keyboard shortcuts from interfering with form input operations
-const FORM_TAGS = ["INPUT", "TEXTAREA", "SELECT"];
-
-/**
- * Single-key tool shortcuts, matching the hints shown in the toolbar tooltips.
- * Keep the two in step — a tooltip that promises a key that does nothing is
- * worse than no tooltip.
- */
-const TOOL_SHORTCUTS = {
-  v: TOOLS.SELECT,
-  r: TOOLS.RECT,
-  o: TOOLS.CIRCLE,
-  d: TOOLS.DIAMOND,
-  l: TOOLS.LINE,
-  a: TOOLS.ARROW,
-  p: TOOLS.PEN,
-  t: TOOLS.TEXT,
-  k: TOOLS.LASER,
-  e: TOOLS.ERASER,
-};
+import { useMemo } from "react";
+import { TOOL_SHORTCUTS } from "../constants/toolMeta.js";
+import {
+  BOARD_SHORTCUTS,
+  NUDGE_STEP,
+  NUDGE_STEP_LARGE,
+} from "../features/shortcuts/boardShortcuts.js";
+import { useShortcuts } from "../features/shortcuts/useShortcuts.js";
 
 /**
- * useKeyboardShortcuts Hook - Handles global keyboard shortcuts
+ * useKeyboardShortcuts — binds the board's shortcut tables to handlers.
  *
- * Undo/redo respond to both the arrow keys and Ctrl/Cmd+Z, delete removes the
- * selection, and unmodified letter keys switch tools.
+ * The bindings themselves are data in `features/shortcuts/boardShortcuts.js`
+ * and `constants/toolMeta.js`; this hook only decides what each action does.
  *
- * @param {Object} config - Keyboard action handlers
- * @param {Function} config.undo - Undo the last change
- * @param {Function} config.redo - Redo the last undone change
- * @param {Function} config.onDelete - Remove the current selection
- * @param {Function} [config.setTool] - Activate a tool by id
+ * @param {Object} config
+ * @param {Function} config.undo
+ * @param {Function} config.redo
+ * @param {Function} config.onDelete
+ * @param {Function} [config.onSelectAll]
+ * @param {Function} [config.onClearSelection]
+ * @param {(dx: number, dy: number) => boolean} [config.onNudge] - returns false
+ *   when there is no selection to move
+ * @param {Function} [config.setTool]
  */
-export function useKeyboardShortcuts({ undo, redo, onDelete, setTool }) {
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      const activeElement = document.activeElement;
-      // Skip shortcuts when user is typing in form fields
-      if (activeElement && FORM_TAGS.includes(activeElement.tagName)) {
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-        return;
-      }
-
-      if (e.ctrlKey || e.metaKey || e.altKey) {
-        return;
-      }
-
-      if (e.key === "ArrowLeft") {
-        undo();
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        redo();
-        return;
-      }
-      if (e.key === "Delete" || e.key === "Backspace") {
-        onDelete?.();
-        return;
-      }
-
-      const shortcutTool = TOOL_SHORTCUTS[e.key.toLowerCase()];
-      if (shortcutTool && setTool) {
-        setTool(shortcutTool);
-      }
+export function useKeyboardShortcuts({
+  undo,
+  redo,
+  onDelete,
+  onSelectAll,
+  onClearSelection,
+  onNudge,
+  onBringForward,
+  onSendBackward,
+  onBringToFront,
+  onSendToBack,
+  onGroup,
+  onUngroup,
+  onCopy,
+  onCut,
+  onPaste,
+  onDuplicate,
+  setTool,
+}) {
+  const shortcuts = useMemo(() => {
+    const nudgeOr = (dx, dy, fallback) => () => {
+      if (onNudge?.(dx, dy)) return;
+      fallback?.();
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onDelete, redo, setTool, undo]);
+    const handlers = {
+      redo: () => redo(),
+      undo: () => undo(),
+      selectAll: () => onSelectAll?.(),
+      clearSelection: () => onClearSelection?.(),
+
+      nudgeLeftLarge: nudgeOr(-NUDGE_STEP_LARGE, 0),
+      nudgeRightLarge: nudgeOr(NUDGE_STEP_LARGE, 0),
+      nudgeUpLarge: nudgeOr(0, -NUDGE_STEP_LARGE),
+      nudgeDownLarge: nudgeOr(0, NUDGE_STEP_LARGE),
+
+      nudgeLeft: nudgeOr(-NUDGE_STEP, 0, undo),
+      nudgeRight: nudgeOr(NUDGE_STEP, 0, redo),
+      nudgeUp: nudgeOr(0, -NUDGE_STEP),
+      nudgeDown: nudgeOr(0, NUDGE_STEP),
+
+      copy: () => onCopy?.(),
+      cut: () => onCut?.(),
+      paste: () => onPaste?.(),
+      duplicate: () => onDuplicate?.(),
+
+      ungroup: () => onUngroup?.(),
+      group: () => onGroup?.(),
+
+      bringToFront: () => onBringToFront?.(),
+      sendToBack: () => onSendToBack?.(),
+      bringForward: () => onBringForward?.(),
+      sendBackward: () => onSendBackward?.(),
+
+      delete: () => onDelete?.(),
+    };
+
+    const bindings = BOARD_SHORTCUTS.map(
+      ({ action, key, ctrl, shift, alt, description }) => ({
+        key,
+        ctrl,
+        shift,
+        alt,
+        description,
+        handler: handlers[action],
+      }),
+    );
+
+    if (setTool) {
+      for (const [tool, key] of Object.entries(TOOL_SHORTCUTS)) {
+        bindings.push({
+          key: key.toLowerCase(),
+          description: `Select the ${tool} tool`,
+          handler: () => setTool(tool),
+        });
+      }
+    }
+
+    return bindings;
+  }, [
+    onBringForward,
+    onBringToFront,
+    onClearSelection,
+    onCopy,
+    onCut,
+    onDelete,
+    onDuplicate,
+    onGroup,
+    onPaste,
+    onNudge,
+    onSelectAll,
+    onSendBackward,
+    onSendToBack,
+    onUngroup,
+    redo,
+    setTool,
+    undo,
+  ]);
+
+  useShortcuts(shortcuts);
 }

@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { useIsDesktop } from "./useMediaQuery.js";
+import { useIsCoarsePointer, useIsDesktop, useIsTabletUp } from "./useMediaQuery.js";
 
 /**
- * Mobile sheets. Only one is open at a time — they all occupy the bottom of the
- * screen, so they are a single slot rather than independent booleans.
+ * Phone-layout sheets. Only one is open at a time — they all occupy the bottom
+ * of the screen — so they are a single slot rather than independent booleans.
  */
-export const MOBILE_SHEETS = Object.freeze({
-  TOOLS: "tools",
-  CHAT: "chat",
-  PARTICIPANTS: "participants",
-  SETTINGS: "settings",
+export const SHEETS = Object.freeze({
+  STYLE: "style",
+  PEOPLE: "people",
+  SHARE: "share",
+  MENU: "menu",
 });
 
 const LAYOUT_STORAGE_KEY = "flowboard_layout";
@@ -26,82 +26,62 @@ function loadStoredLayout() {
 }
 
 /**
- * useUiLayout — owns which chrome is visible.
+ * useUiLayout — which chrome is visible, and which presentation to use.
  *
- * Drives the four desktop presentations from the design: all panels open, left
- * panel collapsed to the rail, minimal (both panels hidden), and the mobile
- * layout where side panels become bottom sheets.
+ * - desktop (≥ 1270): full tool dock, minimap
+ * - tablet (768–1269): floating islands with a compact dock
+ * - phone (< 768): top bar, bottom dock, sheets
  *
- * Panel visibility persists across reloads; the open sheet deliberately does
- * not, since a sheet is a transient interaction.
+ * Inspector and minimap visibility persist across reloads; the open sheet does
+ * not, since a sheet is a transient interaction. The pre-redesign
+ * `rightPanelOpen` preference is honoured as the inspector preference.
  */
 export function useUiLayout() {
   const isDesktop = useIsDesktop();
+  const isTabletUp = useIsTabletUp();
+  const isCoarsePointer = useIsCoarsePointer();
 
-  const [leftPanelOpen, setLeftPanelOpen] = useState(
-    () => loadStoredLayout()?.leftPanelOpen ?? true,
-  );
-  const [rightPanelOpen, setRightPanelOpen] = useState(
-    () => loadStoredLayout()?.rightPanelOpen ?? true,
+  const [inspectorOpen, setInspectorOpen] = useState(() => {
+    const stored = loadStoredLayout();
+    return stored?.inspectorOpen ?? stored?.rightPanelOpen ?? true;
+  });
+  const [minimapVisible, setMinimapVisible] = useState(
+    () => loadStoredLayout()?.minimapVisible ?? true,
   );
   const [openSheetId, setOpenSheetId] = useState(null);
 
-  // Sheets belong to the mobile layout only. Deriving this rather than clearing
-  // it in an effect means a resize to desktop cannot leave a sheet stranded on
-  // screen for a frame, and the phone-sized state is still there on the way back.
-  const mobileSheet = isDesktop ? null : openSheetId;
+  // Sheets belong to the phone layout. Deriving this rather than clearing it in
+  // an effect means widening the window cannot strand a sheet on screen.
+  const sheet = isTabletUp ? null : openSheetId;
 
   useEffect(() => {
     try {
       window.localStorage.setItem(
         LAYOUT_STORAGE_KEY,
-        JSON.stringify({ leftPanelOpen, rightPanelOpen }),
+        JSON.stringify({ inspectorOpen, minimapVisible }),
       );
     } catch {
       // Layout preference is a convenience; a full quota is not worth failing on.
     }
-  }, [leftPanelOpen, rightPanelOpen]);
+  }, [inspectorOpen, minimapVisible]);
 
-  const isMinimal = !leftPanelOpen && !rightPanelOpen;
+  const toggleInspector = useCallback(() => setInspectorOpen((open) => !open), []);
+  const toggleMinimap = useCallback(() => setMinimapVisible((visible) => !visible), []);
 
-  const toggleLeftPanel = useCallback(
-    () => setLeftPanelOpen((open) => !open),
-    [],
-  );
-  const toggleRightPanel = useCallback(
-    () => setRightPanelOpen((open) => !open),
-    [],
-  );
-
-  /** Minimal mode hides both panels; leaving it restores both. */
-  const toggleMinimal = useCallback(() => {
-    setLeftPanelOpen((open) => {
-      const nextMinimal = open || rightPanelOpen;
-      setRightPanelOpen(!nextMinimal);
-      return !nextMinimal;
-    });
-  }, [rightPanelOpen]);
-
-  const openSheet = useCallback((sheet) => setOpenSheetId(sheet), []);
+  const openSheet = useCallback((id) => setOpenSheetId(id), []);
   const closeSheet = useCallback(() => setOpenSheetId(null), []);
-  const toggleSheet = useCallback(
-    (sheet) => setOpenSheetId((current) => (current === sheet ? null : sheet)),
-    [],
-  );
 
   return {
     isDesktop,
-    leftPanelOpen,
-    rightPanelOpen,
-    isMinimal,
-    toggleLeftPanel,
-    toggleRightPanel,
-    toggleMinimal,
-    setLeftPanelOpen,
-    setRightPanelOpen,
-    mobileSheet,
+    isTabletUp,
+    isCoarsePointer,
+    inspectorOpen,
+    setInspectorOpen,
+    toggleInspector,
+    minimapVisible,
+    toggleMinimap,
+    sheet,
     openSheet,
     closeSheet,
-    toggleSheet,
   };
 }

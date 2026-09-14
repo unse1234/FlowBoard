@@ -46,3 +46,51 @@ function createMemoryStorage() {
     },
   };
 }
+
+test("loads a board saved before Phase 1, with no notes and no groupId", () => {
+  const storage = createMemoryStorage();
+  const manager = new PersistenceManager({ storage });
+
+  // Exactly what an older build wrote: no groupId anywhere, no note shapes.
+  storage.setItem(
+    "flowboard:board:legacy",
+    JSON.stringify({
+      version: 1,
+      boardId: "legacy",
+      updatedAt: 1,
+      shapes: [
+        { id: "s1", type: "rect", x: 0, y: 0, width: 10, height: 10 },
+        { id: "s2", type: "line", x: 5, y: 5, points: [0, 0, 10, 10] },
+      ],
+    }),
+  );
+
+  const restored = manager.loadBoard("legacy");
+
+  assert.equal(restored.shapes.length, 2);
+  assert.equal("groupId" in restored.shapes[0], false);
+});
+
+test("round-trips the fields Phase 1 added", () => {
+  const storage = createMemoryStorage();
+  const manager = new PersistenceManager({ storage });
+
+  const shapes = [
+    {
+      id: "n1",
+      type: "note",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      text: "hello",
+      groupId: "grp_1",
+      style: { fill: "#fef08a", fillEnabled: true },
+    },
+    { id: "s1", type: "rect", x: 0, y: 0, width: 10, height: 10, groupId: "grp_1" },
+  ];
+
+  manager.saveBoard({ boardId: "phase1", shapes, updatedAt: 2 });
+
+  assert.deepEqual(manager.loadBoard("phase1").shapes, shapes);
+});

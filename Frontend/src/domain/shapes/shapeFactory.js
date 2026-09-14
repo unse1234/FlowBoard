@@ -1,5 +1,5 @@
-import { TOOLS } from "../../constants/tools";
-import { DEFAULT_STYLE } from "../../constants/canvas";
+import { TOOLS } from "../../constants/tools.js";
+import { DEFAULT_STYLE, NOTE_DEFAULTS } from "../../constants/canvas.js";
 
 const now = () => Date.now();
 
@@ -39,6 +39,26 @@ export const createTextShape = ({ id, point, style, text = "" }) => ({
   text,
   width: 240,
   height: Math.max(36, (style?.fontSize ?? DEFAULT_STYLE.fontSize) * 1.5),
+});
+
+/**
+ * A sticky note is a box shape that owns its text, so it goes through the same
+ * transformer, bounds and z-order paths as a rectangle. It is dropped at a fixed
+ * size rather than drag-sized, and its fill is the colour the user perceives,
+ * which is why fill is forced on regardless of the active tool style.
+ */
+export const createNoteShape = ({ id, point, style, text = "" }) => ({
+  ...createBaseShape({ id, type: TOOLS.NOTE, point, style }),
+  text,
+  width: NOTE_DEFAULTS.width,
+  height: NOTE_DEFAULTS.height,
+  style: {
+    ...DEFAULT_STYLE,
+    ...style,
+    fill: style?.fill && style.fill !== DEFAULT_STYLE.fill ? style.fill : NOTE_DEFAULTS.fill,
+    fillEnabled: true,
+    fontSize: NOTE_DEFAULTS.fontSize,
+  },
 });
 
 export const createImageShape = ({ id, point, asset, style }) => {

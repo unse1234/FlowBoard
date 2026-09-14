@@ -1,5 +1,6 @@
-import { DEFAULT_STYLE } from "../constants/canvas";
+import { DEFAULT_STYLE } from "../constants/canvas.js";
 import { ThemeManager } from "../features/theme/ThemeManager.js";
+import { needsLightInkOnDarkCanvas } from "./color.js";
 
 const themeManager = new ThemeManager();
 
@@ -33,8 +34,25 @@ const isDarkColor = (color) => {
 };
 
 /**
+ * Picks text ink that stays readable on a given background.
+ *
+ * Notes carry their own fill, so their text cannot use the themed stroke colour
+ * — getShapeStyle flips dark strokes to white in dark mode, which would put
+ * white text on a pale yellow note.
+ *
+ * @param {string} background - Background colour the text sits on
+ * @returns {string} A readable ink colour
+ */
+export const getReadableInk = (background) =>
+  isDarkColor(background) ? "#f8fafc" : "#111827";
+
+/**
  * Merges shape's custom style with global default style
  * Shape properties take precedence, filling gaps with defaults
+ *
+ * On the dark canvas a near-black stroke is drawn white so it stays visible.
+ * Only strokes that would all but vanish are swapped; a chosen blue, red or
+ * green keeps its colour.
  *
  * @param {Object} shape - Shape object with optional style property
  * @returns {Object} Complete style object with all properties defined
@@ -45,7 +63,7 @@ export const getShapeStyle = (shape) => {
     ...(shape?.style ?? {}),
   };
 
-  if (themeManager.isDarkTheme() && isDarkColor(baseStyle.stroke)) {
+  if (themeManager.isDarkTheme() && needsLightInkOnDarkCanvas(baseStyle.stroke)) {
     return {
       ...baseStyle,
       stroke: "#ffffff",
@@ -54,6 +72,20 @@ export const getShapeStyle = (shape) => {
 
   return baseStyle;
 };
+
+/**
+ * The stored style merged over the defaults, without the dark-mode stroke flip.
+ *
+ * Style controls compare against this rather than getShapeStyle, so the ink
+ * swatch stays selected on the dark canvas where ink strokes render white.
+ *
+ * @param {Object} shape
+ * @returns {Object}
+ */
+export const getBaseShapeStyle = (shape) => ({
+  ...DEFAULT_STYLE,
+  ...(shape?.style ?? {}),
+});
 
 /**
  * Converts stroke style setting to Konva dash array format
