@@ -185,6 +185,7 @@ export function useWhiteboard() {
   const {
     setShapesWithHistory,
     saveHistoryCheckpoint,
+    discardLastCheckpoint,
     undo,
     redo,
     canUndo,
@@ -598,6 +599,7 @@ export function useWhiteboard() {
     setPendingImageAsset,
     setShapesWithHistory,
     saveHistoryCheckpoint,
+    discardLastCheckpoint,
     selectedShapeIds,
     selectShape,
     selectShapes,
@@ -815,6 +817,8 @@ export function useWhiteboard() {
     toolLocked,
     setToolLocked,
     transform,
+    // For gestures that compute a whole transform themselves (pinch, two-finger pan).
+    setViewTransform: setTransform,
     shapes,
     pendingImageAsset,
     laserPoints,

@@ -56,6 +56,16 @@ export function useHistory({
     pushShapesHistory(shapesRef.current);
   }, [pushShapesHistory]);
 
+  /**
+   * Forget the most recent checkpoint, for an interaction abandoned before it
+   * produced anything worth undoing (a stroke cut short by a pinch). Without
+   * this, the next undo would restore the board exactly as it already is.
+   */
+  const discardLastCheckpoint = useCallback(() => {
+    history.current.pop();
+    syncDepths();
+  }, [syncDepths]);
+
   const undo = useCallback(() => {
     if (!history.current.length) return;
 
@@ -83,6 +93,7 @@ export function useHistory({
   return {
     setShapesWithHistory,
     saveHistoryCheckpoint,
+    discardLastCheckpoint,
     undo,
     redo,
     canUndo: depths.undo > 0,

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Palette, SlidersHorizontal } from "lucide-react";
 import Minimap from "../components/Minimap";
 import TextEditorOverlay from "../components/TextEditorOverlay";
@@ -10,6 +10,7 @@ import InspectorPanel from "../components/inspector/InspectorPanel";
 import { getInspectorModel } from "../components/inspector/inspectorModel.js";
 import EmptyCanvasHint from "../components/layout/EmptyCanvasHint";
 import MobileTopBar from "../components/layout/MobileTopBar";
+import SelectionBar from "../components/layout/SelectionBar";
 import WorkspaceHeader from "../components/layout/WorkspaceHeader";
 import { buildBoardMenuItems } from "../components/layout/boardMenuItems.js";
 import { buildCanvasMenuItems } from "../components/layout/canvasMenuItems.js";
@@ -19,6 +20,7 @@ import SharePanel from "../components/collab/SharePanel";
 import VoicePill from "../components/collab/VoicePill";
 import PeoplePanel from "../components/panels/PeoplePanel";
 import { ActionList, IconButton, Island, Menu, Sheet } from "../components/ui/index.js";
+import { MAX_SCALE, MIN_SCALE } from "../constants/canvas.js";
 import { TOOLS } from "../constants/tools.js";
 import { getCanvasPalette } from "../design/canvasTokens.js";
 import { useVoice } from "../features/communication/voice/useVoice.js";
@@ -32,6 +34,7 @@ import { useShortcuts } from "../features/shortcuts/useShortcuts.js";
 import { useThemeContext } from "../features/theme/themeContext.js";
 import { useToast } from "../features/toasts/toastContext.js";
 import { useConnectionToasts } from "../hooks/useConnectionToasts";
+import { useTouchGestures } from "../hooks/useTouchGestures";
 import { SHEETS, useUiLayout } from "../hooks/useUiLayout";
 import { useViewportSize } from "../hooks/useViewportSize";
 import { useWhiteboard } from "../hooks/useWhiteboard";
@@ -174,7 +177,10 @@ export default function BoardPage() {
     deleteSelection,
     selectAll,
     fitToScreen,
+    resetZoom,
     handleStyleChange,
+    setViewTransform,
+    cancelPointerInteraction,
   } = board;
 
   const voice = useVoice({
@@ -208,6 +214,16 @@ export default function BoardPage() {
   const { startCollaboration, copyCollaborationLink, isEnabled: isShared } = collaboration;
 
   useConnectionToasts(collaboration.status);
+
+  // Two fingers pan and pinch the canvas; one finger still draws.
+  const canvasRef = useRef(null);
+  useTouchGestures(canvasRef, {
+    transform,
+    onTransform: setViewTransform,
+    onGestureStart: cancelPointerInteraction,
+    minScale: MIN_SCALE,
+    maxScale: MAX_SCALE,
+  });
 
   // ── Keyboard shortcuts dialog ──────────────────────────────────────────
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -313,17 +329,32 @@ export default function BoardPage() {
         // Keyboard shortcuts only mean something where a keyboard is likely.
         onShowShortcuts: isTabletUp ? openShortcuts : undefined,
         onClearBoard: handleClearBoard,
+        // Touch has no keyboard or right-click; phones also have no view island.
+        touchActions:
+          isCoarsePointer || !isTabletUp
+            ? {
+                onSelectAll: selectAll,
+                onPaste: clipboard.paste,
+                onFitToScreen: isTabletUp ? undefined : fitToScreen,
+                onResetView: isTabletUp ? undefined : resetZoom,
+              }
+            : undefined,
       }),
     [
+      clipboard.paste,
+      fitToScreen,
       gridEnabled,
       handleClearBoard,
       handleExport,
       hasShapes,
+      isCoarsePointer,
       isDark,
       isDesktop,
       isTabletUp,
       minimapVisible,
       openShortcuts,
+      resetZoom,
+      selectAll,
       toggleGrid,
       toggleMinimap,
       toggleTheme,
@@ -419,8 +450,10 @@ export default function BoardPage() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-canvas text-text">
       {/* ── Canvas ───────────────────────────────────────────────── */}
+      {/* touch-none: the browser must not pan or zoom the page over the canvas. */}
       <div
-        className="absolute inset-0 z-0"
+        ref={canvasRef}
+        className="absolute inset-0 z-0 touch-none"
         style={{ cursor: getCanvasCursor(tool, board.isPanMode) }}
         onContextMenu={handleContextMenu}
       >
@@ -529,6 +562,17 @@ export default function BoardPage() {
 
           <div className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2">{toolbar}</div>
 
+          {isCoarsePointer && hasSelection && !board.editingTextShape ? (
+            <div className="fixed bottom-17 left-1/2 z-40 -translate-x-1/2">
+              <SelectionBar
+                count={selectedShapes.length}
+                menuItems={canvasMenuItems}
+                onDuplicate={clipboard.duplicate}
+                onDelete={deleteSelection}
+              />
+            </div>
+          ) : null}
+
           {showMinimap ? (
             <div className="fixed bottom-3 right-3 z-40">
               <Minimap
@@ -564,8 +608,20 @@ export default function BoardPage() {
             onOpenShare={openShareSheet}
           />
 
+          {/* Row above the dock: selection actions on the left, voice on the right. */}
+          {hasSelection && !board.editingTextShape ? (
+            <div className="fixed left-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+4rem)] z-40">
+              <SelectionBar
+                count={selectedShapes.length}
+                menuItems={canvasMenuItems}
+                onDuplicate={clipboard.duplicate}
+                onDelete={deleteSelection}
+              />
+            </div>
+          ) : null}
+
           {voiceModel.isJoined || voiceModel.isJoining ? (
-            <div className="fixed right-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+3.75rem)] z-40">
+            <div className="fixed right-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+4rem)] z-40">
               <VoicePill voice={voiceModel} onOpenPeople={openPeopleSheet} />
             </div>
           ) : null}

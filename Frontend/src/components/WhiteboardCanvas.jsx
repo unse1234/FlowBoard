@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { Group, Stage, Layer, Transformer } from "react-konva";
 import { OVERLAY_NAME } from "../features/export/exportBoardImage.js";
 import ShapeRenderer from "./ShapeRenderer";
@@ -91,6 +92,28 @@ export default function WhiteboardCanvas({
   // sets of handles at once would be ambiguous.
   const bendableShape = getBendableSelection(selectedShapes);
 
+  // The stage listens to pointer events, which Konva maps for mouse, pen and
+  // touch alike; mouse events alone never fire for a touch drag.
+  //
+  // A touch press is cancelled so the browser does not follow it with emulated
+  // mouse events, which would blur a text editor the press has just opened.
+  // Cancelling also skips the focus change a press normally causes, so it is
+  // done by hand first: whatever had focus (an open text editor) lets go and
+  // commits, exactly as it would under a mouse.
+  const handlePointerDown = useCallback(
+    (event) => {
+      if (event.evt?.pointerType === "touch") {
+        event.evt.preventDefault();
+
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && focused !== document.body) focused.blur();
+      }
+
+      onMouseDown(event);
+    },
+    [onMouseDown],
+  );
+
   return (
     <Stage
       ref={stageRef}
@@ -101,9 +124,10 @@ export default function WhiteboardCanvas({
       scaleX={transform.scale}
       scaleY={transform.scale}
       onWheel={onWheel}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
+      onPointerDown={handlePointerDown}
+      onPointerMove={onMouseMove}
+      onPointerUp={onMouseUp}
+      onPointerCancel={onMouseUp}
       // The stage stays transparent; the wrapping element paints `bg-canvas`,
       // so the canvas follows the theme tokens like the rest of the shell.
       style={{ backgroundColor: "transparent" }}

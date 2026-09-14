@@ -58,6 +58,7 @@ export function useWhiteboardEvents({
   setPendingImageAsset,
   setShapesWithHistory,
   saveHistoryCheckpoint,
+  discardLastCheckpoint,
   selectedShapeIds,
   selectShape,
   selectShapes,
@@ -781,6 +782,57 @@ export function useWhiteboardEvents({
   ]);
 
   /**
+   * Abandon whatever a pointer press started, without committing it.
+   *
+   * Called when a second finger turns a one-finger touch into a pinch: the
+   * first finger may already have begun a stroke, a marquee, an erase or a
+   * shape drag. A stroke was appended locally but not yet sent to peers (that
+   * happens on release), so removing it and its history checkpoint leaves no
+   * trace. Text and notes are created on press and are left as they are.
+   */
+  const cancelPointerInteraction = useCallback(() => {
+    panRef.current = null;
+
+    if (marqueeRef.current) {
+      marqueeRef.current = null;
+      setMarquee(null);
+    }
+
+    if (isLaserActive.current) {
+      isLaserActive.current = false;
+      setLaserPoints([]);
+    }
+
+    if (isErasing.current) {
+      isErasing.current = false;
+      pendingEraseIds.current = new Set();
+      setErasingIds([]);
+      setEraserPoints([]);
+    }
+
+    const strokeId = drawingId.current;
+    if (isDrawing.current && strokeId) {
+      isDrawing.current = false;
+      drawingId.current = null;
+      setShapes((prev) => deleteShapeById(prev, strokeId));
+      discardLastCheckpoint?.();
+    }
+
+    setSnapGuides([]);
+
+    stageRef.current?.find(".shape").forEach((node) => {
+      if (node.isDragging()) node.stopDrag();
+    });
+  }, [
+    discardLastCheckpoint,
+    setEraserPoints,
+    setErasingIds,
+    setLaserPoints,
+    setShapes,
+    stageRef,
+  ]);
+
+  /**
    * Commit the text overlay.
    *
    * Two shape families share this path and want opposite things. A bare text
@@ -910,6 +962,7 @@ export function useWhiteboardEvents({
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
+    cancelPointerInteraction,
     handleTextCommit,
     handleTextCancel,
     handleWheel,
