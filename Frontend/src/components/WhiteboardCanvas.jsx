@@ -166,7 +166,12 @@ export default function WhiteboardCanvas({
             eraserColor={palette.eraserTrail}
           />
 
-          <LiveCursors cursors={liveCursors} />
+          <LiveCursors
+            cursors={liveCursors}
+            scale={transform.scale}
+            outlineColor={palette.cursorOutline}
+            labelTextColor={palette.cursorLabelText}
+          />
         </Group>
 
         {/* Transformer for shape scaling, constrained to at least 5px. */}

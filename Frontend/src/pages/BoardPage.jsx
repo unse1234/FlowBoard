@@ -14,7 +14,8 @@ import WorkspaceHeader from "../components/layout/WorkspaceHeader";
 import { buildBoardMenuItems } from "../components/layout/boardMenuItems.js";
 import { buildCanvasMenuItems } from "../components/layout/canvasMenuItems.js";
 import ShortcutsDialog from "../components/panels/ShortcutsDialog";
-import VoiceChatPanel from "../components/panels/VoiceChatPanel";
+import JoinRoomDialog from "../components/collab/JoinRoomDialog";
+import PeoplePanel from "../components/panels/PeoplePanel";
 import { ActionList, IconButton, Island, Menu, Sheet } from "../components/ui/index.js";
 import { TOOLS } from "../constants/tools.js";
 import { getCanvasPalette } from "../design/canvasTokens.js";
@@ -28,6 +29,7 @@ import { SHOW_SHORTCUTS_COMBO } from "../features/shortcuts/boardShortcuts.js";
 import { useShortcuts } from "../features/shortcuts/useShortcuts.js";
 import { useThemeContext } from "../features/theme/themeContext.js";
 import { useToast } from "../features/toasts/toastContext.js";
+import { useConnectionToasts } from "../hooks/useConnectionToasts";
 import { SHEETS, useUiLayout } from "../hooks/useUiLayout";
 import { useViewportSize } from "../hooks/useViewportSize";
 import { useWhiteboard } from "../hooks/useWhiteboard";
@@ -82,6 +84,21 @@ function useVoiceModel(voice) {
     unmute,
   } = voice;
 
+  // Joining asks for the microphone and opens signalling, which takes a moment
+  // and can fail; both are UI state the voice manager does not track.
+  const [isJoining, setIsJoining] = useState(false);
+  const [joinFailed, setJoinFailed] = useState(false);
+
+  const onJoinVoice = useCallback(() => {
+    setIsJoining(true);
+    setJoinFailed(false);
+
+    joinVoice()
+      .then(() => setJoinFailed(false))
+      .catch(() => setJoinFailed(true))
+      .finally(() => setIsJoining(false));
+  }, [joinVoice]);
+
   return useMemo(
     () => ({
       isJoined,
@@ -90,7 +107,9 @@ function useVoiceModel(voice) {
       localSpeaking,
       participants,
       error,
-      onJoinVoice: () => joinVoice().catch(() => {}),
+      isJoining,
+      joinFailed,
+      onJoinVoice,
       onLeaveVoice: () => leaveVoice().catch(() => {}),
       onToggleMute: () => (isMuted ? unmute() : mute()),
     }),
@@ -98,11 +117,13 @@ function useVoiceModel(voice) {
       connectionState,
       error,
       isJoined,
+      isJoining,
       isMuted,
-      joinVoice,
+      joinFailed,
       leaveVoice,
       localSpeaking,
       mute,
+      onJoinVoice,
       participants,
       unmute,
     ],
@@ -155,7 +176,8 @@ export default function BoardPage() {
   } = board;
 
   const voice = useVoice({
-    roomId: collaboration.roomId,
+    // Voice waits for a display name, so peers never see a nameless participant.
+    roomId: collaboration.username ? collaboration.roomId : null,
     userId: collaboration.userId,
     username: collaboration.username,
   });
@@ -182,6 +204,8 @@ export default function BoardPage() {
   const hasShapes = shapes.length > 0;
   const hasSelection = selectedShapes.length > 0;
   const { startCollaboration, isEnabled: isShared } = collaboration;
+
+  useConnectionToasts(collaboration.status);
 
   // ── Keyboard shortcuts dialog ──────────────────────────────────────────
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -429,7 +453,7 @@ export default function BoardPage() {
             status={collaboration.status}
             collaborators={collaborators}
             voice={voiceModel}
-            isRoomOwner={collaboration.isRoomOwner}
+            isShared={isShared}
             menuItems={menuItems}
             onShare={handleShare}
           />
@@ -561,11 +585,12 @@ export default function BoardPage() {
             title="People"
             description={`${collaborators.length} on this board`}
           >
-            <VoiceChatPanel
+            <PeoplePanel
+              touch
               collaborators={collaborators}
               voice={voiceModel}
-              isRoomOwner={collaboration.isRoomOwner}
-              variant="mobile"
+              isShared={isShared}
+              onShare={handleShare}
             />
           </Sheet>
 
@@ -576,6 +601,15 @@ export default function BoardPage() {
       )}
 
       <ShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
+
+      <JoinRoomDialog
+        key={collaboration.roomId ?? "no-room"}
+        open={collaboration.needsDisplayName}
+        isRoomOwner={collaboration.isRoomOwner}
+        suggestedName={collaboration.suggestedDisplayName}
+        color={collaboration.userColor}
+        onSubmit={collaboration.setDisplayName}
+      />
     </div>
   );
 }

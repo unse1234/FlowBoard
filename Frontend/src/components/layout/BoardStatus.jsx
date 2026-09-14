@@ -22,7 +22,7 @@ const STATUS = {
     label: "Reconnecting…",
     busy: true,
     tone: "warning",
-    tooltip: "Connection lost — trying to reconnect",
+    tooltip: "Connection lost. Your edits will sync when it's back.",
   },
   [CONNECTION_STATE.DISCONNECTED]: {
     label: "Offline",
@@ -32,7 +32,7 @@ const STATUS = {
   [CONNECTION_STATE.ERROR]: {
     label: "Connection issue",
     tone: "danger",
-    tooltip: "Couldn't reach the collaboration server",
+    tooltip: "Can't reach the collaboration server. Retrying automatically.",
   },
 };
 

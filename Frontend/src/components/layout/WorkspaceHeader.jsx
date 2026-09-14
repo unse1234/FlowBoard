@@ -1,6 +1,6 @@
 import { memo, useCallback, useRef, useState } from "react";
 import { Ellipsis, Share2 } from "lucide-react";
-import VoiceChatPanel from "../panels/VoiceChatPanel.jsx";
+import PeoplePanel from "../panels/PeoplePanel.jsx";
 import {
   AvatarStack,
   Button,
@@ -24,7 +24,7 @@ import BrandMark from "./BrandMark.jsx";
  * Two islands rather than a full-width bar, so the canvas runs to the top edge
  * between them.
  */
-function WorkspaceHeader({ status, collaborators, voice, isRoomOwner, menuItems, onShare }) {
+function WorkspaceHeader({ status, collaborators, voice, isShared, menuItems, onShare }) {
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const peopleButtonRef = useRef(null);
@@ -92,7 +92,18 @@ function WorkspaceHeader({ status, collaborators, voice, isRoomOwner, menuItems,
         label="People"
         className="fb-scroll max-h-[min(70dvh,560px)] w-80 overflow-y-auto p-3"
       >
-        <VoiceChatPanel collaborators={collaborators} voice={voice} isRoomOwner={isRoomOwner} />
+        <h2 className="mb-1 text-title text-text">
+          People <span className="font-normal tabular-nums text-text-muted">· {count}</span>
+        </h2>
+        <PeoplePanel
+          collaborators={collaborators}
+          voice={voice}
+          isShared={isShared}
+          onShare={() => {
+            closePeople();
+            onShare();
+          }}
+        />
       </Popover>
 
       <Menu

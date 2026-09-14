@@ -10,7 +10,6 @@ export { Button } from "./Button.jsx";
 export { cx } from "./cx.js";
 export { Dialog } from "./Dialog.jsx";
 export { Divider } from "./Divider.jsx";
-export { EmptyNote } from "./EmptyNote.jsx";
 export { IconButton } from "./IconButton.jsx";
 export { Island } from "./Island.jsx";
 export { Kbd, KbdCombo } from "./Kbd.jsx";

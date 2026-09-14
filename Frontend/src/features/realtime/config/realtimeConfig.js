@@ -104,6 +104,36 @@ export function saveCollaborationUsername(
   }
 }
 
+const LAST_DISPLAY_NAME_KEY = "flowboard:display-name";
+
+/**
+ * The name used most recently in any room, offered as the default next time.
+ *
+ * @param {Storage | null | undefined} [storage]
+ * @returns {string | null}
+ */
+export function resolveLastDisplayName(storage = globalThis.localStorage) {
+  try {
+    return storage?.getItem(LAST_DISPLAY_NAME_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} username
+ * @param {Storage | null | undefined} [storage]
+ */
+export function rememberDisplayName(username, storage = globalThis.localStorage) {
+  if (!username?.trim()) return;
+
+  try {
+    storage?.setItem(LAST_DISPLAY_NAME_KEY, username.trim());
+  } catch {
+    // A remembered name is a convenience; storage failures are not worth surfacing.
+  }
+}
+
 export function createCollaborationRoomId() {
   return createClientId("room");
 }

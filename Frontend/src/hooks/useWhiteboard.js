@@ -117,18 +117,32 @@ export function useWhiteboard() {
     remotePresence,
     publishLocalOperation,
     publishPresence,
+    needsDisplayName,
+    suggestedDisplayName,
+    setDisplayName,
   } = useRealtimeCollaboration({ roomId: collaborationRoomId, setShapes });
 
+  // Send the board's existing shapes into a newly created room.
+  //
+  // The connection only exists once a display name is chosen, which happens a
+  // render or more after the room id is set, so the seed is kept until a send
+  // actually goes out. Re-running on status changes catches the moment the
+  // connection is created; the realtime manager queues the operation until the
+  // room is joined.
   useEffect(() => {
-    if (!collaborationRoomId || !pendingCollaborationSeedRef.current) return;
+    const seed = pendingCollaborationSeedRef.current;
+    if (!collaborationRoomId || !seed) return;
 
-    if (pendingCollaborationSeedRef.current.length > 0) {
-      publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, {
-        shapes: pendingCollaborationSeedRef.current,
-      });
+    if (seed.length === 0) {
+      pendingCollaborationSeedRef.current = null;
+      return;
     }
-    pendingCollaborationSeedRef.current = null;
-  }, [collaborationRoomId, publishLocalOperation]);
+
+    const operation = publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, {
+      shapes: seed,
+    });
+    if (operation) pendingCollaborationSeedRef.current = null;
+  }, [collaborationRoomId, collaborationStatus, publishLocalOperation]);
 
   useEffect(() => {
     shapesRef.current = shapes;
@@ -690,6 +704,7 @@ export function useWhiteboard() {
           x: event.presence?.cursor?.x,
           y: event.presence?.cursor?.y,
           updatedAt: event.updatedAt,
+          idle: Boolean(event.idle),
         }))
         .filter(
           (cursor) => Number.isFinite(cursor.x) && Number.isFinite(cursor.y),
@@ -754,6 +769,9 @@ export function useWhiteboard() {
       status: collaborationStatus,
       startCollaboration,
       copyCollaborationLink,
+      needsDisplayName,
+      suggestedDisplayName,
+      setDisplayName,
     }),
     [
       boardId,
@@ -765,7 +783,10 @@ export function useWhiteboard() {
       copyCollaborationLink,
       joinedExistingRoom,
       localBoardId,
+      needsDisplayName,
+      setDisplayName,
       startCollaboration,
+      suggestedDisplayName,
       userColor,
       userId,
     ],

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pickCollaboratorColor } from "../../../constants/presence.js";
 import { createClientId } from "../../shared/id/createClientId.js";
 import {
   getRealtimeUrl,
+  rememberDisplayName,
   resolveCollaborationUsername,
+  resolveLastDisplayName,
   saveCollaborationUsername,
 } from "../config/realtimeConfig.js";
 import { OperationDispatcher } from "../dispatch/OperationDispatcher.js";
@@ -13,55 +16,89 @@ import { SocketService } from "../socket/SocketService.js";
 
 const EMPTY_REMOTE_PRESENCE = Object.freeze({});
 
+/** A cursor that has not moved for this long drops its name label. */
+export const CURSOR_IDLE_MS = 3000;
+
+/** Presence not refreshed for this long is treated as gone. */
+const PRESENCE_TIMEOUT_MS = 10000;
+
+/**
+ * How often a connected client re-announces itself. Well inside the timeout,
+ * so someone reading the board without moving stays in the people list.
+ */
+const PRESENCE_HEARTBEAT_MS = 4000;
+
+/** First announcement after connecting, once the board join has settled. */
+const PRESENCE_FIRST_BEAT_MS = 800;
+
+/** How often idle and stale presence is swept. */
+const PRESENCE_SWEEP_MS = 1000;
+
+const GUEST_NAME = "Guest";
+
+function readIdentity(roomId) {
+  return {
+    roomId,
+    username: roomId ? resolveCollaborationUsername(roomId) : null,
+  };
+}
+
+function isSameCursor(a, b) {
+  if (!a || !b) return a === b;
+  return a.x === b.x && a.y === b.y;
+}
+
+/** Presence that says "I'm here", repeating the last cursor position if any. */
+function announcement(userId, color, cursor) {
+  return {
+    userId,
+    color,
+    status: "online",
+    ...(cursor ? { cursor } : {}),
+  };
+}
+
+/** Delay before answering a newcomer, so several arrivals share one reply. */
+const NEWCOMER_REPLY_MS = 300;
+
 export function useRealtimeCollaboration({ roomId, setShapes }) {
   const [status, setStatus] = useState(CONNECTION_STATE.IDLE);
   const [remotePresence, setRemotePresence] = useState({});
-  const [username, setUsername] = useState(() =>
-    roomId ? resolveCollaborationUsername(roomId) : null,
-  );
+
+  // A display name belongs to a room. It is stored alongside the room it was
+  // read for and re-read during render when the room changes, so entering a
+  // room never shows the previous room's name and needs no effect. Until a
+  // name exists the connection is not opened; the UI asks for one instead of
+  // blocking the page with a prompt.
+  const [identity, setIdentity] = useState(() => readIdentity(roomId));
+  if (identity.roomId !== roomId) {
+    setIdentity(readIdentity(roomId));
+  }
+  const username = identity.roomId === roomId ? identity.username : null;
+
+  const [suggestedDisplayName] = useState(() => resolveLastDisplayName() ?? "");
+
   const userId = useMemo(() => createClientId("user"), []);
-  const userColor = useMemo(() => pickUserColor(userId), [userId]);
+  const userColor = useMemo(() => pickCollaboratorColor(userId), [userId]);
   const lastPresenceSentAt = useRef(0);
+  const lastCursorRef = useRef(null);
+  const knownPeersRef = useRef(new Set());
   const dispatcherRef = useRef(null);
 
-  useEffect(() => {
-    if (!roomId) {
-      setUsername(null);
-      return;
-    }
+  /** Set this room's display name; a blank name joins as "Guest". */
+  const setDisplayName = useCallback(
+    (name) => {
+      if (!roomId) return;
 
-    const storedUsername = resolveCollaborationUsername(roomId);
-    if (storedUsername) {
-      setUsername(storedUsername);
-      return;
-    }
+      const trimmed = String(name ?? "").trim();
+      const nextUsername = trimmed || GUEST_NAME;
 
-    const promptLabel = `Enter your display name for collaboration room '${roomId}'. This name will be saved for this room and reused on reload.`;
-    let nextUsername = null;
-
-    while (nextUsername === null) {
-      const input = window.prompt(promptLabel, "");
-      if (input === null) {
-        nextUsername = "Guest";
-        break;
-      }
-
-      const trimmed = input.trim();
-      if (trimmed) {
-        nextUsername = trimmed;
-      } else {
-        const retry = window.confirm(
-          "Display name cannot be blank. Do you want to try again?",
-        );
-        if (!retry) {
-          nextUsername = "Guest";
-        }
-      }
-    }
-
-    saveCollaborationUsername(roomId, nextUsername);
-    setUsername(nextUsername);
-  }, [roomId]);
+      saveCollaborationUsername(roomId, nextUsername);
+      if (trimmed) rememberDisplayName(trimmed);
+      setIdentity({ roomId, username: nextUsername });
+    },
+    [roomId],
+  );
 
   const { realtimeManager, operationDispatcher } = useMemo(() => {
     if (!roomId || !username) {
@@ -107,6 +144,21 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
     }
 
     dispatcherRef.current = operationDispatcher;
+    knownPeersRef.current = new Set();
+
+    // When someone new appears, answer with our own presence straight away so
+    // they list us immediately instead of at our next heartbeat.
+    let replyTimeoutId = null;
+    const replyToNewcomer = () => {
+      if (replyTimeoutId !== null) return;
+
+      replyTimeoutId = window.setTimeout(() => {
+        replyTimeoutId = null;
+        realtimeManager.publishPresence(
+          announcement(userId, userColor, lastCursorRef.current),
+        );
+      }, NEWCOMER_REPLY_MS);
+    };
 
     const unsubscribeStatus = realtimeManager.onStatusChange(setStatus);
     const unsubscribeOperations = realtimeManager.onOperation((operation) => {
@@ -116,6 +168,14 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
       if (!event || typeof event !== "object") return;
       if (!event.userId || event.userId === userId) return;
 
+      const knownPeers = knownPeersRef.current;
+      if (event.presence?.status === "offline") {
+        knownPeers.delete(event.userId);
+      } else if (!knownPeers.has(event.userId)) {
+        knownPeers.add(event.userId);
+        replyToNewcomer();
+      }
+
       setRemotePresence((current) => {
         if (event.presence?.status === "offline") {
           const next = { ...current };
@@ -123,11 +183,21 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
           return next;
         }
 
+        const now = Date.now();
+        const previous = current[event.userId];
+        const cursor = event.presence?.cursor ?? null;
+
+        // Heartbeats repeat the last cursor position; only a real move counts
+        // as activity, so a parked cursor's label is not re-shown every beat.
+        const moved = !previous || !isSameCursor(previous.presence?.cursor ?? null, cursor);
+
         return {
           ...current,
           [event.userId]: {
             ...event,
-            updatedAt: Date.now(),
+            updatedAt: now,
+            movedAt: moved ? now : previous.movedAt,
+            idle: moved ? false : Boolean(previous.idle),
           },
         };
       });
@@ -136,26 +206,62 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
     realtimeManager.connect();
 
     return () => {
+      window.clearTimeout(replyTimeoutId);
       dispatcherRef.current = null;
       unsubscribeStatus();
       unsubscribeOperations();
       unsubscribePresence();
       realtimeManager.disconnect();
     };
-  }, [operationDispatcher, realtimeManager, userId]);
+  }, [operationDispatcher, realtimeManager, userColor, userId]);
 
+  // Announce ourselves while connected, so peers list us even before — and
+  // long after — we move the pointer.
+  useEffect(() => {
+    if (!realtimeManager || status !== CONNECTION_STATE.CONNECTED) return undefined;
+
+    const beat = () => {
+      realtimeManager.publishPresence(announcement(userId, userColor, lastCursorRef.current));
+    };
+
+    const firstBeatId = window.setTimeout(beat, PRESENCE_FIRST_BEAT_MS);
+    const intervalId = window.setInterval(beat, PRESENCE_HEARTBEAT_MS);
+
+    return () => {
+      window.clearTimeout(firstBeatId);
+      window.clearInterval(intervalId);
+    };
+  }, [realtimeManager, status, userColor, userId]);
+
+  // Sweep presence: drop people not heard from in a while, and mark cursors
+  // idle so their labels fade. Returning the same object when nothing changed
+  // means the sweep costs no render.
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       const now = Date.now();
 
-      setRemotePresence((current) =>
-        Object.fromEntries(
-          Object.entries(current).filter(
-            ([, event]) => now - event.updatedAt < 10000,
-          ),
-        ),
-      );
-    }, 5000);
+      setRemotePresence((current) => {
+        let changed = false;
+        const next = {};
+
+        for (const [id, event] of Object.entries(current)) {
+          if (now - event.updatedAt >= PRESENCE_TIMEOUT_MS) {
+            changed = true;
+            continue;
+          }
+
+          const idle = now - (event.movedAt ?? event.updatedAt) >= CURSOR_IDLE_MS;
+          if (idle !== Boolean(event.idle)) {
+            changed = true;
+            next[id] = { ...event, idle };
+          } else {
+            next[id] = event;
+          }
+        }
+
+        return changed ? next : current;
+      });
+    }, PRESENCE_SWEEP_MS);
 
     return () => window.clearInterval(intervalId);
   }, []);
@@ -167,6 +273,8 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
   const publishPresence = useCallback(
     (presence) => {
       if (!realtimeManager) return;
+
+      if (presence?.cursor) lastCursorRef.current = presence.cursor;
 
       const now = Date.now();
       if (now - lastPresenceSentAt.current < 50) return;
@@ -188,25 +296,12 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
     userId,
     username,
     userColor,
+    needsDisplayName: Boolean(roomId) && !username,
+    suggestedDisplayName,
+    setDisplayName,
     status: roomId ? status : CONNECTION_STATE.IDLE,
     remotePresence: roomId ? remotePresence : EMPTY_REMOTE_PRESENCE,
     publishLocalOperation,
     publishPresence,
   };
-}
-
-function pickUserColor(userId) {
-  const colors = [
-    "#2563eb",
-    "#dc2626",
-    "#16a34a",
-    "#9333ea",
-    "#ea580c",
-    "#0891b2",
-  ];
-  const hash = String(userId)
-    .split("")
-    .reduce((total, char) => total + char.charCodeAt(0), 0);
-
-  return colors[hash % colors.length];
 }
