@@ -1,57 +1,58 @@
+import { cx } from "./cx.js";
+
 /**
- * Badge — small status pill (connection state, "Host", participant counts).
+ * Badge — a small label tag (status, role, count). 4px corners, like the
+ * Awwwards tags it takes after. Always carries text: tone alone is not a state.
  */
 
-const VARIANT_CLASSES = {
-  default: "bg-surface-soft text-text-muted border-border",
-  success: "bg-success-bg text-success border-transparent",
-  warning: "bg-warning-bg text-warning border-transparent",
-  danger: "bg-danger-bg text-danger border-transparent",
-  info: "bg-brand-soft text-brand border-transparent",
-  outline: "bg-transparent text-text-muted border-border",
+const VARIANTS = {
+  neutral: "bg-surface-muted text-text-muted",
+  success: "bg-success-soft text-success",
+  warning: "bg-warning-soft text-warning",
+  danger: "bg-danger-soft text-danger",
+  info: "bg-info-soft text-info",
+  accent: "bg-accent text-on-accent",
+  outline: "border border-border text-text-muted",
 };
 
-export function Badge({ variant = "default", className = "", children }) {
+export function Badge({ variant = "neutral", className = "", children }) {
   return (
     <span
-      className={[
-        "inline-flex items-center gap-1 rounded-pill border px-2 py-0.5",
-        "text-[10px] font-semibold tracking-[0.02em] whitespace-nowrap",
-        VARIANT_CLASSES[variant] ?? VARIANT_CLASSES.default,
+      className={cx(
+        "inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-caption",
+        VARIANTS[variant === "default" ? "neutral" : variant] ?? VARIANTS.neutral,
         className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      )}
     >
       {children}
     </span>
   );
 }
 
+const DOT_TONES = {
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+  info: "bg-info",
+  accent: "bg-accent",
+  brand: "bg-ink",
+  muted: "bg-text-soft",
+};
+
 /**
- * StatusDot — the small filled circle that precedes a connection label.
- * `pulse` adds the speaking/active ring used in the participant list.
+ * StatusDot — the dot before a status label. `pulse` adds the live/speaking
+ * ring. Decorative: the adjacent text carries the meaning.
  */
 export function StatusDot({ tone = "muted", pulse = false, className = "" }) {
-  const TONE_CLASSES = {
-    success: "bg-success",
-    warning: "bg-warning",
-    danger: "bg-danger",
-    brand: "bg-brand",
-    muted: "bg-text-soft",
-  };
-
   return (
     <span
       aria-hidden="true"
-      className={[
-        "inline-block h-2 w-2 shrink-0 rounded-full",
-        TONE_CLASSES[tone] ?? TONE_CLASSES.muted,
-        pulse ? "fb-speaking" : "",
+      className={cx(
+        "inline-block size-2 shrink-0 rounded-full",
+        DOT_TONES[tone] ?? DOT_TONES.muted,
+        pulse && "fb-speaking",
         className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      )}
     />
   );
 }

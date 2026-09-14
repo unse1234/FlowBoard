@@ -1,4 +1,4 @@
-import { useThemeContext } from "./features/theme/ThemeProvider.jsx";
+import { useThemeContext } from "./features/theme/themeContext.js";
 import BoardPage from "./pages/BoardPage.jsx";
 
 /**

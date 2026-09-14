@@ -14,7 +14,7 @@ import SettingsPanel from "../components/panels/SettingsPanel";
 import VoiceChatPanel from "../components/panels/VoiceChatPanel";
 import { Dialog, Sheet } from "../components/ui/index.js";
 import { useVoice } from "../features/communication/voice/useVoice.js";
-import { useThemeContext } from "../features/theme/ThemeProvider.jsx";
+import { useThemeContext } from "../features/theme/themeContext.js";
 import { MOBILE_SHEETS, useUiLayout } from "../hooks/useUiLayout";
 import { useViewportSize } from "../hooks/useViewportSize";
 import { useWhiteboard } from "../hooks/useWhiteboard";

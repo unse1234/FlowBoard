@@ -1,185 +1,292 @@
 /**
- * Global Styles — FlowBoard
+ * Global Styles — FlowBoard "Ink & Signal" design system.
  *
- * Tailwind v4 token foundation.
+ * Reference: docs/design-system.md. Token source: awwwards-com-DESIGN.md
+ * (ink #222, lemon #fff083, Inter Tight, radii 4/8/12/14, breakpoints
+ * 768/1270/1600).
  *
- * IMPORTANT: this project uses Tailwind v4 via @tailwindcss/vite. v4 does NOT
- * read `tailwind.config.js` unless it is pulled in with `@config`. All design
- * tokens therefore live here, in `@theme inline`.
+ * IMPORTANT: this project uses Tailwind v4 via @tailwindcss/vite, which does NOT
+ * read `tailwind.config.js`. Static scales live in `@theme`; colours live in
+ * `@theme inline`, mapped onto `--fb-*` custom properties, so redefining the
+ * palette under `.dark` re-themes every utility at once and no component needs
+ * a `dark:` colour variant.
  *
- * Theming strategy:
- *   `@theme inline` maps each Tailwind token to a `--fb-*` custom property, so
- *   utilities compile to `var(--fb-…)` and resolve at runtime. Redefining the
- *   `--fb-*` set under `.dark` re-themes every utility at once — components do
- *   not need `dark:` variants for color.
+ * Konva paints to a bitmap and cannot read CSS variables, so canvas colours are
+ * mirrored in src/design/canvasTokens.js. Change the two together.
  */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* Inter Tight is the UI face. Inter 400 stays loaded because saved boards store
+   `fontFamily: "Inter"` for canvas text. */
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Inter:wght@400&display=swap");
 @import "tailwindcss";
 
 /* ThemeManager toggles `.dark` on <html>; teach v4 to follow the class. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─── Design Tokens ────────────────────────────────────────────────────────── */
-@theme inline {
-  /* Surfaces */
-  --color-bg: var(--fb-bg);
-  --color-canvas: var(--fb-canvas);
-  --color-surface: var(--fb-surface);
-  --color-surface-soft: var(--fb-surface-soft);
-  --color-surface-hover: var(--fb-surface-hover);
-  --color-surface-sunken: var(--fb-surface-sunken);
+/* ─── Static scales ───────────────────────────────────────────────────────── */
+@theme {
+  /* mobile < 768 ≤ tablet < 1270 ≤ desktop; 1600 is wide. */
+  --breakpoint-*: initial;
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 79.375rem;
+  --breakpoint-xl: 100rem;
 
-  /* Text */
+  --font-sans: "Inter Tight", "Inter", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-hand: "Excalifont", "Virgil", "Comic Neue", cursive;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+
+  /* Six sizes, three weights — see the type table in the design doc. */
+  --text-kbd: 10px;
+  --text-kbd--line-height: 14px;
+  --text-kbd--font-weight: 500;
+  --text-caption: 11px;
+  --text-caption--line-height: 14px;
+  --text-caption--letter-spacing: 0.01em;
+  --text-caption--font-weight: 500;
+  --text-label: 12px;
+  --text-label--line-height: 16px;
+  --text-label--font-weight: 500;
+  --text-body: 13px;
+  --text-body--line-height: 18px;
+  --text-title: 14px;
+  --text-title--line-height: 20px;
+  --text-title--letter-spacing: -0.005em;
+  --text-title--font-weight: 600;
+  --text-heading: 16px;
+  --text-heading--line-height: 22px;
+  --text-heading--letter-spacing: -0.01em;
+  --text-heading--font-weight: 600;
+
+  /* Concentric radii: an 8px control inside a 12px island with 4px padding.
+     `inset` is the 6px segment inside an 8px track with 2px padding. */
+  --radius-sm: 4px;
+  --radius-inset: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+
+  /* Awwwards' curve family, shortened for tool UI. No overshoot. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+}
+
+/* ─── Semantic colour + elevation ─────────────────────────────────────────── */
+@theme inline {
+  --color-canvas: var(--fb-canvas);
+  --color-bg: var(--fb-bg);
+  --color-surface: var(--fb-surface);
+  --color-surface-raised: var(--fb-surface-raised);
+  --color-surface-muted: var(--fb-surface-muted);
+  --color-hover: var(--fb-hover);
+  --color-pressed: var(--fb-pressed);
+
+  --color-border: var(--fb-border);
+  --color-border-strong: var(--fb-border-strong);
+  --color-divider: var(--fb-divider);
+
   --color-text: var(--fb-text);
   --color-text-muted: var(--fb-text-muted);
   --color-text-soft: var(--fb-text-soft);
-  --color-on-brand: #ffffff;
+  --color-text-disabled: var(--fb-text-disabled);
+
+  /* Ink — the highest-contrast chip (active tool, switch on). Ink in light,
+     lemon in dark, so the active state is always the brightest thing. */
+  --color-ink: var(--fb-ink);
   --color-on-ink: var(--fb-on-ink);
 
-  /* Brand */
-  --color-brand: var(--fb-brand);
-  --color-brand-hover: var(--fb-brand-hover);
-  --color-brand-soft: var(--fb-brand-soft);
+  --color-primary: var(--fb-primary);
+  --color-primary-hover: var(--fb-primary-hover);
+  --color-primary-edge: var(--fb-primary-edge);
+  --color-on-primary: var(--fb-on-primary);
+  --color-accent: var(--fb-accent);
+  --color-accent-soft: var(--fb-accent-soft);
+  --color-on-accent: #111111;
 
-  /* Ink — the high-contrast chip for active tools and segmented tabs. It
-     inverts in dark mode so the selected item stays the brightest thing. */
-  --color-ink: var(--fb-ink);
-  --color-ink-soft: var(--fb-ink-soft);
+  --color-selection: var(--fb-selection);
+  --color-selection-soft: var(--fb-selection-soft);
+  --color-focus: var(--fb-focus);
 
-  /* Pill — the floating canvas controls (zoom, view). Unlike ink these stay
-     dark in both themes: they sit on the canvas, not inside a panel. */
-  --color-pill: var(--fb-pill);
-  --color-on-pill: var(--fb-on-pill);
-
-  /* Borders */
-  --color-border: var(--fb-border);
-  --color-border-strong: var(--fb-border-strong);
-  /* Legacy alias kept so untouched components keep rendering a sane border. */
-  --color-border-hand: var(--fb-border);
-
-  /* Semantic */
   --color-success: var(--fb-success);
-  --color-success-bg: var(--fb-success-bg);
+  --color-success-soft: var(--fb-success-soft);
   --color-warning: var(--fb-warning);
-  --color-warning-bg: var(--fb-warning-bg);
+  --color-warning-soft: var(--fb-warning-soft);
   --color-danger: var(--fb-danger);
-  --color-danger-bg: var(--fb-danger-bg);
-  --color-info: var(--fb-brand);
-  --color-info-bg: var(--fb-brand-soft);
+  --color-danger-soft: var(--fb-danger-soft);
+  --color-info: var(--fb-info);
+  --color-info-soft: var(--fb-info-soft);
 
-  /* Presence avatar palette */
-  --color-user-1: #6366f1;
-  --color-user-2: #ec4899;
-  --color-user-3: #14b8a6;
-  --color-user-4: #f59e0b;
-  --color-user-5: #8b5cf6;
-  --color-user-6: #0ea5e9;
+  --color-scrim: var(--fb-scrim);
+  --color-segment-active: var(--fb-segment-active);
+  --color-toggle-thumb: var(--fb-toggle-thumb);
+  --color-tooltip: var(--fb-tooltip-bg);
+  --color-tooltip-text: var(--fb-tooltip-text);
+  --color-tooltip-border: var(--fb-tooltip-border);
 
-  /* Typography */
-  --font-body: "Inter", -apple-system, system-ui, "Segoe UI", Helvetica, Arial,
-    sans-serif;
-  --font-display: "Inter", -apple-system, system-ui, "Segoe UI", Helvetica,
-    Arial, sans-serif;
-  --font-hand: "Excalifont", "Virgil", "Comic Neue", cursive;
-  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* The brand tile is identity, so it does not theme. */
+  --color-brand-tile: #222222;
+  --color-brand-glyph: #fff083;
 
-  /* Radii */
+  --shadow-island: var(--fb-shadow-island);
+  --shadow-popover: var(--fb-shadow-popover);
+  --shadow-dialog: var(--fb-shadow-dialog);
+
+  /* ── Legacy aliases ──────────────────────────────────────────────────────
+     Keep pre-redesign components rendering sensibly while they are replaced.
+     Delete once nothing references them. */
+  --font-body: var(--font-sans);
+  --font-display: var(--font-sans);
+  --color-surface-soft: var(--fb-surface-muted);
+  --color-surface-hover: var(--fb-hover);
+  --color-surface-sunken: var(--fb-surface-muted);
+  --color-brand: var(--fb-ink);
+  --color-brand-hover: var(--fb-ink);
+  --color-brand-soft: var(--fb-accent-soft);
+  --color-on-brand: var(--fb-on-ink);
+  --color-ink-soft: var(--fb-ink);
+  --color-pill: var(--fb-surface);
+  --color-on-pill: var(--fb-text);
+  --color-border-hand: var(--fb-border);
+  --color-success-bg: var(--fb-success-soft);
+  --color-warning-bg: var(--fb-warning-soft);
+  --color-danger-bg: var(--fb-danger-soft);
+  --color-info-bg: var(--fb-info-soft);
   --radius-button: 8px;
-  --radius-card: 10px;
-  --radius-panel: 14px;
+  --radius-card: 8px;
+  --radius-panel: 12px;
   --radius-pill: 9999px;
-
-  /* Elevation — soft and low-contrast; borders carry most of the separation */
-  --shadow-raised: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-panel: 0 1px 2px rgba(15, 23, 42, 0.04),
-    0 10px 28px rgba(15, 23, 42, 0.07);
-  --shadow-popover: 0 12px 34px rgba(15, 23, 42, 0.16);
-  --shadow-sheet: 0 -8px 34px rgba(15, 23, 42, 0.16);
-
-  /* Motion */
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-emphasized: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --shadow-raised: var(--fb-shadow-island);
+  --shadow-panel: var(--fb-shadow-island);
+  --shadow-sheet: var(--fb-shadow-dialog);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
 }
 
-/*
- * Shell metrics. The header (h-14 / 56px), the icon rail (w-11 / 44px) and the
- * mobile tab bar (h-15 / 60px) are expressed with the standard spacing scale so
- * every `top-14`, `left-11` and `bottom-15` in the layout lines up by
- * construction. Changing one means changing its partners.
- */
-
-/* ─── Light palette ───────────────────────────────────────────────────────── */
+/* ─── Light palette — paper and ink ───────────────────────────────────────── */
 :root {
-  --fb-bg: #f5f6f8;
-  --fb-canvas: #ffffff;
+  --fb-canvas: #f8f8f7;
+  --fb-bg: #f8f8f7;
   --fb-surface: #ffffff;
-  --fb-surface-soft: #f8fafc;
-  --fb-surface-hover: #f1f5f9;
-  --fb-surface-sunken: #f1f3f7;
+  --fb-surface-raised: #ffffff;
+  --fb-surface-muted: #f2f2f0;
+  --fb-hover: rgb(34 34 34 / 0.055);
+  --fb-pressed: rgb(34 34 34 / 0.1);
 
-  --fb-text: #0f172a;
-  --fb-text-muted: #64748b;
-  --fb-text-soft: #94a3b8;
+  --fb-border: rgb(34 34 34 / 0.1);
+  --fb-border-strong: rgb(34 34 34 / 0.18);
+  --fb-divider: rgb(34 34 34 / 0.08);
+
+  --fb-text: #222222;
+  --fb-text-muted: #666666;
+  --fb-text-soft: #8f8f8f;
+  --fb-text-disabled: #b8b8b8;
+
+  --fb-ink: #222222;
   --fb-on-ink: #ffffff;
 
-  --fb-brand: #2563eb;
-  --fb-brand-hover: #1d4ed8;
-  --fb-brand-soft: #eff6ff;
+  --fb-primary: #fff083;
+  --fb-primary-hover: #ffe95c;
+  --fb-primary-edge: rgb(17 17 17 / 0.14);
+  --fb-on-primary: #111111;
+  --fb-accent: #fff083;
+  --fb-accent-soft: #fff8c9;
 
-  --fb-ink: #111827;
-  --fb-ink-soft: #1f2937;
+  --fb-selection: #3a6df0;
+  --fb-selection-soft: rgb(58 109 240 / 0.1);
+  --fb-focus: #222222;
 
-  --fb-pill: #111827;
-  --fb-on-pill: #ffffff;
+  --fb-success: #1a7f45;
+  --fb-success-soft: #e7f5ec;
+  --fb-warning: #9a5b00;
+  --fb-warning-soft: #fff2d9;
+  --fb-danger: #cc2f26;
+  --fb-danger-soft: #fdebe9;
+  --fb-info: #3a6df0;
+  --fb-info-soft: #edf2fe;
 
-  --fb-border: #e5e7eb;
-  --fb-border-strong: #d1d5db;
+  --fb-scrim: rgb(17 17 17 / 0.32);
+  --fb-segment-active: #ffffff;
+  --fb-toggle-thumb: #ffffff;
+  --fb-tooltip-bg: #222222;
+  --fb-tooltip-text: #ffffff;
+  --fb-tooltip-border: transparent;
 
-  --fb-success: #16a34a;
-  --fb-success-bg: #dcfce7;
-  --fb-warning: #d97706;
-  --fb-warning-bg: #fef3c7;
-  --fb-danger: #dc2626;
-  --fb-danger-bg: #fee2e2;
+  --fb-range-track: rgb(34 34 34 / 0.14);
+  --fb-range-fill: #222222;
+  --fb-range-thumb: #ffffff;
+
+  --fb-shadow-island: 0 1px 1px rgb(17 17 17 / 0.03),
+    0 2px 10px rgb(17 17 17 / 0.05);
+  --fb-shadow-popover: 0 2px 6px rgb(17 17 17 / 0.06),
+    0 14px 36px rgb(17 17 17 / 0.12);
+  --fb-shadow-dialog: 0 2px 8px rgb(17 17 17 / 0.08),
+    0 28px 80px rgb(17 17 17 / 0.22);
 
   color-scheme: light;
 }
 
-/* ─── Dark palette ────────────────────────────────────────────────────────── */
+/* ─── Dark palette — graphite and signal ──────────────────────────────────── */
 .dark {
-  --fb-bg: #0b0e14;
-  --fb-canvas: #0f131a;
-  --fb-surface: #141922;
-  --fb-surface-soft: #1a212c;
-  --fb-surface-hover: #232b38;
-  --fb-surface-sunken: #10151d;
+  --fb-canvas: #151515;
+  --fb-bg: #151515;
+  --fb-surface: #1e1e1e;
+  --fb-surface-raised: #252525;
+  --fb-surface-muted: #2a2a2a;
+  --fb-hover: rgb(255 255 255 / 0.06);
+  --fb-pressed: rgb(255 255 255 / 0.1);
 
-  --fb-text: #e6eaf2;
-  --fb-text-muted: #94a3b8;
-  --fb-text-soft: #64748b;
-  --fb-on-ink: #0b0e14;
+  --fb-border: rgb(255 255 255 / 0.08);
+  --fb-border-strong: rgb(255 255 255 / 0.15);
+  --fb-divider: rgb(255 255 255 / 0.07);
 
-  --fb-brand: #3b82f6;
-  --fb-brand-hover: #60a5fa;
-  --fb-brand-soft: #17233a;
+  --fb-text: #ededed;
+  --fb-text-muted: #a3a3a3;
+  --fb-text-soft: #787878;
+  --fb-text-disabled: #555555;
 
-  /* Ink inverts in dark mode so the active tool chip stays the bright one. */
-  --fb-ink: #e6eaf2;
-  --fb-ink-soft: #cbd5e1;
+  --fb-ink: #fff083;
+  --fb-on-ink: #111111;
 
-  --fb-pill: #1a212c;
-  --fb-on-pill: #e6eaf2;
+  --fb-primary: #fff083;
+  --fb-primary-hover: #fff6b0;
+  --fb-primary-edge: transparent;
+  --fb-on-primary: #111111;
+  --fb-accent: #fff083;
+  --fb-accent-soft: rgb(255 240 131 / 0.12);
 
-  --fb-border: #232b38;
-  --fb-border-strong: #333d4d;
+  --fb-selection: #7c9dff;
+  --fb-selection-soft: rgb(124 157 255 / 0.14);
+  --fb-focus: #fff083;
 
-  --fb-success: #4ade80;
-  --fb-success-bg: #10281a;
-  --fb-warning: #fbbf24;
-  --fb-warning-bg: #2a2010;
-  --fb-danger: #f87171;
-  --fb-danger-bg: #2c1616;
+  --fb-success: #4fd18b;
+  --fb-success-soft: rgb(79 209 139 / 0.12);
+  --fb-warning: #f5b83d;
+  --fb-warning-soft: rgb(245 184 61 / 0.12);
+  --fb-danger: #ff6e63;
+  --fb-danger-soft: rgb(255 110 99 / 0.12);
+  --fb-info: #7c9dff;
+  --fb-info-soft: rgb(124 157 255 / 0.12);
+
+  --fb-scrim: rgb(0 0 0 / 0.55);
+  --fb-segment-active: rgb(255 255 255 / 0.12);
+  --fb-toggle-thumb: #e5e5e5;
+  --fb-tooltip-bg: #2e2e2e;
+  --fb-tooltip-text: #ededed;
+  --fb-tooltip-border: rgb(255 255 255 / 0.1);
+
+  --fb-range-track: rgb(255 255 255 / 0.14);
+  --fb-range-fill: #fff083;
+  --fb-range-thumb: #ededed;
+
+  /* Shadows barely read on graphite; an inner top highlight carries the lift. */
+  --fb-shadow-island: inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 2px 10px rgb(0 0 0 / 0.35);
+  --fb-shadow-popover: inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 16px 40px rgb(0 0 0 / 0.55);
+  --fb-shadow-dialog: inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 32px 80px rgb(0 0 0 / 0.6);
 
   color-scheme: dark;
 }
@@ -195,7 +302,9 @@
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -209,8 +318,12 @@ body {
   margin: 0;
   background: var(--fb-bg);
   color: var(--fb-text);
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 #root {
@@ -223,47 +336,102 @@ body {
   overscroll-behavior: none;
 }
 
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--fb-accent);
+  color: #111111;
+}
+
 /* ─── Focus ring ──────────────────────────────────────────────────────────── */
-*:focus-visible {
-  outline: 2px solid var(--fb-brand);
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--fb-focus);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 
 /* ─── Range inputs ────────────────────────────────────────────────────────── */
+/* SliderRow sets --fb-range-pct so the filled part of the track follows the
+   value; the input itself is a 20px hit area with a 4px visual track. */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 9999px;
-  background: var(--fb-border-strong);
-  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    var(--fb-range-fill) var(--fb-range-pct, 0%),
+    var(--fb-range-track) var(--fb-range-pct, 0%)
+  );
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--fb-brand);
-  border: 2px solid var(--fb-surface);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
-  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: var(--fb-range-thumb);
+  border: 1px solid var(--fb-border-strong);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  transition: transform 120ms var(--ease-out);
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--fb-range-track);
+}
+input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--fb-range-fill);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--fb-surface);
-  border-radius: 50%;
-  background: var(--fb-brand);
-  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--fb-range-thumb);
+  border: 1px solid var(--fb-border-strong);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+}
+input[type="range"]:focus-visible {
+  outline: none;
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--fb-focus);
+  outline-offset: 2px;
+}
+input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--fb-focus);
+  outline-offset: 2px;
 }
 input[type="range"]:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
-input[type="range"]:disabled::-webkit-slider-thumb {
-  background: var(--fb-text-soft);
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 32px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+    margin-top: -10px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
 }
 
 /* ─── Scrollbars — thin and unobtrusive inside panels ─────────────────────── */
@@ -285,7 +453,6 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   background: transparent;
 }
 
-/* Horizontal tool strips scroll on small screens but shouldn't show a bar. */
 .fb-scroll-none {
   scrollbar-width: none;
 }
@@ -294,20 +461,16 @@ input[type="range"]:disabled::-webkit-slider-thumb {
 }
 
 /* ─── Motion ──────────────────────────────────────────────────────────────── */
-@keyframes fb-sheet-in {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
+/* Enter/exit classes key off data-state, which usePresence keeps mounted
+   through the exit so the out-animation can play. */
 @keyframes fb-fade-in {
   from {
     opacity: 0;
   }
+}
+@keyframes fb-fade-out {
   to {
-    opacity: 1;
+    opacity: 0;
   }
 }
 @keyframes fb-pop-in {
@@ -315,42 +478,105 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     opacity: 0;
     transform: translateY(4px) scale(0.98);
   }
+}
+@keyframes fb-pop-out {
   to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+  }
+}
+@keyframes fb-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes fb-sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes fb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+@keyframes fb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 @keyframes fb-pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--fb-success) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--fb-success) 60%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px transparent;
+    box-shadow: 0 0 0 5px transparent;
   }
   100% {
     box-shadow: 0 0 0 0 transparent;
   }
 }
 
-.fb-animate-sheet {
-  animation: fb-sheet-in 260ms var(--ease-standard);
+.fb-fade[data-state="open"] {
+  animation: fb-fade-in 150ms var(--ease-out);
 }
-.fb-animate-fade {
-  animation: fb-fade-in 180ms var(--ease-standard);
+.fb-fade[data-state="closed"] {
+  animation: fb-fade-out 120ms var(--ease-in) forwards;
 }
-.fb-animate-pop {
-  animation: fb-pop-in 160ms var(--ease-emphasized);
+.fb-pop[data-state="open"] {
+  animation: fb-pop-in 160ms var(--ease-out);
+}
+.fb-pop[data-state="closed"] {
+  animation: fb-pop-out 120ms var(--ease-in) forwards;
+}
+.fb-sheet[data-state="open"] {
+  animation: fb-sheet-in 280ms var(--ease-out);
+}
+.fb-sheet[data-state="closed"] {
+  animation: fb-sheet-out 200ms var(--ease-in) forwards;
+}
+.fb-toast[data-state="open"] {
+  animation: fb-toast-in 200ms var(--ease-out);
+}
+.fb-toast[data-state="closed"] {
+  animation: fb-fade-out 150ms var(--ease-in) forwards;
+}
+.fb-tooltip {
+  animation: fb-fade-in 120ms var(--ease-out);
+}
+.fb-rise {
+  animation: fb-rise 200ms var(--ease-out);
 }
 .fb-speaking {
   animation: fb-pulse-ring 1.6s ease-out infinite;
+}
+
+/* Legacy entrance classes, used by components not yet redesigned. */
+.fb-animate-sheet {
+  animation: fb-sheet-in 280ms var(--ease-out);
+}
+.fb-animate-fade {
+  animation: fb-fade-in 150ms var(--ease-out);
+}
+.fb-animate-pop {
+  animation: fb-pop-in 160ms var(--ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 100ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Speaking must stay visible without movement. */
+  .fb-speaking {
+    animation: none !important;
+    box-shadow: 0 0 0 2px var(--fb-success);
   }
 }

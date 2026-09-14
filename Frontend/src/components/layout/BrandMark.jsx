@@ -1,49 +1,34 @@
+import { cx } from "../ui/cx.js";
+
 /**
- * BrandMark — the FlowBoard logo lockup.
+ * BrandMark — the FlowBoard lockup.
  *
- * The glyph is inline SVG rather than an icon-font lookup so the mark renders
- * identically regardless of which icon package version is installed.
+ * An ink tile holding two nodes joined by a flow line: one lemon (the signal),
+ * one white. The tile does not theme — it is identity, not chrome — so it reads
+ * the same on paper and on graphite.
  */
 export default function BrandMark({ showWordmark = true, className = "" }) {
   return (
-    <span
-      className={["flex items-center gap-2 select-none", className]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand text-white shadow-raised">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          {/* Two nodes joined by a flow line — a board reduced to its idea. */}
-          <rect x="3" y="4" width="8" height="6" rx="2" fill="currentColor" />
-          <rect
-            x="13"
-            y="14"
-            width="8"
-            height="6"
-            rx="2"
-            fill="currentColor"
-            opacity="0.75"
-          />
+    <span className={cx("flex select-none items-center gap-2", className)}>
+      <span
+        aria-hidden="true"
+        className="grid size-7 shrink-0 place-items-center rounded-md bg-brand-tile shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="2" width="6.5" height="4.75" rx="1.25" className="fill-brand-glyph" />
+          <rect x="8" y="9.25" width="6.5" height="4.75" rx="1.25" className="fill-white" />
           <path
-            d="M7 10v3a4 4 0 0 0 4 4h2"
-            stroke="currentColor"
-            strokeWidth="2"
+            d="M4.75 6.75v1.5a3.25 3.25 0 0 0 3.25 3.25"
+            className="stroke-white"
+            strokeWidth="1.5"
             strokeLinecap="round"
           />
         </svg>
       </span>
 
-      {showWordmark && (
-        <span className="text-[15px] font-bold tracking-[-0.01em] text-text">
-          FlowBoard
-        </span>
-      )}
+      {showWordmark ? (
+        <span className="text-title tracking-[-0.02em] text-text">FlowBoard</span>
+      ) : null}
     </span>
   );
 }

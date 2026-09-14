@@ -1,54 +1,60 @@
+import { cx } from "./cx.js";
+import { Spinner } from "./Spinner.jsx";
+
 /**
- * Button — text/label button primitive.
+ * Button — text button primitive.
  *
- * Colors come from `--fb-*` tokens, which re-resolve under `.dark`, so no
- * variant needs a `dark:` override.
+ * `primary` is the lemon signal and belongs to at most one action per surface.
+ * Colours come from `--fb-*` tokens, so no variant needs a `dark:` override.
  *
  * @param {'primary'|'secondary'|'ghost'|'ink'|'danger'} variant
- * @param {'xs'|'sm'|'md'} size
+ * @param {'xs'|'sm'|'md'|'lg'} size - 28 / 32 / 36 / 44px
  */
 
-const VARIANT_CLASSES = {
-  primary:
-    "bg-brand text-on-brand border border-transparent hover:bg-brand-hover shadow-raised",
-  secondary:
-    "bg-surface text-text border border-border hover:bg-surface-hover",
-  ghost: "bg-transparent text-text-muted border border-transparent hover:bg-surface-hover hover:text-text",
-  ink: "bg-ink text-on-ink border border-transparent hover:opacity-90",
-  danger:
-    "bg-danger-bg text-danger border border-transparent hover:brightness-95",
+const VARIANTS = {
+  primary: "border-primary-edge bg-primary text-on-primary hover:bg-primary-hover",
+  secondary: "border-border bg-surface text-text hover:bg-hover",
+  ghost: "border-transparent bg-transparent text-text-muted hover:bg-hover hover:text-text",
+  ink: "border-transparent bg-ink text-on-ink hover:opacity-90",
+  danger: "border-transparent bg-danger-soft text-danger hover:bg-danger/18",
 };
 
-const SIZE_CLASSES = {
-  xs: "h-7 px-2.5 text-[12px] gap-1.5 rounded-button",
-  sm: "h-8 px-3 text-[13px] gap-1.5 rounded-button",
-  md: "h-9 px-4 text-[13px] gap-2 rounded-button",
+const SIZES = {
+  xs: "h-7 gap-1.5 rounded-md px-2.5 text-label",
+  sm: "h-8 gap-1.5 rounded-md px-3 text-label",
+  md: "h-9 gap-2 rounded-md px-3.5 text-body font-medium",
+  lg: "h-11 gap-2 rounded-lg px-4 text-body font-medium",
 };
 
 export function Button({
   variant = "secondary",
   size = "sm",
-  className = "",
   fullWidth = false,
+  loading = false,
+  disabled = false,
+  className = "",
+  ref,
   children,
   ...props
 }) {
   return (
     <button
+      ref={ref}
       type="button"
-      className={[
-        "inline-flex select-none items-center justify-center font-medium",
-        "transition-colors duration-150 ease-standard",
-        "disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-inherit",
-        VARIANT_CLASSES[variant] ?? VARIANT_CLASSES.secondary,
-        SIZE_CLASSES[size] ?? SIZE_CLASSES.sm,
-        fullWidth ? "w-full" : "",
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={cx(
+        "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap border",
+        "transition-[background-color,color,opacity,transform] duration-150 ease-out",
+        "active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45",
+        VARIANTS[variant] ?? VARIANTS.secondary,
+        SIZES[size] ?? SIZES.sm,
+        fullWidth && "w-full",
         className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      )}
       {...props}
     >
+      {loading ? <Spinner size={14} /> : null}
       {children}
     </button>
   );

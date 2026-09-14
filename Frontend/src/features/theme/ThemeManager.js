@@ -22,6 +22,12 @@ const getSystemTheme = () => {
 
 const isValidTheme = (value) => AVAILABLE_THEMES.includes(value);
 
+/** Browser chrome colour per theme — the canvas colour, from index.css. */
+const THEME_COLORS = {
+  [ThemeMode.LIGHT]: "#f8f8f7",
+  [ThemeMode.DARK]: "#151515",
+};
+
 export class ThemeManager {
   constructor({ storageKey = THEME_STORAGE_KEY } = {}) {
     this.storageKey = storageKey;
@@ -65,6 +71,10 @@ export class ThemeManager {
 
     const root = document.documentElement;
     root.classList.toggle("dark", theme === ThemeMode.DARK);
+
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", THEME_COLORS[theme]);
   }
 
   isDarkTheme() {

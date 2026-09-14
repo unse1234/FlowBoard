@@ -1,33 +1,20 @@
+import { pickCollaboratorColor } from "../../constants/presence.js";
+import { cx } from "./cx.js";
+
 /**
- * Avatar / AvatarStack — presence identity chips.
+ * Avatar / AvatarStack — presence identity.
  *
- * Avatars are initials on a deterministic colour derived from the user id, so
- * the same collaborator keeps the same colour across reloads and across peers.
+ * Initials on the collaborator's colour. When no colour is passed one is seeded
+ * from the id, using the same palette as live cursors, so a person looks the
+ * same in the stack, the people list and on the canvas.
  */
 
-const AVATAR_COLORS = [
-  "#6366f1",
-  "#ec4899",
-  "#14b8a6",
-  "#f59e0b",
-  "#8b5cf6",
-  "#0ea5e9",
-];
-
-const SIZE_CLASSES = {
-  xs: "h-6 w-6 text-[10px]",
-  sm: "h-7 w-7 text-[11px]",
-  md: "h-8 w-8 text-[12px]",
+const SIZES = {
+  xs: "size-5 text-kbd",
+  sm: "size-6 text-kbd",
+  md: "size-7 text-caption",
+  lg: "size-8 text-label",
 };
-
-function avatarColor(seed) {
-  const key = String(seed ?? "");
-  let hash = 0;
-  for (let index = 0; index < key.length; index += 1) {
-    hash = (hash + key.charCodeAt(index) * (index + 1)) % 997;
-  }
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
 
 function initials(name) {
   const parts = String(name ?? "?")
@@ -44,23 +31,24 @@ export function Avatar({
   name,
   color,
   seed,
-  size = "sm",
+  size = "md",
   ring = false,
+  speaking = false,
   className = "",
   ...props
 }) {
   return (
     <span
-      title={name}
-      className={[
-        "grid shrink-0 place-items-center rounded-full font-semibold text-white select-none",
-        SIZE_CLASSES[size] ?? SIZE_CLASSES.sm,
-        ring ? "ring-2 ring-surface" : "",
+      role="img"
+      aria-label={name}
+      className={cx(
+        "relative grid shrink-0 select-none place-items-center rounded-full font-semibold text-white",
+        SIZES[size] ?? SIZES.md,
+        ring && "ring-2 ring-surface",
+        speaking && "fb-speaking",
         className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ background: color ?? avatarColor(seed ?? name) }}
+      )}
+      style={{ background: color ?? pickCollaboratorColor(seed ?? name) }}
       {...props}
     >
       {initials(name)}
@@ -71,41 +59,38 @@ export function Avatar({
 /**
  * AvatarStack — overlapping avatars with a "+N" overflow chip.
  *
- * @param {Array<{id?: string, userId?: string, name?: string, username?: string, color?: string}>} users
- * @param {number} max - avatars rendered before overflow collapses into "+N"
+ * @param {Array<{userId?: string, id?: string, username?: string, name?: string, color?: string, isSpeaking?: boolean}>} users
  */
-export function AvatarStack({ users = [], max = 3, size = "sm", className = "" }) {
+export function AvatarStack({ users = [], max = 3, size = "md", className = "" }) {
   const visible = users.slice(0, max);
   const overflow = users.length - visible.length;
 
   return (
-    <div className={["flex items-center", className].filter(Boolean).join(" ")}>
-      <div className="flex -space-x-2">
-        {visible.map((user, index) => (
-          <Avatar
-            key={user.id ?? user.userId ?? index}
-            name={user.name ?? user.username ?? "Guest"}
-            color={user.color}
-            seed={user.id ?? user.userId}
-            size={size}
-            ring
-          />
-        ))}
-      </div>
+    <span className={cx("flex items-center -space-x-1.5", className)}>
+      {visible.map((user, index) => (
+        <Avatar
+          key={user.userId ?? user.id ?? index}
+          name={user.username ?? user.name ?? "Guest"}
+          color={user.color}
+          seed={user.userId ?? user.id}
+          size={size}
+          speaking={Boolean(user.isSpeaking)}
+          ring
+        />
+      ))}
 
-      {overflow > 0 && (
+      {overflow > 0 ? (
         <span
-          className={[
-            "ml-1.5 grid place-items-center rounded-full px-1.5",
-            "bg-surface-soft text-text-muted border border-border",
-            "text-[10px] font-semibold",
-            size === "md" ? "h-8" : "h-7",
-          ].join(" ")}
-          title={`${overflow} more collaborator${overflow === 1 ? "" : "s"}`}
+          aria-label={`${overflow} more`}
+          className={cx(
+            "grid min-w-7 shrink-0 place-items-center rounded-full px-1 ring-2 ring-surface",
+            "bg-surface-muted text-kbd font-semibold tabular-nums text-text-muted",
+            size === "lg" ? "h-8" : size === "sm" ? "h-6 min-w-6" : "h-7",
+          )}
         >
           +{overflow}
         </span>
-      )}
-    </div>
+      ) : null}
+    </span>
   );
 }
