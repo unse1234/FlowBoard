@@ -1,6 +1,6 @@
 import { DEFAULT_STYLE, NOTE_DEFAULTS } from "../../constants/canvas.js";
 import { TOOLS } from "../../constants/tools.js";
-import { getReadableInk } from "../../utils/styleUtils.js";
+import { getReadableInk, getShapeStyle } from "../../utils/styleUtils.js";
 
 export const EMPTY_TEXT_PLACEHOLDER = "";
 
@@ -50,7 +50,9 @@ export function getTextEditorStyle({ shape, transform }) {
     autoGrow: true,
     fontSize: style.fontSize * transform.scale,
     fontFamily: style.fontFamily,
-    color: style.stroke,
+    // The colour the text will be drawn in, so ink typed on the dark canvas is
+    // visible while typing, not only once committed.
+    color: getShapeStyle(shape).stroke,
     lineHeight: 1.25,
   };
 }

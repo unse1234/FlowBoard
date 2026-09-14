@@ -265,12 +265,16 @@ const RoughLine = ({ shape, nodeProps }) => {
   const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
   const Component = shape.type === TOOLS.ARROW ? Arrow : Line;
   const points = shape.type === TOOLS.PEN ? shape.points : getLinePoints(shape);
+  // A group has no hit width of its own, so both strokes carry the shape's —
+  // otherwise a sketchy line is only as easy to tap or erase as it is thick.
+  const { hitStrokeWidth } = nodeProps;
 
   return (
     <Group {...nodeProps} x={shape.x} y={shape.y}>
       {[0, 1].map((index) => (
         <Component
           key={index}
+          hitStrokeWidth={hitStrokeWidth}
           points={points.map((point, pointIndex) =>
             point + roughOffset(shape, index + pointIndex, 1.3)
           )}

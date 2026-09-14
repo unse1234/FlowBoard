@@ -436,6 +436,23 @@ export function useWhiteboard() {
     clearSelection();
   }, [clearSelection, publishLocalOperation, setShapesWithHistory]);
 
+  /**
+   * Pick a tool from the dock, a flyout or a shortcut.
+   *
+   * A tool that makes or removes something starts fresh, so the selection is
+   * let go — otherwise the inspector keeps describing the last shape and a
+   * colour picked for the next one lands on it instead. Select and Hand only
+   * point and move, so they keep it. Internal switches (back to Select after
+   * drawing) call setTool directly and are unaffected.
+   */
+  const chooseTool = useCallback(
+    (nextTool) => {
+      setTool(nextTool);
+      if (nextTool !== TOOLS.SELECT && nextTool !== TOOLS.PAN) clearSelection();
+    },
+    [clearSelection],
+  );
+
   useKeyboardShortcuts({
     undo,
     redo,
@@ -453,7 +470,7 @@ export function useWhiteboard() {
     onCut: clipboard.cut,
     onPaste: clipboard.paste,
     onDuplicate: clipboard.duplicate,
-    setTool,
+    setTool: chooseTool,
   });
 
   /**
@@ -805,7 +822,7 @@ export function useWhiteboard() {
     transformerRef,
     registerShapeRef,
     tool,
-    setTool,
+    setTool: chooseTool,
     isPanMode: isSpaceHeld || tool === TOOLS.PAN,
     selectedShape,
     selectedShapes,

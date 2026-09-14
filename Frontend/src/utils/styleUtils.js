@@ -1,5 +1,6 @@
 import { DEFAULT_STYLE } from "../constants/canvas.js";
 import { ThemeManager } from "../features/theme/ThemeManager.js";
+import { needsLightInkOnDarkCanvas } from "./color.js";
 
 const themeManager = new ThemeManager();
 
@@ -49,6 +50,10 @@ export const getReadableInk = (background) =>
  * Merges shape's custom style with global default style
  * Shape properties take precedence, filling gaps with defaults
  *
+ * On the dark canvas a near-black stroke is drawn white so it stays visible.
+ * Only strokes that would all but vanish are swapped; a chosen blue, red or
+ * green keeps its colour.
+ *
  * @param {Object} shape - Shape object with optional style property
  * @returns {Object} Complete style object with all properties defined
  */
@@ -58,7 +63,7 @@ export const getShapeStyle = (shape) => {
     ...(shape?.style ?? {}),
   };
 
-  if (themeManager.isDarkTheme() && isDarkColor(baseStyle.stroke)) {
+  if (themeManager.isDarkTheme() && needsLightInkOnDarkCanvas(baseStyle.stroke)) {
     return {
       ...baseStyle,
       stroke: "#ffffff",
