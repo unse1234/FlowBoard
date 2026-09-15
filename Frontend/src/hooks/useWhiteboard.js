@@ -393,12 +393,32 @@ export function useWhiteboard() {
     }));
   }, []);
 
+  /**
+   * Add ready-made shapes as one undoable step and one operation, and select
+   * them.
+   *
+   * Paste and AI-generated diagrams both come through here, so a batch of new
+   * shapes is undone in one step and reaches collaborators as a single
+   * CREATE_SHAPES, the way a paste always has.
+   *
+   * @returns {boolean} false when there was nothing to add
+   */
+  const insertShapes = useCallback(
+    (newShapes) => {
+      if (!Array.isArray(newShapes) || newShapes.length === 0) return false;
+
+      setShapesWithHistory((prev) => [...prev, ...newShapes]);
+      publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, { shapes: newShapes });
+      selectShapes(newShapes.map((shape) => shape.id));
+      return true;
+    },
+    [publishLocalOperation, selectShapes, setShapesWithHistory],
+  );
+
   const clipboard = useClipboard({
     shapesRef,
     selectedShapeIds,
-    setShapesWithHistory,
-    publishLocalOperation,
-    selectShapes,
+    insertShapes,
     deleteSelectedShapes,
   });
 
@@ -681,14 +701,14 @@ export function useWhiteboard() {
   );
 
   /**
-   * Frame every shape on the board.
+   * Fit a region of the board to the screen.
    *
-   * A board whose content has no extent in one axis (a single point, a perfectly
+   * A region with no extent in one axis (a single point, a perfectly
    * horizontal line) would divide by zero, so those axes fall back to scale 1
-   * and only the centring applies.
+   * and only the centring applies. `maxScale` caps the zoom, so bringing a
+   * small region into view need not zoom in on it.
    */
-  const fitToScreen = useCallback(() => {
-    const bounds = getShapesBoundingBox(shapesRef.current);
+  const frameBounds = useCallback((bounds, { maxScale = MAX_SCALE } = {}) => {
     if (!bounds) return;
 
     const padding = 80;
@@ -703,8 +723,8 @@ export function useWhiteboard() {
     const fitted = Math.min(scaleX, scaleY);
 
     const nextScale = Number.isFinite(fitted)
-      ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, fitted))
-      : 1;
+      ? Math.min(MAX_SCALE, maxScale, Math.max(MIN_SCALE, fitted))
+      : Math.min(1, maxScale);
 
     setTransform({
       scale: nextScale,
@@ -712,6 +732,12 @@ export function useWhiteboard() {
       y: viewportHeight / 2 - (bounds.y + bounds.height / 2) * nextScale,
     });
   }, []);
+
+  /** Frame every shape on the board. */
+  const fitToScreen = useCallback(
+    () => frameBounds(getShapesBoundingBox(shapesRef.current)),
+    [frameBounds],
+  );
 
   const liveCursors = useMemo(
     () =>
@@ -865,6 +891,8 @@ export function useWhiteboard() {
     setZoom,
     resetZoom,
     fitToScreen,
+    frameBounds,
+    insertShapes,
     collaboration,
     handleStyleChange,
     handleImageFileSelected,

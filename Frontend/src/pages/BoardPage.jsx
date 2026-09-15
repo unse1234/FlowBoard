@@ -5,6 +5,7 @@ import TextEditorOverlay from "../components/TextEditorOverlay";
 import Toolbar from "../components/Toolbar";
 import ViewControls from "../components/ViewControls";
 import WhiteboardCanvas from "../components/WhiteboardCanvas";
+import AiDiagramAssistant from "../components/ai/AiDiagramAssistant";
 import Inspector, { SelectionActions } from "../components/inspector/Inspector";
 import InspectorPanel from "../components/inspector/InspectorPanel";
 import { getInspectorModel } from "../components/inspector/inspectorModel.js";
@@ -314,6 +315,8 @@ export default function BoardPage() {
     });
   }, [clearBoard, toast, undo]);
 
+  const openAiSheet = useCallback(() => openSheet(SHEETS.AI), [openSheet]);
+
   const menuItems = useMemo(
     () =>
       buildBoardMenuItems({
@@ -329,6 +332,8 @@ export default function BoardPage() {
         // Keyboard shortcuts only mean something where a keyboard is likely.
         onShowShortcuts: isTabletUp ? openShortcuts : undefined,
         onClearBoard: handleClearBoard,
+        // Phones have no room beside the dock for the AI button.
+        onGenerateDiagram: isTabletUp ? undefined : openAiSheet,
         // Touch has no keyboard or right-click; phones also have no view island.
         touchActions:
           isCoarsePointer || !isTabletUp
@@ -352,6 +357,7 @@ export default function BoardPage() {
       isDesktop,
       isTabletUp,
       minimapVisible,
+      openAiSheet,
       openShortcuts,
       resetZoom,
       selectAll,
@@ -432,6 +438,20 @@ export default function BoardPage() {
 
   const showEmptyHint =
     !hasShapes && !board.editingTextShape && (tool === TOOLS.SELECT || tool === TOOLS.PAN);
+
+  // The assistant owns its own workflow state; the board only lends it stable
+  // callbacks and the current view, so typing a description never re-renders
+  // the canvas.
+  const aiAssistantProps = {
+    hasShapes,
+    getShapes,
+    insertShapes: board.insertShapes,
+    frameBounds: board.frameBounds,
+    transform,
+    viewportSize,
+    activeStyle,
+    onUndo: undo,
+  };
 
   const toolbar = (
     <Toolbar
@@ -560,7 +580,17 @@ export default function BoardPage() {
             />
           </div>
 
-          <div className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2">{toolbar}</div>
+          <div className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2">
+            {toolbar}
+            {/* Beside the dock rather than inside it, so the dock stays centred. */}
+            <div className="absolute left-full top-0 ml-2">
+              <AiDiagramAssistant
+                presentation="popover"
+                touch={isCoarsePointer}
+                {...aiAssistantProps}
+              />
+            </div>
+          </div>
 
           {isCoarsePointer && hasSelection && !board.editingTextShape ? (
             <div className="fixed bottom-17 left-1/2 z-40 -translate-x-1/2">
@@ -714,6 +744,15 @@ export default function BoardPage() {
           <Sheet open={sheet === SHEETS.MENU} onClose={closeSheet} title="Board">
             <ActionList items={menuItems} onAction={closeSheet} />
           </Sheet>
+
+          <AiDiagramAssistant
+            presentation="sheet"
+            touch
+            open={sheet === SHEETS.AI}
+            onOpen={openAiSheet}
+            onClose={closeSheet}
+            {...aiAssistantProps}
+          />
         </>
       )}
 

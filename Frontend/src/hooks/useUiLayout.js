@@ -10,6 +10,7 @@ export const SHEETS = Object.freeze({
   PEOPLE: "people",
   SHARE: "share",
   MENU: "menu",
+  AI: "ai",
 });
 
 const LAYOUT_STORAGE_KEY = "flowboard_layout";

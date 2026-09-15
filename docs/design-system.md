@@ -185,6 +185,7 @@ a static ring.
 | `ShortcutsDialog` | keyboard | Generated from the binding tables (press `?`) |
 | `EmptyCanvasHint` | all | Real single-key shortcuts, or touch guidance |
 | `Minimap` | desktop | Themed, pointer events, toggleable |
+| `AiDiagramAssistant` | all | Sparkle island beside the dock (tablet, desktop) or a board-menu sheet (phone); describe → preview → insert; draft and preview survive closing the panel |
 
 ## 10. Layout
 
