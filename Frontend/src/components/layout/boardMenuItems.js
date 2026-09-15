@@ -7,6 +7,7 @@ import {
   Moon,
   RotateCcw,
   Scan,
+  Sparkles,
   SquareDashed,
   Trash2,
 } from "lucide-react";
@@ -28,6 +29,9 @@ function withSeparators(sections) {
  * `touchActions` adds what a touch device cannot reach otherwise: Select all
  * and Paste (there is no keyboard and no right-click), and — on phones, which
  * have no view island — Zoom to fit and Reset view.
+ *
+ * `onGenerateDiagram` adds the AI diagram entry, for layouts with no room for
+ * its button beside the tool dock.
  */
 export function buildBoardMenuItems({
   hasShapes,
@@ -41,9 +45,20 @@ export function buildBoardMenuItems({
   onToggleMinimap,
   onShowShortcuts,
   onClearBoard,
+  onGenerateDiagram,
   touchActions,
 }) {
   return withSeparators([
+    [
+      onGenerateDiagram && {
+        id: "generate-diagram",
+        label: "Generate diagram",
+        icon: Sparkles,
+        // It opens a sheet of its own, which closing the menu would dismiss.
+        keepOpen: true,
+        onSelect: onGenerateDiagram,
+      },
+    ],
     [
       {
         id: "export",

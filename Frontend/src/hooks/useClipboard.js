@@ -1,7 +1,6 @@
 import { useCallback, useRef } from "react";
 import { PASTE_OFFSET } from "../constants/canvas.js";
 import { cloneShapes } from "../domain/board/shapeCloning.js";
-import { OPERATION_TYPES } from "../features/realtime/operations/operationTypes.js";
 import { createClientId } from "../features/shared/id/createClientId.js";
 
 /**
@@ -18,9 +17,7 @@ import { createClientId } from "../features/shared/id/createClientId.js";
 export function useClipboard({
   shapesRef,
   selectedShapeIds,
-  setShapesWithHistory,
-  publishLocalOperation,
-  selectShapes,
+  insertShapes,
   deleteSelectedShapes,
 }) {
   const clipboardRef = useRef([]);
@@ -33,8 +30,8 @@ export function useClipboard({
   }, [selectedShapeIds, shapesRef]);
 
   /**
-   * Add clones to the board and leave them selected, so the copy can be moved
-   * immediately — which is almost always the next thing the user does.
+   * Add clones to the board. insertShapes leaves them selected, so the copy can
+   * be moved immediately — which is almost always the next thing the user does.
    */
   const pasteShapes = useCallback(
     (sourceShapes, offsetStep) => {
@@ -48,11 +45,9 @@ export function useClipboard({
         offsetY: offset,
       });
 
-      setShapesWithHistory((prev) => [...prev, ...clones]);
-      publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, { shapes: clones });
-      selectShapes(clones.map((shape) => shape.id));
+      insertShapes(clones);
     },
-    [publishLocalOperation, selectShapes, setShapesWithHistory],
+    [insertShapes],
   );
 
   const copy = useCallback(() => {

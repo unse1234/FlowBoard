@@ -13,6 +13,12 @@ in the browser, on a laptop, a tablet or a phone.
 * Copy, cut, paste and duplicate; undo and redo; snapping guides and an optional grid
 * Export the board as a PNG
 
+### AI diagrams
+
+* Describe a flow or a system and FlowBoard draws it as ordinary, editable shapes
+* Preview before inserting; one undo removes the whole diagram, and collaborators receive it like any other edit
+* Generation runs on the server with Gemini, so the API key never reaches the browser
+
 ### Collaboration
 
 * Share a live link; anyone with it can edit in real time
@@ -51,14 +57,19 @@ Frontend/src/
 │   ├── inspector/   # contextual style inspector and its model
 │   ├── collab/      # share, voice and join components
 │   ├── panels/      # people panel, shortcuts dialog
+│   ├── ai/          # AI diagram assistant, panel and preview
 │   └── canvas/      # grid, marquee, snap guides
 ├── design/          # canvas colour tokens
-├── domain/          # pure board logic: shapes, geometry, selection, grouping
-├── features/        # realtime, voice, export, shortcuts, theme, toasts, persistence
+├── domain/          # pure board logic: shapes, geometry, selection, grouping, diagram layout
+├── features/        # realtime, voice, export, shortcuts, theme, toasts, persistence, AI client
 ├── hooks/
 └── pages/BoardPage.jsx
 
-Backend/src/         # Socket.IO gateways and the operation contract
+Backend/src/
+├── ai/              # AI diagram route, service, validation and the Gemini provider
+├── config/
+├── operations/      # the operation contract
+└── realtime/        # Socket.IO gateways
 ```
 
 ## Getting started
@@ -93,6 +104,14 @@ npm run dev
 | `VITE_API_URL` | Frontend — realtime server URL | `http://localhost:3001` |
 | `PORT` | Backend — listen port | `3001` |
 | `CLIENT_ORIGIN` | Backend — allowed origins, comma-separated | `http://localhost:5173` |
+| `GEMINI_API_KEY` | Backend — Gemini API key for AI diagrams | none (AI disabled) |
+| `GEMINI_MODEL` | Backend — Gemini model | `gemini-3.6-flash` |
+| `AI_RATE_LIMIT_PER_MINUTE` | Backend — AI requests per client per minute, `0` for no limit | `10` |
+
+The backend reads `Backend/.env` on start; copy `Backend/.env.example` to create
+it. AI keys belong only there: anything prefixed `VITE_` is bundled into the
+browser. Behind a reverse proxy, enable Express's `trust proxy` so the AI rate
+limit sees real client addresses.
 
 ## Scripts
 
