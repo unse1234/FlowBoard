@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 1. Update it every chunk.**
 
-Last updated: 2026-09-23 (Phase 0 complete and verified)
+Last updated: 2026-09-23 (Phase 0 complete; chunk 1.1 done)
 
 ---
 
@@ -11,9 +11,9 @@ Last updated: 2026-09-23 (Phase 0 complete and verified)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 0 — Foundation. **Complete and verified** |
-| **Task** | Chunk 1.1 — password hashing |
-| **Blocker** | D-2: hashing algorithm not chosen |
+| **Phase** | 1 — Password identity. Chunk 1.1 done |
+| **Task** | Chunk 1.2 — email normalisation and validation |
+| **Blocker** | None |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
 rotating opaque refresh cookie (ADR 0002), multi-instance from the first commit
@@ -32,10 +32,11 @@ underneath it, not identity itself.
 | 0.2 | Migration runner — forward-only, advisory-locked so concurrent instances cannot race, checksum drift detection, each migration committed with its bookkeeping row. `npm run migrate`. |
 | 0.3 | `0001_create_users.sql` — UUID ids, `email`/`email_normalized` split, partial unique index on live accounts, `token_version` for stateless revocation, soft delete, CHECK constraints, `updated_at` trigger. **Applied to PostgreSQL 18.6; needed no changes.** |
 | 0.4 | Schema integration suite — 11 tests, all passing against a real server. |
+| 1.1 | `createPasswordHasher` — Argon2id at OWASP's baseline, PHC-stored parameters, `needsRehash` for transparent cost upgrades, 1024-byte input cap, verification that never throws, and `burnVerificationWork` so an unknown address costs the same as a wrong password. |
 
 ## In progress
 
-Nothing. Phase 0 is done; Phase 1 is next.
+Phase 1. Chunk 1.1 (hashing) is done; 1.2 to 1.5 remain.
 
 ## Not started
 
@@ -43,7 +44,7 @@ Nothing. Phase 0 is done; Phase 1 is next.
 | --- | --- | --- |
 | 0b | Realtime gateway tests | — (unblocked) |
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
-| 1 | Password hashing, signup, login, HTTP auth surface | D-2 |
+| 1 | Chunks 1.2–1.5: email normalisation, `authErrors.js`, signup, login | — (unblocked) |
 | 2 | Access + refresh tokens, rotation, revocation, CSRF | Phase 1 |
 | 3 | Session listing and revocation | Phase 2 |
 | 4 | Email delivery, verification, password reset | Phase 1, D-4, D-5 |
@@ -115,7 +116,7 @@ no outbound email of any kind.
 
 | Control | State | Evidence |
 | --- | --- | --- |
-| Password hashing | Column ready, no hashing yet | `users.password_hash`; no hashing dependency |
+| Password hashing | **Argon2id, OWASP baseline** | `Backend/src/auth/passwordHasher.js`, ADR 0004 |
 | Auth rate limiting | N/A — no auth endpoints | — |
 | AI rate limiting | Present, per-IP, in-memory | `Backend/src/ai/rateLimiter.js` |
 | CSRF | No surface **yet** — no cookies anywhere | Search: no cookie use |
@@ -132,7 +133,7 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **97 pass, 0 fail, 0 skipped** |
+| Backend | **120 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
@@ -150,7 +151,7 @@ rather than assumed.
 
 | ID | Issue | Effect on Step 1 |
 | --- | --- | --- |
-| D-2 | Hashing algorithm not chosen | **Blocks Phase 1** |
+| F-16 | Hashing can starve the libuv threadpool | Latent until 1.4/1.5; Phase 7 is the fix |
 | F-1 | No socket authorisation | Phase 5 closes this |
 | F-2 | `userId` forgeable | Phase 5 closes this |
 | F-10 | Realtime layer untested | Phase 0b must precede Phase 5 |
@@ -178,21 +179,24 @@ rather than assumed.
 | 2026-09-23 | D-1, D-3 and the scaling model resolved as ADRs 0001–0003. |
 | 2026-09-23 | Phase 0 chunks 0.1–0.4: connection layer, readiness, graceful shutdown, migration runner, `users` migration, integration harness. Backend tests 47 → 97. |
 | 2026-09-23 | Schema verified against PostgreSQL 18.6. All 11 integration tests pass; the migration needed no changes. Suite now 97 pass, 0 skipped. |
+| 2026-09-23 | D-2 resolved as ADR 0004. Chunk 1.1: Argon2id password hasher, 23 tests. Backend suite 97 → 120. |
 
 ---
 
 ## Next recommended task
 
-**Chunk 1.1 — password hashing**, once **D-2** is resolved (Argon2id vs bcrypt,
-and cost parameters). Nothing else blocks Phase 1: the schema is verified and
-`users.password_hash` is waiting.
+**Chunk 1.2 — email normalisation and validation.** Unblocked.
 
-Bounded as: a hashing module with explicit parameters, a verify function,
-and tests covering round-trip, wrong-password rejection, and that a hash is
-never logged. No routes yet.
+Bounded as: a module that validates an address and produces the
+`email_normalized` value the schema's partial unique index depends on, with
+tests. Normalisation is lowercasing only — **not** stripping dots or `+` tags,
+which are provider-specific conventions and would merge addresses that belong
+to different people.
 
-Unblocked in parallel, needing no decision: **Phase 0b** (gateway tests,
-required before Phase 5), **0c.1** (CI), **0c.2** (security headers).
+Then 1.3 (`authErrors.js`, mirroring `aiErrors.js`), 1.4 (signup), 1.5 (login).
+
+Unblocked in parallel: **Phase 0b** (gateway tests, required before Phase 5),
+**0c.1** (CI), **0c.2** (security headers).
 
 ## Do not touch / protected areas
 

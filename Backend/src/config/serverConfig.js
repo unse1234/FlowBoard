@@ -21,6 +21,18 @@ const DEFAULT_DATABASE_CONNECTION_TIMEOUT_MS = 5_000;
 const DEFAULT_DATABASE_STATEMENT_TIMEOUT_MS = 10_000;
 const DEFAULT_DATABASE_APPLICATION_NAME = "flowboard";
 
+/**
+ * Argon2id cost, per docs/decisions/0004-password-hashing.md.
+ *
+ * OWASP's 2024 baseline. Raising it strengthens stored passwords and lowers how
+ * many logins an instance can serve per second, so it is tuned against real
+ * hardware rather than guessed. A hash records the parameters it was made with,
+ * so a change upgrades existing accounts on their next login.
+ */
+const DEFAULT_ARGON2_MEMORY_KIB = 19_456;
+const DEFAULT_ARGON2_TIME_COST = 2;
+const DEFAULT_ARGON2_PARALLELISM = 1;
+
 function getServerConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? DEFAULT_PORT),
@@ -57,6 +69,19 @@ function getServerConfig(env = process.env) {
       ssl: readDatabaseSsl(env.DATABASE_SSL),
       applicationName:
         env.DATABASE_APPLICATION_NAME?.trim() || DEFAULT_DATABASE_APPLICATION_NAME,
+    },
+    auth: {
+      argon2: {
+        memoryCostKib: readPositiveInteger(
+          env.AUTH_ARGON2_MEMORY_KIB,
+          DEFAULT_ARGON2_MEMORY_KIB,
+        ),
+        timeCost: readPositiveInteger(env.AUTH_ARGON2_TIME_COST, DEFAULT_ARGON2_TIME_COST),
+        parallelism: readPositiveInteger(
+          env.AUTH_ARGON2_PARALLELISM,
+          DEFAULT_ARGON2_PARALLELISM,
+        ),
+      },
     },
   };
 }

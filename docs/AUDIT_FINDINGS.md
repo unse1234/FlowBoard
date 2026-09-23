@@ -3,8 +3,10 @@
 Defects and risks **in what already exists**. Missing checklist features are not
 findings — those are in `PRODUCTION_PLAN.md`.
 
-Audit date: 2026-09-23. Nothing here has been fixed; this audit changed no
-functional code.
+First audited 2026-09-23. Kept current as work lands: a fixed finding is marked
+RESOLVED rather than deleted, so a future session can see it was considered.
+New risks introduced by new code are added here too, even when not yet
+reachable.
 
 **Severity** reflects impact *if FlowBoard were exposed publicly today*. Several
 CRITICAL items are inherent to a link-shared demo with no accounts, and are
@@ -27,6 +29,7 @@ resolved by Step 1 rather than by a patch.
 | F-13 | ~~LOW~~ | Ops | ~~`/health` reports health it never checks~~ — **RESOLVED 2026-09-23** |
 | F-14 | LOW | Security | AI rate limiting is per-IP, in-memory, and proxy-naive |
 | F-15 | MEDIUM | Dependencies | `qs` DoS advisory reaches the app through express |
+| F-16 | MEDIUM | Availability | Password hashing can starve the libuv threadpool |
 
 ---
 
@@ -295,6 +298,36 @@ configured — which the code does **not** set. `README.md` and the module comme
 both flag this for the operator, so it is a documented deployment requirement
 rather than an oversight. With no sign-in in front of it, the endpoint still
 spends a shared Gemini quota (20 requests/day on the free tier).
+
+---
+
+## F-16 — MEDIUM — Password hashing can starve the libuv threadpool
+
+**Latent, not yet reachable.** Added by Step 1 chunk 1.1 and recorded now so it
+is not rediscovered under load. Nothing calls the hasher yet — there is no
+signup or login route — so there is currently no way to trigger it.
+
+**Evidence:** `Backend/src/auth/passwordHasher.js` uses `@node-rs/argon2`,
+whose work runs on the libuv threadpool. Measured during
+`docs/decisions/0004-password-hashing.md`: throughput stops improving beyond the
+threadpool size, giving roughly 40–50 hashes per second per instance at the
+default parameters, with the pool defaulting to **four** threads.
+
+**Impact once login exists:** a burst of login attempts — credential stuffing,
+or simply a popular moment — occupies every threadpool thread. Other native
+work on the same instance queues behind it, including anything the readiness
+probe depends on, so an instance under a login flood can look unhealthy and be
+pulled from rotation while it is in fact working.
+
+**Mitigations, in the order they should land:**
+
+1. **Phase 7 auth rate limiting** is the real fix, and is therefore a stability
+   requirement rather than only an abuse control.
+2. **Raise `UV_THREADPOOL_SIZE`** in the deployment, ahead of raising the Argon2
+   cost. Documented in `Backend/.env.example`.
+3. A concurrency cap in front of hashing was considered and deliberately not
+   added in chunk 1.1: without a rate limiter it would mostly relocate the
+   queue rather than remove it.
 
 ---
 

@@ -6,15 +6,16 @@
 
 ## Current task
 
-Step 1 · Phase 0 — database foundation.
+Step 1 · Phase 1 — password identity.
 
 ## Status
 
-**Phase 0 complete and verified** — 2026-09-23.
+**Phase 0 complete and verified. Chunk 1.1 complete** — 2026-09-23.
 
-The schema has been applied to PostgreSQL 18.6 and all 11 schema integration
-tests pass. The migration needed no changes. Backend suite: **97 passing, 0
-skipped.**
+The schema is applied to PostgreSQL 18.6 with all integration tests passing, and
+password hashing is in place. Backend suite: **120 passing, 0 skipped.**
+
+Nothing authenticates yet — 1.1 delivered the hashing primitive, not a login.
 
 ## What was built
 
@@ -24,16 +25,19 @@ skipped.**
 | 0.2 | Forward-only migration runner with advisory lock, checksum drift detection, per-migration transactions, `npm run migrate` | `Backend/src/db/migrate.js` |
 | 0.3 | `users` table: UUID ids, soft delete, `token_version`, case-insensitive unique email | `Backend/migrations/0001_create_users.sql` |
 | 0.4 | Schema integration suite, skipped unless `TEST_DATABASE_URL` is set | `Backend/src/db/schema.integration.test.js` |
+| 1.1 | Argon2id hashing: PHC-stored parameters, `needsRehash` for transparent cost upgrades, input cap, non-throwing verification, timing-equalised unknown-user path | `Backend/src/auth/passwordHasher.js` |
 
 ## Tests
 
 | Suite | Result |
 | --- | --- |
-| Backend | **97 pass, 0 fail, 0 skipped** |
+| Backend | **120 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass, 0 fail |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 97 during Phase 0.
+Backend tests grew from 47 to 120. The hashing tests run at deliberately cheap
+Argon2 parameters so the suite stays fast, with two tests pinning the real
+shipped defaults against OWASP's baseline.
 
 ## Local database
 
@@ -58,10 +62,15 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-**Chunk 1.1 — password hashing.**
-Blocked only on decision **D-2** (Argon2id vs bcrypt, and cost parameters) in
-`AUTH/AUTH_DECISIONS.md`. The schema is verified, so nothing else stands in the
-way.
+**Chunk 1.2 — email normalisation and validation.** Nothing blocks it.
+
+Bounded as: validate an address and produce the `email_normalized` value the
+schema's partial unique index depends on, with tests. Lowercase only — do not
+strip dots or `+` tags, which are provider-specific and would merge addresses
+belonging to different people.
+
+Then 1.3 (`authErrors.js`), 1.4 (signup), 1.5 (login). Login is where F-16
+becomes reachable, so Phase 7 rate limiting should not drift far behind it.
 
 Unblocked work that can run in any order, and does not need a database:
 

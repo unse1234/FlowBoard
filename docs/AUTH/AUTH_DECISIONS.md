@@ -129,17 +129,26 @@ land precisely on the auth code, which must be the most trustworthy.
 the operation store is Step 2's subject.
 **Status:** Accepted 2026-09-23.
 
+## E-11 · Argon2id for password hashing · *was D-2*
+
+**Decision:** Argon2id via `@node-rs/argon2`, at OWASP's 2024 baseline
+(m=19456 KiB, t=2, p=1), all three parameters configurable. Hashes are stored
+as PHC strings, and `needsRehash` upgrades an account transparently on its next
+successful login when the cost is raised.
+**Reason:** memory-hard, so GPU and ASIC cracking scale far worse against it
+than bcrypt — which matters most in the case being designed for, where a breach
+exposes millions of hashes at once. `@node-rs/argon2` ships prebuilt binaries,
+so it needs no build toolchain.
+**Evidence:** `../decisions/0004-password-hashing.md`, with measured throughput.
+**Impact:** ~30ms per hash and roughly 40–50 logins/second per instance at the
+defaults, bounded by the libuv threadpool. This makes `UV_THREADPOOL_SIZE` a
+tuning knob and makes auth rate limiting a stability requirement rather than
+only an abuse control — see finding F-16.
+**Status:** Accepted 2026-09-23.
+
 ---
 
 # UNRESOLVED
-
-## D-2 · Password hashing algorithm and parameters
-
-**Question:** Argon2id or bcrypt, and at what cost parameters.
-**Why unresolved:** no hashing dependency exists, so there is no precedent.
-Parameters must be tuned against the real deployment target, which is still
-UNKNOWN — no deployment config is in the repository.
-**Status:** UNRESOLVED. Needed for Phase 1, not for Phase 0.
 
 ## D-4 · Email provider
 

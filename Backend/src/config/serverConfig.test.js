@@ -73,3 +73,35 @@ test("TLS to the database is off unless asked for, and skipping verification mus
     rejectUnauthorized: false,
   });
 });
+
+test("reads Argon2 cost from the environment with OWASP defaults", () => {
+  assert.deepEqual(getServerConfig({}).auth.argon2, {
+    memoryCostKib: 19_456,
+    timeCost: 2,
+    parallelism: 1,
+  });
+
+  assert.deepEqual(
+    getServerConfig({
+      AUTH_ARGON2_MEMORY_KIB: "47104",
+      AUTH_ARGON2_TIME_COST: "1",
+      AUTH_ARGON2_PARALLELISM: "2",
+    }).auth.argon2,
+    { memoryCostKib: 47_104, timeCost: 1, parallelism: 2 },
+  );
+});
+
+test("nonsense Argon2 cost falls back rather than weakening hashing", () => {
+  // A zero or negative cost would be rejected by the library at the first
+  // login; a typo must not silently produce a cheaper hash either.
+  for (const bad of ["0", "-1", "cheap", ""]) {
+    assert.deepEqual(
+      getServerConfig({
+        AUTH_ARGON2_MEMORY_KIB: bad,
+        AUTH_ARGON2_TIME_COST: bad,
+        AUTH_ARGON2_PARALLELISM: bad,
+      }).auth.argon2,
+      { memoryCostKib: 19_456, timeCost: 2, parallelism: 1 },
+    );
+  }
+});
