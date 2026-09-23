@@ -10,12 +10,12 @@ Step 1 · Phase 1 — password identity.
 
 ## Status
 
-**Phase 0 complete and verified. Chunk 1.1 complete** — 2026-09-23.
+**Phase 0 complete. Chunks 1.1 and 1.2 complete** — 2026-09-23.
 
-The schema is applied to PostgreSQL 18.6 with all integration tests passing, and
-password hashing is in place. Backend suite: **120 passing, 0 skipped.**
+Password hashing and email handling are in place, both verified against
+PostgreSQL 18.6. Backend suite: **142 passing, 0 skipped.**
 
-Nothing authenticates yet — 1.1 delivered the hashing primitive, not a login.
+Nothing authenticates yet — these are the primitives, not a signup or login.
 
 ## What was built
 
@@ -26,18 +26,23 @@ Nothing authenticates yet — 1.1 delivered the hashing primitive, not a login.
 | 0.3 | `users` table: UUID ids, soft delete, `token_version`, case-insensitive unique email | `Backend/migrations/0001_create_users.sql` |
 | 0.4 | Schema integration suite, skipped unless `TEST_DATABASE_URL` is set | `Backend/src/db/schema.integration.test.js` |
 | 1.1 | Argon2id hashing: PHC-stored parameters, `needsRehash` for transparent cost upgrades, input cap, non-throwing verification, timing-equalised unknown-user path | `Backend/src/auth/passwordHasher.js` |
+| 1.2 | Email validation and normalisation: NFC then lowercase, byte-counted RFC limits, rejects header injection and invisible characters, and an integration test proving the app and PostgreSQL agree on `lower()` | `Backend/src/auth/emailAddress.js` |
 
 ## Tests
 
 | Suite | Result |
 | --- | --- |
-| Backend | **120 pass, 0 fail, 0 skipped** |
+| Backend | **142 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass, 0 fail |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 120. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 142. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
+
+**The backend suite now requires a database** — 14 of these tests are schema
+integration tests. They skip without `TEST_DATABASE_URL`, so check the skip
+count: a green run with skips is not a full run.
 
 ## Local database
 
@@ -62,15 +67,16 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-**Chunk 1.2 — email normalisation and validation.** Nothing blocks it.
+**Chunk 1.3 — `authErrors.js`.** Nothing blocks it.
 
-Bounded as: validate an address and produce the `email_normalized` value the
-schema's partial unique index depends on, with tests. Lowercase only — do not
-strip dots or `+` tags, which are provider-specific and would merge addresses
-belonging to different people.
+Bounded as: a typed error with a code, an HTTP status and a user-safe message
+per failure, mirroring `Backend/src/ai/aiErrors.js`. It maps the reason codes
+`emailAddress.js` already returns onto responses, and it is where the rule that
+signup and login must never reveal whether an address is registered gets
+encoded once rather than per route.
 
-Then 1.3 (`authErrors.js`), 1.4 (signup), 1.5 (login). Login is where F-16
-becomes reachable, so Phase 7 rate limiting should not drift far behind it.
+Then 1.4 (signup) and 1.5 (login). Login is where F-16 becomes reachable, so
+Phase 7 rate limiting should not drift far behind it.
 
 Unblocked work that can run in any order, and does not need a database:
 

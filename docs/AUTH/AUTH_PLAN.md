@@ -73,8 +73,8 @@ Closes F-10 before Phase 5 touches this code.
 
 | # | Chunk | Delivers |
 | --- | --- | --- |
-| 1.1 | Hashing module | Per D-2, with parameters and tests |
-| 1.2 | Email normalisation | Validation, lowercase normalisation, case-insensitive uniqueness |
+| 1.1 | Hashing module | ✅ Argon2id, ADR 0004 |
+| 1.2 | Email normalisation | ✅ NFC + lowercase, RFC limits, injection-safe |
 | 1.3 | `authErrors.js` | Error envelope mirroring `aiErrors.js` |
 | 1.4 | `POST /api/auth/signup` | Create user, hash password, no auto-login |
 | 1.5 | `POST /api/auth/login` | Verify with uniform timing and a failure message that never reveals whether an email exists |

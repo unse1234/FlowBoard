@@ -194,3 +194,83 @@ test("a transaction rolls back a failed multi-step write", { skip: SKIP }, async
   const { rows } = await database.query("SELECT count(*)::int AS count FROM users");
   assert.equal(rows[0].count, 0);
 });
+
+/**
+ * Addresses whose lowercasing is worth checking against the database.
+ *
+ * `users` has CHECK (email_normalized = lower(email_normalized)), so the
+ * application's normalisation and PostgreSQL's lower() have to agree. If they
+ * ever disagree, a legitimate signup fails on an insert rather than on
+ * validation — a 500 instead of a message. PostgreSQL's lower() depends on the
+ * database's collation, so this is a property of the deployment, not only of
+ * the code, and belongs in an integration test.
+ */
+const LOWERCASE_CASES = [
+  "ADA@EXAMPLE.COM",
+  "Ada.Lovelace+Tag@Example.Co.Uk",
+  "PÄSSWORD@exämple.de",
+  "ÅNGSTRÖM@Example.COM",
+  "ΑΘΗΝΑ@example.com",
+  "МОСКВА@example.com",
+  // Turkish dotted capital I, which lowercases to "i" plus a combining dot.
+  "İSTANBUL@example.com",
+];
+
+test("the application and the database agree on lowercasing", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { normalizeEmailAddress } = require("../auth/emailAddress");
+
+  for (const input of LOWERCASE_CASES) {
+    const normalized = normalizeEmailAddress(input);
+    assert.ok(normalized, `${input} should be a valid address`);
+
+    const { rows } = await database.query(
+      "SELECT lower($1::text) AS pg_lower, ($1::text = lower($1::text)) AS check_passes",
+      [normalized],
+    );
+
+    assert.equal(rows[0].pg_lower, normalized, `lower() disagrees for ${input}`);
+    assert.equal(rows[0].check_passes, true, `CHECK would reject ${input}`);
+  }
+});
+
+test("a normalised address inserts and is found again", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { parseEmailAddress } = require("../auth/emailAddress");
+
+  const parsed = parseEmailAddress("  Ada.Lovelace@Example.COM  ");
+  assert.equal(parsed.valid, true);
+
+  await database.query(
+    "INSERT INTO users (email, email_normalized, display_name) VALUES ($1, $2, $3)",
+    [parsed.email, parsed.emailNormalized, "Ada"],
+  );
+
+  // The whole point of the normalised column: someone who signed up with mixed
+  // case must be found when they type it differently.
+  const found = await database.query(
+    "SELECT email FROM users WHERE email_normalized = $1 AND deleted_at IS NULL",
+    [parseEmailAddress("ADA.LOVELACE@example.com").emailNormalized],
+  );
+
+  assert.equal(found.rowCount, 1);
+  // The address is stored as typed, for display and for addressing mail.
+  assert.equal(found.rows[0].email, "Ada.Lovelace@Example.COM");
+});
+
+test("differing case cannot create a second account", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { parseEmailAddress } = require("../auth/emailAddress");
+
+  const insert = (input) => {
+    const parsed = parseEmailAddress(input);
+    return database.query(
+      "INSERT INTO users (email, email_normalized, display_name) VALUES ($1, $2, $3)",
+      [parsed.email, parsed.emailNormalized, "Someone"],
+    );
+  };
+
+  await insert("ada@example.com");
+
+  await assert.rejects(insert("ADA@Example.COM"), /users_email_normalized_active_key/);
+});

@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 1. Update it every chunk.**
 
-Last updated: 2026-09-23 (Phase 0 complete; chunk 1.1 done)
+Last updated: 2026-09-23 (Phase 0 complete; chunks 1.1-1.2 done)
 
 ---
 
@@ -11,8 +11,8 @@ Last updated: 2026-09-23 (Phase 0 complete; chunk 1.1 done)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 1 — Password identity. Chunk 1.1 done |
-| **Task** | Chunk 1.2 — email normalisation and validation |
+| **Phase** | 1 — Password identity. Chunks 1.1-1.2 done |
+| **Task** | Chunk 1.3 — `authErrors.js` |
 | **Blocker** | None |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
@@ -33,10 +33,11 @@ underneath it, not identity itself.
 | 0.3 | `0001_create_users.sql` — UUID ids, `email`/`email_normalized` split, partial unique index on live accounts, `token_version` for stateless revocation, soft delete, CHECK constraints, `updated_at` trigger. **Applied to PostgreSQL 18.6; needed no changes.** |
 | 0.4 | Schema integration suite — 11 tests, all passing against a real server. |
 | 1.1 | `createPasswordHasher` — Argon2id at OWASP's baseline, PHC-stored parameters, `needsRehash` for transparent cost upgrades, 1024-byte input cap, verification that never throws, and `burnVerificationWork` so an unknown address costs the same as a wrong password. |
+| 1.2 | `parseEmailAddress` / `normalizeEmailAddress` — NFC then lowercase, byte-counted RFC 5321 limits, rejects CR/LF (SMTP header injection), invisible characters, bare hostnames and IP-literal domains. Accepts internationalised addresses. Verified against PostgreSQL that the app and `lower()` agree, so the CHECK constraint cannot reject a valid signup. |
 
 ## In progress
 
-Phase 1. Chunk 1.1 (hashing) is done; 1.2 to 1.5 remain.
+Phase 1. Chunks 1.1 (hashing) and 1.2 (email) are done; 1.3 to 1.5 remain.
 
 ## Not started
 
@@ -44,7 +45,7 @@ Phase 1. Chunk 1.1 (hashing) is done; 1.2 to 1.5 remain.
 | --- | --- | --- |
 | 0b | Realtime gateway tests | — (unblocked) |
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
-| 1 | Chunks 1.2–1.5: email normalisation, `authErrors.js`, signup, login | — (unblocked) |
+| 1 | Chunks 1.3–1.5: `authErrors.js`, signup, login | — (unblocked) |
 | 2 | Access + refresh tokens, rotation, revocation, CSRF | Phase 1 |
 | 3 | Session listing and revocation | Phase 2 |
 | 4 | Email delivery, verification, password reset | Phase 1, D-4, D-5 |
@@ -133,7 +134,7 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **120 pass, 0 fail, 0 skipped** |
+| Backend | **142 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
@@ -180,20 +181,21 @@ rather than assumed.
 | 2026-09-23 | Phase 0 chunks 0.1–0.4: connection layer, readiness, graceful shutdown, migration runner, `users` migration, integration harness. Backend tests 47 → 97. |
 | 2026-09-23 | Schema verified against PostgreSQL 18.6. All 11 integration tests pass; the migration needed no changes. Suite now 97 pass, 0 skipped. |
 | 2026-09-23 | D-2 resolved as ADR 0004. Chunk 1.1: Argon2id password hasher, 23 tests. Backend suite 97 → 120. |
+| 2026-09-23 | Chunk 1.2: email validation and normalisation, 19 unit tests plus 3 integration tests confirming the app and PostgreSQL agree on lowercasing. Backend suite 120 → 142. |
 
 ---
 
 ## Next recommended task
 
-**Chunk 1.2 — email normalisation and validation.** Unblocked.
+**Chunk 1.3 — `authErrors.js`.** Unblocked.
 
-Bounded as: a module that validates an address and produces the
-`email_normalized` value the schema's partial unique index depends on, with
-tests. Normalisation is lowercasing only — **not** stripping dots or `+` tags,
-which are provider-specific conventions and would merge addresses that belong
-to different people.
+A typed error carrying a code, an HTTP status and a user-safe message, mirroring
+`Backend/src/ai/aiErrors.js`. It maps the reason codes `emailAddress.js` already
+returns onto responses, and it is the single place to encode the rule that
+signup and login must never reveal whether an address is registered — a rule
+that is easy to violate accidentally if each route words its own errors.
 
-Then 1.3 (`authErrors.js`, mirroring `aiErrors.js`), 1.4 (signup), 1.5 (login).
+Then 1.4 (signup) and 1.5 (login).
 
 Unblocked in parallel: **Phase 0b** (gateway tests, required before Phase 5),
 **0c.1** (CI), **0c.2** (security headers).
