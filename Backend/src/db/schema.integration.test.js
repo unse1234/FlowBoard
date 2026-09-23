@@ -1,7 +1,13 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { loadLocalEnvFile } = require("../config/serverConfig");
 const { createDatabase } = require("./createDatabase");
 const { runMigrations } = require("./migrate");
+
+// So `npm test` picks up a developer's configured database without them having
+// to repeat the variable on the command line. A missing .env is normal — in CI
+// the variable is set directly — and anything already in the environment wins.
+loadLocalEnvFile();
 
 /**
  * Migrations and schema behaviour against a real PostgreSQL server.
