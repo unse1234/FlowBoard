@@ -105,3 +105,17 @@ test("nonsense Argon2 cost falls back rather than weakening hashing", () => {
     );
   }
 });
+
+test("reads the auth rate limit, defaulting lower than the AI limit", () => {
+  const { auth, ai } = getServerConfig({});
+
+  assert.equal(auth.rateLimitPerMinute, 5);
+  // Each auth attempt costs an Argon2 hash, so it must not be looser than the
+  // AI endpoint's limit.
+  assert.ok(auth.rateLimitPerMinute <= ai.rateLimitPerMinute);
+
+  assert.equal(getServerConfig({ AUTH_RATE_LIMIT_PER_MINUTE: "20" }).auth.rateLimitPerMinute, 20);
+  // Zero is a deliberate "off", as it is for the AI limiter.
+  assert.equal(getServerConfig({ AUTH_RATE_LIMIT_PER_MINUTE: "0" }).auth.rateLimitPerMinute, 0);
+  assert.equal(getServerConfig({ AUTH_RATE_LIMIT_PER_MINUTE: "lots" }).auth.rateLimitPerMinute, 5);
+});

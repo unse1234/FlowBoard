@@ -6,6 +6,8 @@ const { createAiRouter, handleAiRequestError } = require("./ai/aiRouter");
 const { createDiagramService } = require("./ai/diagramService");
 const { createGeminiProvider } = require("./ai/providers/geminiProvider");
 const { createRateLimiter } = require("./ai/rateLimiter");
+const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter");
+const { createPasswordHasher } = require("./auth/passwordHasher");
 const { getServerConfig, loadLocalEnvFile } = require("./config/serverConfig");
 const { createDatabase } = require("./db/createDatabase");
 const { OperationStore } = require("./operations/operationStore");
@@ -48,6 +50,25 @@ function createApp(config = getServerConfig(), { diagramService, database = null
 
     response.status(ready ? 200 : 503).json({ ok: ready, checks });
   });
+
+  // Authentication needs the database, so the routes only exist when one is
+  // configured. Without them a request answers 404 rather than failing inside
+  // a handler that has nothing to query.
+  if (database) {
+    app.use(
+      "/api/auth",
+      createAuthRouter({
+        database,
+        passwordHasher: createPasswordHasher({ config: config.auth.argon2, logger }),
+        rateLimiter:
+          config.auth.rateLimitPerMinute > 0
+            ? createRateLimiter({ limit: config.auth.rateLimitPerMinute })
+            : null,
+        logger,
+      }),
+      handleAuthRequestError,
+    );
+  }
 
   // AI runs over plain HTTP, never the socket: a generation takes seconds and
   // must not hold up realtime traffic. What it produces reaches peers the way
@@ -160,6 +181,11 @@ if (require.main === module) {
       database
         ? `Database pool ready (max ${config.database.poolMax} connections per instance).`
         : "Database not configured: DATABASE_URL is not set, so /ready reports not ready.",
+    );
+    console.info(
+      database
+        ? `Auth routes enabled at /api/auth (limit ${config.auth.rateLimitPerMinute}/min per client).`
+        : "Auth routes disabled: they need DATABASE_URL.",
     );
   });
 

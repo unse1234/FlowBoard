@@ -19,6 +19,12 @@ loadLocalEnvFile();
  *   TEST_DATABASE_URL=postgres://user:pass@localhost:5432/flowboard_test npm test
  *
  * The database is emptied first, so it must be a throwaway.
+ *
+ * Every file that resets the schema shares one database, so the suite runs with
+ * --test-concurrency=1 (see package.json). Without it, `node --test` runs files
+ * in parallel and two of them drop the schema under each other, which shows up
+ * as a handful of failures that move around between runs. Do not remove the
+ * flag without first giving each file its own schema or database.
  */
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL?.trim();
 const SKIP = TEST_DATABASE_URL

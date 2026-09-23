@@ -146,43 +146,48 @@ tuning knob and makes auth rate limiting a stability requirement rather than
 only an abuse control — see finding F-16.
 **Status:** Accepted 2026-09-23.
 
+## E-12 · Signup answers the same whether or not the address is taken · *was D-10*
+
+**Decision:** signup returns an identical response for a new address and for one
+that already has an account. The truth is carried by email: "confirm your
+address" to a new one, "you already have an account, reset your password" to an
+existing one.
+
+**Reason:** any difference in the response — status, body, or how long it takes
+— lets anyone test addresses against FlowBoard and learn who has an account.
+Letting the mailbox answer gives the real owner what they need while telling a
+stranger nothing, because only the address owner sees it.
+
+**Impact, and the part that is not free:** the email half needs Phase 4, which
+does not exist yet. Until it does, someone who signs up again with an existing
+address gets a success response and **no email and no explanation**. That is a
+real gap, accepted deliberately as the cost of not shipping an enumeration
+oracle, and it is what makes Phase 4 a completion requirement for Phase 1
+rather than a later nicety.
+
+**Consequences for the implementation:**
+
+- Signup hashes the password before attempting the insert, on both paths. A
+  branch that skipped hashing would answer measurably faster and be the same
+  oracle in the time domain.
+- The insert uses `ON CONFLICT DO NOTHING`, so two concurrent signups for one
+  address cannot produce a unique-violation error that distinguishes the cases.
+- `EMAIL_ALREADY_REGISTERED` stays in the catalogue but is unreachable from
+  signup. It is kept for an authenticated flow that may legitimately report it,
+  such as changing your own email address in Phase 6.
+
+**Measured afterwards:** the status and body are identical, but the two paths do
+not take exactly the same time — an insert writes WAL and a no-op conflict does
+not, about 64ms against 51ms with overlapping ranges. Finding F-17 records it.
+The decision stands: the difference is small relative to the fixed hashing cost
+and is bounded by rate limiting, whereas a differing status code would be a
+single-request oracle.
+
+**Status:** Accepted 2026-09-23. Chosen by the project owner.
+
 ---
 
 # UNRESOLVED
-
-## D-10 · Whether signup may say an address is already registered · **needed for 1.4**
-
-**Question:** when someone signs up with an address that already has an
-account, does the API say so?
-
-**The tension.** Answering "already registered" is a user-enumeration oracle:
-anyone can test addresses against FlowBoard and learn who has an account. Not
-answering it means a real person who forgot they had an account gets a success
-response and no account, which is worse UX than it sounds.
-
-**The usual resolution** is to answer identically either way and let the
-*email* carry the truth — a "confirm your address" message to a new address, a
-"you already have an account, reset your password" message to an existing one.
-That needs Phase 4, which does not exist yet, so chunk 1.4 cannot implement it
-today.
-
-**What exists already:** `EMAIL_ALREADY_REGISTERED` is in the catalogue with a
-409, and `CREDENTIAL_CHECK_CODES` deliberately excludes it, so it can never be
-reached from a sign-in whichever way this is decided. The decision only affects
-signup.
-
-**Options:**
-
-1. **Reveal it now, revisit at Phase 4.** Simplest, best UX, and what GitHub and
-   Google do. Accepts enumeration on the signup endpoint, mitigated by Phase 7
-   rate limiting.
-2. **Uniform response now**, and leave the account uncreated with no feedback
-   until Phase 4 can send the email. Closes enumeration, but until Phase 4 a
-   returning user gets silence.
-3. **Block 1.4 until Phase 4**, so signup is built once with email in place.
-
-**Status:** UNRESOLVED. Needed before chunk 1.4. Recorded rather than decided,
-because it is a product trade-off rather than something the repository settles.
 
 ## D-4 · Email provider
 

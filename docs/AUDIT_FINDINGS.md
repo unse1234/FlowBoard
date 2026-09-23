@@ -30,6 +30,7 @@ resolved by Step 1 rather than by a patch.
 | F-14 | LOW | Security | AI rate limiting is per-IP, in-memory, and proxy-naive |
 | F-15 | MEDIUM | Dependencies | `qs` DoS advisory reaches the app through express |
 | F-16 | MEDIUM | Availability | Password hashing can starve the libuv threadpool |
+| F-17 | LOW | Security | Signup timing differs slightly between a free and a taken address |
 
 ---
 
@@ -328,6 +329,48 @@ pulled from rotation while it is in fact working.
 3. A concurrency cap in front of hashing was considered and deliberately not
    added in chunk 1.1: without a rate limiter it would mostly relocate the
    queue rather than remove it.
+
+---
+
+## F-17 — LOW — Signup timing differs slightly between a free and a taken address
+
+**Found by measuring, not by review.** Added by chunk 1.4 and recorded because
+it is a real residual rather than a hypothetical one.
+
+`POST /api/auth/signup` answers with an identical status and body whether or not
+the address already has an account, which is the requirement in
+`AUTH/AUTH_DECISIONS.md` E-12. It hashes the password on both paths, so the
+dominant cost is paid either way.
+
+**What remains:** a real `INSERT` writes WAL and a no-op `ON CONFLICT DO
+NOTHING` does not. Measured over the local network at production Argon2
+parameters, after warm-up:
+
+| Path | Samples | Mean |
+| --- | --- | --- |
+| Address free (row inserted) | 8 | ~64 ms |
+| Address taken (no-op) | 8 | ~51 ms |
+
+Ranges overlapped substantially — 41–88 ms against 42–64 ms — so a single
+request reveals nothing, but the difference in means is large enough to be
+recovered from enough samples.
+
+**A note on the first measurement:** a naive check showed 206 ms against 47 ms,
+which looks alarming and is not real. That was first-request warm-up of the
+native Argon2 module, the connection pool and the JIT. Anyone re-testing this
+must warm both paths first or they will measure the harness.
+
+**Mitigations:**
+
+1. **Rate limiting is what makes this impractical**, by bounding how many
+   samples can be gathered. Another reason Phase 7 is a requirement rather than
+   a nicety. The interim per-process limiter already applies here.
+2. Over the internet, network jitter is larger than the signal.
+
+**Do not add a random delay.** It raises the number of samples an attacker needs
+without removing the signal, and it makes the endpoint slower for everyone.
+Eliminating it properly would mean making both paths perform equivalent database
+work, which is not worth the complexity at this severity.
 
 ---
 

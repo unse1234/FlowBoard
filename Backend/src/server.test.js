@@ -17,6 +17,12 @@ const CONFIG = {
     ssl: false,
     applicationName: "flowboard-test",
   },
+  // Needed because createApp mounts the auth routes whenever a database is
+  // injected. Cheap Argon2 settings: these tests never hash anything.
+  auth: {
+    rateLimitPerMinute: 0,
+    argon2: { memoryCostKib: 64, timeCost: 1, parallelism: 1 },
+  },
 };
 
 async function startServer(t, { database } = {}) {

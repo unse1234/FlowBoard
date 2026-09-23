@@ -76,8 +76,8 @@ Closes F-10 before Phase 5 touches this code.
 | 1.1 | Hashing module | ✅ Argon2id, ADR 0004 |
 | 1.2 | Email normalisation | ✅ NFC + lowercase, RFC limits, injection-safe |
 | 1.3 | `authErrors.js` | ✅ Envelope, enumeration rules enforced by test |
-| 1.4 | `POST /api/auth/signup` | Create user, hash password, no auto-login — **needs D-10** |
-| 1.5 | `POST /api/auth/login` | Verify with uniform timing and a failure message that never reveals whether an email exists |
+| 1.4 | `POST /api/auth/signup` | ✅ Uniform response per E-12, rate limited |
+| 1.5 | `POST /api/auth/login` | ← **next.** Uniform failure, equal work for an unknown address, transparent rehash |
 
 ### Phase 2 — Tokens and sessions
 

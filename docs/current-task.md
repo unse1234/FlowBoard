@@ -10,12 +10,12 @@ Step 1 · Phase 1 — password identity.
 
 ## Status
 
-**Phase 0 complete. Chunks 1.1, 1.2 and 1.3 complete** — 2026-09-23.
+**Phase 0 complete. Chunks 1.1–1.4 complete** — 2026-09-23.
 
-Hashing, email handling and the auth error envelope are in place. Backend
-suite: **161 passing, 0 skipped.**
+`POST /api/auth/signup` works end to end against PostgreSQL 18.6. Backend
+suite: **184 passing, 0 skipped.**
 
-Nothing authenticates yet — these are the primitives, not a signup or login.
+An account can now be created. Nothing can sign **in** yet — that is 1.5.
 
 ## What was built
 
@@ -28,21 +28,27 @@ Nothing authenticates yet — these are the primitives, not a signup or login.
 | 1.1 | Argon2id hashing: PHC-stored parameters, `needsRehash` for transparent cost upgrades, input cap, non-throwing verification, timing-equalised unknown-user path | `Backend/src/auth/passwordHasher.js` |
 | 1.2 | Email validation and normalisation: NFC then lowercase, byte-counted RFC limits, rejects header injection and invisible characters, and an integration test proving the app and PostgreSQL agree on `lower()` | `Backend/src/auth/emailAddress.js` |
 | 1.3 | Auth error envelope mirroring `aiErrors.js`; `toResponseBody` makes leaking `detail` impossible; tests police the enumeration rule rather than commenting it | `Backend/src/auth/authErrors.js` |
+| 1.4 | `POST /api/auth/signup` — uniform response whether or not the address is taken (E-12), always hashes before inserting, `ON CONFLICT DO NOTHING` so a race cannot leak, per-IP rate limit | `Backend/src/auth/authRouter.js`, `signupRequest.js`, `userRepository.js` |
 
 ## Tests
 
 | Suite | Result |
 | --- | --- |
-| Backend | **161 pass, 0 fail, 0 skipped** |
+| Backend | **184 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass, 0 fail |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 161. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 184. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
 
-**The backend suite now requires a database** — 14 of these tests are schema
-integration tests. They skip without `TEST_DATABASE_URL`, so check the skip
+**The backend suite now requires a database**, and runs with
+`--test-concurrency=1`. Several files reset the schema of one shared database,
+so running files in parallel makes them drop it under each other — which
+appeared as a handful of failures that moved between runs. Do not remove the
+flag without first giving each file its own schema or database.
+
+Database-backed tests skip without `TEST_DATABASE_URL`, so check the skip
 count: a green run with skips is not a full run.
 
 ## Local database
@@ -68,19 +74,20 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-**Chunk 1.4 — `POST /api/auth/signup`.**
+**Chunk 1.5 — `POST /api/auth/login`.** Nothing blocks it.
 
-**Blocked on decision D-10** in `AUTH/AUTH_DECISIONS.md`: may signup say that an
-address is already registered? Answering reveals who has an account; not
-answering leaves a returning user with no feedback until Phase 4 can send the
-email that would explain it. It is a product trade-off, so it needs the project
-owner rather than a default.
+Bounded as: look the account up by normalised email, verify the password, and
+answer `INVALID_CREDENTIALS` for an unknown address, a wrong password and an
+account with no password alike — using `burnVerificationWork` so an unknown
+address costs the same as a wrong one. Rehash transparently when
+`needsRehash` reports the stored hash used weaker parameters, via
+`upgradePasswordHash`, which is already written and tested.
 
-Everything else for 1.4 is ready: the schema, the hasher, the email parser and
-the error envelope.
+Login issues no token yet; that is Phase 2. It reports success or failure only.
 
-Then 1.5 (login). Login is where F-16 becomes reachable, so Phase 7 rate
-limiting should not drift far behind it.
+F-16 and F-17 are both reachable from signup already, so **Phase 7 rate
+limiting should not drift much further behind**. The interim per-process
+limiter is in place but is not shared across instances.
 
 Unblocked work that can run in any order, and does not need a database:
 

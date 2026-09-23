@@ -33,6 +33,17 @@ const DEFAULT_ARGON2_MEMORY_KIB = 19_456;
 const DEFAULT_ARGON2_TIME_COST = 2;
 const DEFAULT_ARGON2_PARALLELISM = 1;
 
+/**
+ * Signup and sign-in attempts per client per minute.
+ *
+ * Lower than the AI limit because each attempt costs an Argon2 hash, and a
+ * burst of them can occupy the libuv threadpool and delay unrelated work on the
+ * instance (finding F-16). Interim: the counters are per-process, so the real
+ * limit across N instances is N times this. Phase 7 replaces it with a shared
+ * one.
+ */
+const DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE = 5;
+
 function getServerConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? DEFAULT_PORT),
@@ -71,6 +82,10 @@ function getServerConfig(env = process.env) {
         env.DATABASE_APPLICATION_NAME?.trim() || DEFAULT_DATABASE_APPLICATION_NAME,
     },
     auth: {
+      rateLimitPerMinute: readNonNegativeInteger(
+        env.AUTH_RATE_LIMIT_PER_MINUTE,
+        DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE,
+      ),
       argon2: {
         memoryCostKib: readPositiveInteger(
           env.AUTH_ARGON2_MEMORY_KIB,
