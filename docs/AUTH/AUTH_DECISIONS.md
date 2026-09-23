@@ -150,6 +150,40 @@ only an abuse control — see finding F-16.
 
 # UNRESOLVED
 
+## D-10 · Whether signup may say an address is already registered · **needed for 1.4**
+
+**Question:** when someone signs up with an address that already has an
+account, does the API say so?
+
+**The tension.** Answering "already registered" is a user-enumeration oracle:
+anyone can test addresses against FlowBoard and learn who has an account. Not
+answering it means a real person who forgot they had an account gets a success
+response and no account, which is worse UX than it sounds.
+
+**The usual resolution** is to answer identically either way and let the
+*email* carry the truth — a "confirm your address" message to a new address, a
+"you already have an account, reset your password" message to an existing one.
+That needs Phase 4, which does not exist yet, so chunk 1.4 cannot implement it
+today.
+
+**What exists already:** `EMAIL_ALREADY_REGISTERED` is in the catalogue with a
+409, and `CREDENTIAL_CHECK_CODES` deliberately excludes it, so it can never be
+reached from a sign-in whichever way this is decided. The decision only affects
+signup.
+
+**Options:**
+
+1. **Reveal it now, revisit at Phase 4.** Simplest, best UX, and what GitHub and
+   Google do. Accepts enumeration on the signup endpoint, mitigated by Phase 7
+   rate limiting.
+2. **Uniform response now**, and leave the account uncreated with no feedback
+   until Phase 4 can send the email. Closes enumeration, but until Phase 4 a
+   returning user gets silence.
+3. **Block 1.4 until Phase 4**, so signup is built once with email in place.
+
+**Status:** UNRESOLVED. Needed before chunk 1.4. Recorded rather than decided,
+because it is a product trade-off rather than something the repository settles.
+
 ## D-4 · Email provider
 
 **Question:** which transactional email service, and the local development

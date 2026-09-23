@@ -10,10 +10,10 @@ Step 1 · Phase 1 — password identity.
 
 ## Status
 
-**Phase 0 complete. Chunks 1.1 and 1.2 complete** — 2026-09-23.
+**Phase 0 complete. Chunks 1.1, 1.2 and 1.3 complete** — 2026-09-23.
 
-Password hashing and email handling are in place, both verified against
-PostgreSQL 18.6. Backend suite: **142 passing, 0 skipped.**
+Hashing, email handling and the auth error envelope are in place. Backend
+suite: **161 passing, 0 skipped.**
 
 Nothing authenticates yet — these are the primitives, not a signup or login.
 
@@ -27,16 +27,17 @@ Nothing authenticates yet — these are the primitives, not a signup or login.
 | 0.4 | Schema integration suite, skipped unless `TEST_DATABASE_URL` is set | `Backend/src/db/schema.integration.test.js` |
 | 1.1 | Argon2id hashing: PHC-stored parameters, `needsRehash` for transparent cost upgrades, input cap, non-throwing verification, timing-equalised unknown-user path | `Backend/src/auth/passwordHasher.js` |
 | 1.2 | Email validation and normalisation: NFC then lowercase, byte-counted RFC limits, rejects header injection and invisible characters, and an integration test proving the app and PostgreSQL agree on `lower()` | `Backend/src/auth/emailAddress.js` |
+| 1.3 | Auth error envelope mirroring `aiErrors.js`; `toResponseBody` makes leaking `detail` impossible; tests police the enumeration rule rather than commenting it | `Backend/src/auth/authErrors.js` |
 
 ## Tests
 
 | Suite | Result |
 | --- | --- |
-| Backend | **142 pass, 0 fail, 0 skipped** |
+| Backend | **161 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass, 0 fail |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 142. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 161. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
 
@@ -67,16 +68,19 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-**Chunk 1.3 — `authErrors.js`.** Nothing blocks it.
+**Chunk 1.4 — `POST /api/auth/signup`.**
 
-Bounded as: a typed error with a code, an HTTP status and a user-safe message
-per failure, mirroring `Backend/src/ai/aiErrors.js`. It maps the reason codes
-`emailAddress.js` already returns onto responses, and it is where the rule that
-signup and login must never reveal whether an address is registered gets
-encoded once rather than per route.
+**Blocked on decision D-10** in `AUTH/AUTH_DECISIONS.md`: may signup say that an
+address is already registered? Answering reveals who has an account; not
+answering leaves a returning user with no feedback until Phase 4 can send the
+email that would explain it. It is a product trade-off, so it needs the project
+owner rather than a default.
 
-Then 1.4 (signup) and 1.5 (login). Login is where F-16 becomes reachable, so
-Phase 7 rate limiting should not drift far behind it.
+Everything else for 1.4 is ready: the schema, the hasher, the email parser and
+the error envelope.
+
+Then 1.5 (login). Login is where F-16 becomes reachable, so Phase 7 rate
+limiting should not drift far behind it.
 
 Unblocked work that can run in any order, and does not need a database:
 
