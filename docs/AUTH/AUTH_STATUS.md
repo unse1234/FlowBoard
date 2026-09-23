@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 1. Update it every chunk.**
 
-Last updated: 2026-09-23 (Phase 0 chunks 0.1–0.4)
+Last updated: 2026-09-23 (Phase 0 complete and verified)
 
 ---
 
@@ -11,9 +11,9 @@ Last updated: 2026-09-23 (Phase 0 chunks 0.1–0.4)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 0 — Foundation. Code complete, **schema unverified** |
-| **Task** | Run the schema integration suite against a real PostgreSQL |
-| **Blocker** | No database reachable from the dev machine (no server, Docker or `psql`) |
+| **Phase** | 0 — Foundation. **Complete and verified** |
+| **Task** | Chunk 1.1 — password hashing |
+| **Blocker** | D-2: hashing algorithm not chosen |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
 rotating opaque refresh cookie (ADR 0002), multi-instance from the first commit
@@ -30,12 +30,12 @@ underneath it, not identity itself.
 | --- | --- |
 | 0.1 | `createDatabase` — pooled connection, connection/statement timeouts, transaction helper that discards a connection whose rollback failed, slow-query reporting that never logs values, idle-client error handling. `GET /ready` separate from `/health`. Graceful shutdown draining sockets → HTTP → pool. |
 | 0.2 | Migration runner — forward-only, advisory-locked so concurrent instances cannot race, checksum drift detection, each migration committed with its bookkeeping row. `npm run migrate`. |
-| 0.3 | `0001_create_users.sql` — UUID ids, `email`/`email_normalized` split, partial unique index on live accounts, `token_version` for stateless revocation, soft delete, CHECK constraints, `updated_at` trigger. **Written, reviewed, not executed.** |
-| 0.4 | Schema integration suite, skipped unless `TEST_DATABASE_URL` is set. |
+| 0.3 | `0001_create_users.sql` — UUID ids, `email`/`email_normalized` split, partial unique index on live accounts, `token_version` for stateless revocation, soft delete, CHECK constraints, `updated_at` trigger. **Applied to PostgreSQL 18.6; needed no changes.** |
+| 0.4 | Schema integration suite — 11 tests, all passing against a real server. |
 
 ## In progress
 
-Nothing. Phase 0 is code-complete and waiting on verification.
+Nothing. Phase 0 is done; Phase 1 is next.
 
 ## Not started
 
@@ -43,7 +43,7 @@ Nothing. Phase 0 is code-complete and waiting on verification.
 | --- | --- | --- |
 | 0b | Realtime gateway tests | — (unblocked) |
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
-| 1 | Password hashing, signup, login, HTTP auth surface | D-2, schema verification |
+| 1 | Password hashing, signup, login, HTTP auth surface | D-2 |
 | 2 | Access + refresh tokens, rotation, revocation, CSRF | Phase 1 |
 | 3 | Session listing and revocation | Phase 2 |
 | 4 | Email delivery, verification, password reset | Phase 1, D-4, D-5 |
@@ -87,8 +87,13 @@ handling. The chain the audit was asked to trace stops at the socket handler.
 
 ## Identity data model
 
-**None.** No `users` table, no user object server-side, no persisted record of
-any person. A "user" exists only as fields on in-flight socket messages.
+**The `users` table exists and is verified** (`Backend/migrations/0001_create_users.sql`),
+but **nothing writes to it yet** — there is no signup, and no code path creates
+a user. At runtime a "user" is still only fields on in-flight socket messages.
+
+Columns that later phases depend on: `token_version` (Phase 2 revocation),
+`email_verified_at` (Phase 4), `password_hash`, nullable for OAuth-only
+accounts (Phase 8), and `deleted_at` + `status` for soft delete (Phase 6).
 
 ## Token model
 
@@ -110,7 +115,7 @@ no outbound email of any kind.
 
 | Control | State | Evidence |
 | --- | --- | --- |
-| Password hashing | N/A — no passwords | No hashing dependency |
+| Password hashing | Column ready, no hashing yet | `users.password_hash`; no hashing dependency |
 | Auth rate limiting | N/A — no auth endpoints | — |
 | AI rate limiting | Present, per-IP, in-memory | `Backend/src/ai/rateLimiter.js` |
 | CSRF | No surface **yet** — no cookies anywhere | Search: no cookie use |
@@ -127,12 +132,13 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | 97 tests — 86 pass, 0 fail, 11 skipped |
+| Backend | **97 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass |
 
-The backend grew from 47 to 97 tests in Phase 0. The **11 skips are the schema
-integration tests**, which need `TEST_DATABASE_URL`; until they run, the
-migration SQL is unproven.
+The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
+run against PostgreSQL 18.6 and confirm, among other things, that the login
+lookup uses `users_email_normalized_active_key` — read from the EXPLAIN plan
+rather than assumed.
 
 `server.js` now has coverage for readiness and shutdown. `boardGateway.js`,
 `voiceGateway.js` and `operationStore.js` remain untested (finding F-10) —
@@ -144,8 +150,7 @@ migration SQL is unproven.
 
 | ID | Issue | Effect on Step 1 |
 | --- | --- | --- |
-| — | Schema never executed | **Blocks Phase 1.** Run the integration suite first |
-| D-2 | Hashing algorithm not chosen | Blocks Phase 1 |
+| D-2 | Hashing algorithm not chosen | **Blocks Phase 1** |
 | F-1 | No socket authorisation | Phase 5 closes this |
 | F-2 | `userId` forgeable | Phase 5 closes this |
 | F-10 | Realtime layer untested | Phase 0b must precede Phase 5 |
@@ -172,28 +177,22 @@ migration SQL is unproven.
 | 2026-09-23 | Repository audit; context system created. No functional code changed. |
 | 2026-09-23 | D-1, D-3 and the scaling model resolved as ADRs 0001–0003. |
 | 2026-09-23 | Phase 0 chunks 0.1–0.4: connection layer, readiness, graceful shutdown, migration runner, `users` migration, integration harness. Backend tests 47 → 97. |
+| 2026-09-23 | Schema verified against PostgreSQL 18.6. All 11 integration tests pass; the migration needed no changes. Suite now 97 pass, 0 skipped. |
 
 ---
 
 ## Next recommended task
 
-**Verify the schema against a real PostgreSQL 13+ server.** No code needed:
+**Chunk 1.1 — password hashing**, once **D-2** is resolved (Argon2id vs bcrypt,
+and cost parameters). Nothing else blocks Phase 1: the schema is verified and
+`users.password_hash` is waiting.
 
-```bash
-cd Backend
-TEST_DATABASE_URL=postgres://user:pass@host:5432/flowboard_test npm test
-```
+Bounded as: a hashing module with explicit parameters, a verify function,
+and tests covering round-trip, wrong-password rejection, and that a hash is
+never logged. No routes yet.
 
-That runs the 11 skipped tests. `0001_create_users.sql` has not been applied
-anywhere yet, so anything they catch can still be fixed by editing it rather
-than adding a corrective migration.
-
-**Then chunk 1.1 — password hashing**, once D-2 is resolved.
-
-Unblocked meanwhile, needing no database: **Phase 0b** (gateway tests),
-**0c.1** (CI), **0c.2** (security headers).
-
----
+Unblocked in parallel, needing no decision: **Phase 0b** (gateway tests,
+required before Phase 5), **0c.1** (CI), **0c.2** (security headers).
 
 ## Do not touch / protected areas
 

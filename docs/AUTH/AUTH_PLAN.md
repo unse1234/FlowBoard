@@ -13,9 +13,10 @@ first commit (ADR 0003).
 
 Five audit facts determine the sequence. None was assumed.
 
-1. **There is no database**, so Step 1 starts with storage, not signup.
-2. **There is no HTTP surface to extend** — two endpoints exist. Auth routes are
-   new construction.
+1. **There was no database**, so Step 1 started with storage, not signup.
+   Delivered in Phase 0.
+2. **There is almost no HTTP surface to extend** — `/health`, `/ready` and the
+   AI endpoint. Auth routes are new construction.
 3. **`Backend/src/ai/` is the pattern to copy** — injected dependencies,
    boundary validation, typed error envelope, user-safe messages, diagnostics
    logged not returned.
@@ -34,7 +35,7 @@ The checklist's listing order (signup → verification → reset → OAuth → S
 A chunk is one bounded change plus its tests. `current-task.md` names the
 active one. Both suites must pass before a chunk is done.
 
-### Phase 0 — Database foundation
+### Phase 0 — Database foundation ✅ **COMPLETE** (verified on PostgreSQL 18.6)
 
 | # | Chunk | Delivers |
 | --- | --- | --- |
@@ -43,9 +44,9 @@ active one. Both suites must pass before a chunk is done.
 | 0.3 | `users` table | First migration: users with soft delete, `token_version`, case-insensitive unique email, `updated_at` trigger |
 | 0.4 | Test harness | Disposable test database, migrations per run, helpers so later chunks can test against real SQL |
 
-**Done when:** the server boots against Postgres, `/ready` fails when the
-database is down, migrations apply repeatably from empty, and both suites pass.
-**Not in this phase:** passwords, routes, tokens, or any user-facing change.
+**Done:** the server boots against Postgres, `/ready` answers 200 with a live
+database and 503 without, migrations apply repeatably from empty, and all 97
+backend tests pass with none skipped.
 
 ### Phase 0b — Realtime gateway tests · *independent, can run any time*
 
@@ -68,7 +69,7 @@ Closes F-10 before Phase 5 touches this code.
 | 0c.2 | Security headers | CSP, HSTS, frame options, referrer policy (F-6) |
 | 0c.3 | Redis + shared rate limiting | Redis client, readiness check, the limiter Phase 7 needs (ADR 0003) |
 
-### Phase 1 — Password identity
+### Phase 1 — Password identity ← **next**
 
 | # | Chunk | Delivers |
 | --- | --- | --- |

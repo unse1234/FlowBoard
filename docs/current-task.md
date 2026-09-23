@@ -10,13 +10,11 @@ Step 1 · Phase 0 — database foundation.
 
 ## Status
 
-**Chunks 0.1, 0.2 and 0.3 complete** — 2026-09-23.
-Chunk 0.4 (test harness) landed alongside them as a skipped-by-default suite.
+**Phase 0 complete and verified** — 2026-09-23.
 
-**One thing is not yet proven: the migration SQL has never been executed.**
-No PostgreSQL server, Docker or `psql` is available on this machine, so
-`Backend/migrations/0001_create_users.sql` is written and reviewed but unrun.
-See "Before the next chunk" below.
+The schema has been applied to PostgreSQL 18.6 and all 11 schema integration
+tests pass. The migration needed no changes. Backend suite: **97 passing, 0
+skipped.**
 
 ## What was built
 
@@ -31,36 +29,39 @@ See "Before the next chunk" below.
 
 | Suite | Result |
 | --- | --- |
-| Backend | 97 tests — 86 pass, 0 fail, **11 skipped** (they need `TEST_DATABASE_URL`) |
+| Backend | **97 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass, 0 fail |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 97. The 11 skips are the schema integration tests
-and are the reason the SQL is unverified.
+Backend tests grew from 47 to 97 during Phase 0.
 
-## Before the next chunk
+## Local database
 
-**Run the schema integration suite against a real PostgreSQL 13+ database.**
-This is the highest-value next action and needs a database, not more code.
+PostgreSQL 18.6, using a least-privilege `flowboard` role rather than the
+`postgres` superuser, so the application connection string holds no superuser
+credentials. `Backend/.env` carries `DATABASE_URL` and `TEST_DATABASE_URL` and
+is gitignored. To recreate, as superuser:
 
-```bash
-# any throwaway database — local, Docker, or a free managed instance
-cd Backend
-DATABASE_URL=postgres://user:pass@host:5432/flowboard npm run migrate
-TEST_DATABASE_URL=postgres://user:pass@host:5432/flowboard_test npm test
+```sql
+CREATE ROLE flowboard LOGIN PASSWORD 'flowboard';
+CREATE DATABASE flowboard OWNER flowboard;
+CREATE DATABASE flowboard_test OWNER flowboard;
 ```
 
-The 11 skipped tests then run and check: migrations apply from empty, they are
-idempotent, one live account per address, a deleted address frees up, login uses
-the partial index, and every CHECK constraint bites. If any fail, fix
-`0001_create_users.sql` — it has not been applied anywhere, so it can still be
-edited rather than superseded.
+Then `cd Backend && npm run migrate`. The integration suite reads `.env`, so
+`npm test` runs it with no extra environment variables.
+
+**Windows note:** Git Bash `kill -TERM` does not reliably terminate a Windows
+node process — a killed-looking server can still hold its port and answer
+requests with stale config. Use `taskkill //PID <pid> //F`, and check
+`netstat -ano | grep :<port>` before trusting a smoke test.
 
 ## Next task
 
-**Chunk 1.1 — password hashing**, once the schema is verified.
-Blocked on decision **D-2** (Argon2id vs bcrypt, and cost parameters) in
-`AUTH/AUTH_DECISIONS.md`.
+**Chunk 1.1 — password hashing.**
+Blocked only on decision **D-2** (Argon2id vs bcrypt, and cost parameters) in
+`AUTH/AUTH_DECISIONS.md`. The schema is verified, so nothing else stands in the
+way.
 
 Unblocked work that can run in any order, and does not need a database:
 

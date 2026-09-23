@@ -41,14 +41,14 @@ explicitly) being hardened toward production.
 | Runtime | Node.js, CommonJS (`"type": "commonjs"`) |
 | HTTP | Express 5.2.1 |
 | Realtime | Socket.IO 4.8.3 |
+| Database | PostgreSQL 13+ via `pg` 8.23.0, plain SQL migrations |
 | AI | `@google/genai` 2.22.0 (Gemini) |
 | CORS | `cors` 2.8.6 |
 | Language | JavaScript. No TypeScript |
 
-**The backend has exactly four production dependencies.** There is no database
-driver, no ORM, no auth library, no session store, no Redis client, no queue, no
-mailer, and no object-storage SDK in either manifest. Verified against
-`Backend/package.json` and `Frontend/package.json`.
+**The backend has five production dependencies.** `pg` was added in Step 1
+Phase 0. There is still no ORM, no auth library, no session store, no Redis
+client, no queue, no mailer, and no object-storage SDK.
 
 ## 3. Repository structure
 
@@ -60,9 +60,11 @@ Flow Board/
 ├── docs/                                  # this context system
 ├── Backend/
 │   ├── .env.example
+│   ├── migrations/                        # forward-only SQL, NNNN_name.sql
 │   └── src/
-│       ├── server.js                      # app factory + listener
+│       ├── server.js                      # app factory + listener + shutdown
 │       ├── config/serverConfig.js         # env -> config
+│       ├── db/                            # pool, migration runner
 │       ├── ai/                            # AI diagram endpoint (best-built area)
 │       ├── operations/                    # operation contract + in-memory store
 │       └── realtime/                      # Socket.IO gateways (board, voice)
@@ -107,8 +109,10 @@ strength of the codebase.
 ### Not present at all
 
 Accounts, login, workspaces, a board dashboard, folders, templates, comments,
-version history, permissions, a database, server-side persistence, file/object
+version history, permissions, server-side board persistence, file/object
 storage, email, notifications, billing, an admin surface, and a public API.
+
+A database now exists, but holds only an empty `users` table — see §7.
 
 ## 5. Authentication state
 
@@ -158,8 +162,18 @@ Full detail: `AUTH/AUTH_STATUS.md`.
 
 ## 7. Database state
 
-**There is no database.** No schema, no models, no migrations, no connection
-pooling, no query layer, no indexes.
+**PostgreSQL, added in Step 1 Phase 0** (2026-09-23). Verified against
+PostgreSQL 18.6.
+
+- Connection: `Backend/src/db/createDatabase.js` — one pool per process, bounded
+  size, connection and statement timeouts, transaction helper, graceful drain.
+- Migrations: `Backend/src/db/migrate.js`, forward-only, advisory-locked.
+  `npm run migrate`.
+- Schema: one table, `users` (`Backend/migrations/0001_create_users.sql`).
+  **Nothing writes to it yet** — there is no signup.
+- Readiness: `GET /ready` verifies connectivity; `GET /health` stays liveness.
+
+Board content is **not** in the database. That is Step 2.
 
 Persistence today is:
 
@@ -196,7 +210,7 @@ operation log and into `localStorage`.
 
 | Suite | Command | Count | Result |
 | --- | --- | --- | --- |
-| Backend | `cd Backend && npm test` | 47 | all pass |
+| Backend | `cd Backend && npm test` | 97 | all pass |
 | Frontend | `cd Frontend && npm run test:realtime` | 194 | all pass |
 
 Both use the built-in `node:test` runner. Coverage is strong on pure logic
@@ -212,7 +226,9 @@ visual regression, accessibility audits, type checking, backend linting, CI.
 
 1. **No server-side identity.** Every trust decision is client-supplied. This
    blocks all of Step 1 and most of permissions, sharing and history.
-2. **No durable storage.** A server restart loses every collaborative board.
+2. **No durable storage for boards.** A server restart loses every
+   collaborative board. PostgreSQL now exists but holds only `users`; moving
+   board state into it is Step 2.
 3. **Unbounded in-memory operation log**, replayed in full on every join —
    a memory and join-latency problem that grows without limit.
 4. **Duplicated contracts.** The operation contract exists twice; voice event

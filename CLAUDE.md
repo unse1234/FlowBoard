@@ -83,20 +83,28 @@ cd Backend  && npm install && npm run dev   # realtime + AI server, port 3001
 cd Frontend && npm install && npm run dev   # Vite dev server, port 5173
 
 cd Backend  && npm run migrate              # apply pending SQL migrations
-cd Backend  && npm test                     # 97 tests (86 pass, 11 need a database)
+cd Backend  && npm test                     # 97 tests (needs a database)
 cd Frontend && npm run test:realtime        # 194 tests (node:test)
 cd Frontend && npm run lint                 # ESLint (frontend only)
 ```
 
-**The 11 skipped backend tests are the schema integration suite.** They run only
-with `TEST_DATABASE_URL` set, and until they have run at least once the
-migration SQL is unverified:
+**The backend suite needs PostgreSQL 13+.** The schema integration tests read
+`DATABASE_URL`/`TEST_DATABASE_URL` from `Backend/.env`, and **skip** if neither
+is set — so a green run with skips is not a full run. Check the skip count.
 
-```bash
-cd Backend && TEST_DATABASE_URL=postgres://user:pass@host:5432/flowboard_test npm test
+Local setup, as superuser:
+
+```sql
+CREATE ROLE flowboard LOGIN PASSWORD 'flowboard';
+CREATE DATABASE flowboard OWNER flowboard;
+CREATE DATABASE flowboard_test OWNER flowboard;
 ```
 
 Endpoints: `GET /health` is liveness (checks nothing, by design), `GET /ready`
 is readiness (checks the database, answers 503 when it cannot).
+
+**Windows:** Git Bash `kill -TERM` does not reliably terminate a Windows node
+process — a killed-looking server can keep its port and answer with stale
+config. Use `taskkill //PID <pid> //F` and verify with `netstat -ano`.
 
 There is no type checker, no backend linter, no CI, and no E2E suite.
