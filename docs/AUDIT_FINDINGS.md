@@ -31,6 +31,7 @@ resolved by Step 1 rather than by a patch.
 | F-15 | MEDIUM | Dependencies | `qs` DoS advisory reaches the app through express |
 | F-16 | MEDIUM | Availability | Password hashing can starve the libuv threadpool |
 | F-17 | LOW | Security | Signup timing differs slightly between a free and a taken address |
+| F-18 | ~~HIGH~~ | Testing | ~~Test globs collected a fraction of the suite on Linux~~ — **RESOLVED 2026-09-24** |
 
 ---
 
@@ -371,6 +372,40 @@ must warm both paths first or they will measure the harness.
 without removing the signal, and it makes the endpoint slower for everyone.
 Eliminating it properly would mean making both paths perform equivalent database
 work, which is not worth the complexity at this severity.
+
+---
+
+## F-18 — RESOLVED 2026-09-24 — Test globs collected a fraction of the suite on Linux
+
+**Found while writing CI, before the first run.** Had it not been caught, the
+pipeline would have reported a green build over almost no coverage.
+
+**Was:** both suites ran `node --test src/**/*.test.js` with the pattern
+unquoted. On Windows, npm runs scripts through `cmd`, which does not expand
+globs, so Node received the pattern and expanded it itself — correctly, and
+recursively. On Linux, npm runs scripts through `sh`, which *does* expand it,
+and in POSIX `sh` **`**` is not recursive**: it behaves as a single `*`.
+
+Measured on this repository:
+
+| Suite | Collected on Linux | Actual |
+| --- | --- | --- |
+| Backend | 180 | 201 |
+| Frontend | **13** | 194 |
+
+The frontend lost 93% of its tests, because most of its files sit three or four
+directories deep. The backend silently dropped `src/server.test.js` (readiness
+and graceful shutdown) and `src/ai/providers/geminiProvider.test.js`.
+
+Nothing about the output said so: the run exits zero and prints a smaller
+number that nobody is comparing against anything.
+
+**Resolved** by quoting the pattern in both `package.json` files, so Node always
+expands it and the behaviour no longer depends on which shell npm chose.
+
+**Guarded** by a minimum test count asserted in CI. A suite that quietly stops
+collecting files now fails rather than passing smaller — which is the property
+that was missing, not the glob itself.
 
 ---
 
