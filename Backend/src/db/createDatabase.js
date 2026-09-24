@@ -20,6 +20,28 @@ const DEFAULT_SLOW_QUERY_MS = 200;
 /** How much of a statement appears in a log line. */
 const LOGGED_SQL_LENGTH = 120;
 
+/** `sslmode=` in a URL query or a key/value connection string. */
+const SSLMODE_PATTERN = /(?:^|[?&\s])sslmode=/i;
+
+/**
+ * Refuse TLS settings given in two places (finding F-23).
+ *
+ * node-postgres parses the connection string after the options, and a
+ * `sslmode` there replaces the `ssl` option outright. So `DATABASE_SSL`
+ * would be silently ignored whenever the URL names a mode, which managed
+ * providers' URLs always do, and a later `pg` release that gives `require`
+ * its weaker libpq meaning would drop certificate checks without a word.
+ * One place only: the URL's `sslmode`, or `DATABASE_SSL`.
+ */
+function assertSingleTlsSource(databaseConfig) {
+  if (databaseConfig.ssl && SSLMODE_PATTERN.test(databaseConfig.connectionString)) {
+    throw new Error(
+      "DATABASE_URL sets sslmode and DATABASE_SSL is also set, and the URL would silently win. " +
+        "Configure TLS in one place: sslmode=verify-full in the URL, or DATABASE_SSL alone.",
+    );
+  }
+}
+
 /**
  * Translate FlowBoard's database config into node-postgres pool options.
  *
@@ -65,6 +87,7 @@ function createDatabase({
   if (!config?.connectionString) {
     throw new Error("createDatabase requires config.connectionString.");
   }
+  assertSingleTlsSource(config);
 
   const pool = createPool(buildPoolOptions(config));
 

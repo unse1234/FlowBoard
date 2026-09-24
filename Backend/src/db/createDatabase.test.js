@@ -264,3 +264,45 @@ test("close drains the pool once, however often it is called", async () => {
 
   assert.equal(pool.ended, 1);
 });
+
+test("TLS set in both the URL and DATABASE_SSL refuses to start (F-23)", () => {
+  const createPool = () => createFakePool();
+  const verify = { rejectUnauthorized: true };
+
+  // pg lets the URL's sslmode silently replace the ssl option, so a setting
+  // an operator relies on would be ignored.
+  for (const connectionString of [
+    "postgres://u:p@ep-x.neon.tech/db?sslmode=verify-full",
+    "postgres://u:p@ep-x.neon.tech/db?channel_binding=require&sslmode=require",
+    "host=ep-x.neon.tech dbname=db sslmode=require",
+  ]) {
+    assert.throws(
+      () => createDatabase({ config: { ...CONFIG, connectionString, ssl: verify }, logger: SILENT_LOGGER, createPool }),
+      /Configure TLS in one place/,
+      connectionString,
+    );
+  }
+});
+
+test("TLS set in one place starts normally", () => {
+  const createPool = () => createFakePool();
+
+  assert.doesNotThrow(() =>
+    createDatabase({
+      config: { ...CONFIG, connectionString: "postgres://u:p@ep-x.neon.tech/db?sslmode=verify-full", ssl: false },
+      logger: SILENT_LOGGER,
+      createPool,
+    }),
+  );
+  assert.doesNotThrow(() =>
+    createDatabase({ config: { ...CONFIG, ssl: { rejectUnauthorized: true } }, logger: SILENT_LOGGER, createPool }),
+  );
+  // "sslmode" appearing inside a password is not a query parameter.
+  assert.doesNotThrow(() =>
+    createDatabase({
+      config: { ...CONFIG, connectionString: "postgres://u:xsslmode=1@localhost/db", ssl: { rejectUnauthorized: true } },
+      logger: SILENT_LOGGER,
+      createPool,
+    }),
+  );
+});
