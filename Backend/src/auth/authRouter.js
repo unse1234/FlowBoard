@@ -14,6 +14,9 @@ const { createUserRepository } = require("./userRepository");
 /** Matches the CHECK on auth_sessions.user_agent. */
 const MAX_USER_AGENT_LENGTH = 512;
 
+/** Session ids are UUIDs; anything else cannot name one, and is not looked up. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /**
  * HTTP routes for authentication, mounted at /api/auth.
  *
@@ -39,6 +42,8 @@ const MAX_USER_AGENT_LENGTH = 512;
  *   per-address backoff after repeated failed sign-ins
  * @param {ReturnType<typeof import("./botCheck").createTurnstileVerifier> | null} [options.botCheck]
  *   Turnstile on signup; null where no secret key is configured
+ * @param {{ retentionDays: number, every: number }} [options.sessionPurge]
+ *   delete dead sessions this long after they died, once per `every` session writes
  */
 function createAuthRouter({
   database,
@@ -52,6 +57,7 @@ function createAuthRouter({
   sessionLimiter = null,
   loginThrottle = null,
   botCheck = null,
+  sessionPurge = { retentionDays: 30, every: 200 },
   logger = console,
 }) {
   const router = express.Router();
@@ -59,6 +65,28 @@ function createAuthRouter({
   const sessions = createSessionRepository({ database });
   const requireAuth = createRequireAuth({ accessTokens, logger });
   const readEdgeRequest = createEdgeRequestReader({ edgeSecret, logger });
+
+  /**
+   * Every sign-in and every refresh writes session rows, so they are what
+   * drives the purge of dead ones (3.1): once per `every` writes in this
+   * process, in a bounded batch, never failing the request that triggered it.
+   * Several instances purging at once only delete the same rows once.
+   */
+  let sessionWritesSincePurge = 0;
+  function maybePurgeDeadSessions() {
+    sessionWritesSincePurge += 1;
+    if (sessionWritesSincePurge < sessionPurge.every) return;
+    sessionWritesSincePurge = 0;
+
+    sessions
+      .purgeDeadSessions({ retentionSeconds: sessionPurge.retentionDays * 24 * 60 * 60 })
+      .then((deleted) => {
+        if (deleted > 0) logger.info?.("[auth] Purged dead sessions.", { deleted });
+      })
+      .catch((error) => {
+        logger.warn?.("[auth] Session purge failed.", { message: error?.message });
+      });
+  }
 
   /**
    * Nothing reaches a route here except through FlowBoard's own edge, when
@@ -228,6 +256,7 @@ function createAuthRouter({
       await upgradeHashIfStale(user, login.password);
 
       const session = await startSession(user, request);
+      maybePurgeDeadSessions();
 
       logger.info?.("[auth] Signed in.", { userId: user.id, sessionId: session.sessionId });
 
@@ -292,6 +321,7 @@ function createAuthRouter({
         sessionId: result.sessionId,
         tokenVersion: result.user.tokenVersion,
       });
+      maybePurgeDeadSessions();
 
       if (result.withinGrace) {
         logger.info?.("[auth] Refreshed within the reuse grace window.", { sessionId: result.sessionId });
@@ -377,31 +407,119 @@ function createAuthRouter({
   router.get("/me", requireAuth, async (request, response) => {
     try {
       await enforceLimit(sessionLimiter, request);
-
-      const user = await sessions.findSessionUser({
-        userId: request.user.id,
-        sessionId: request.user.sessionId,
-      });
-
-      if (!user) throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "session ended or account gone" });
-      if (user.tokenVersion !== request.user.tokenVersion) {
-        throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "stale token_version" });
-      }
-      if (user.status !== "active") {
-        throw new AuthError("ACCOUNT_UNAVAILABLE", { detail: `status ${user.status}` });
-      }
+      const user = await requireLiveSession(request);
 
       response.set("Cache-Control", "no-store");
       response.json({ ok: true, user: publicUser(user) });
     } catch (error) {
-      const authError = toAuthError(error);
-      // The token was well signed but is no longer good: the same challenge
-      // requireAuth sends for a bad one.
-      if (authError.code === "AUTHENTICATION_REQUIRED") setBearerChallenge(response, "invalid_token");
-      logFailure(logger, authError);
-      sendError(response, authError);
+      sendAuthenticatedRouteError(response, error);
     }
   });
+
+  /**
+   * This account's live sessions, most recent first, with the one making the
+   * request marked (Phase 3). The address and browser are the account
+   * owner's own, shown so they can tell their devices apart.
+   */
+  router.get("/sessions", requireAuth, async (request, response) => {
+    try {
+      await enforceLimit(sessionLimiter, request);
+      const user = await requireLiveSession(request);
+      const live = await sessions.listLiveSessions(user.id);
+
+      response.set("Cache-Control", "no-store");
+      response.json({
+        ok: true,
+        sessions: live.map((session) => ({
+          id: session.id,
+          createdAt: session.createdAt.toISOString(),
+          lastUsedAt: session.lastUsedAt.toISOString(),
+          userAgent: session.userAgent,
+          ipAddress: session.ipAddress,
+          current: session.id === request.user.sessionId,
+        })),
+      });
+    } catch (error) {
+      sendAuthenticatedRouteError(response, error);
+    }
+  });
+
+  /**
+   * Sign out everywhere else: end every live session but this one.
+   */
+  router.post("/sessions/revoke-others", requireAuth, async (request, response) => {
+    try {
+      await enforceLimit(sessionLimiter, request);
+      const user = await requireLiveSession(request);
+      const revoked = await sessions.revokeOtherSessions({
+        userId: user.id,
+        keepSessionId: request.user.sessionId,
+        reason: "revoked_by_user",
+      });
+
+      logger.info?.("[auth] Signed out other sessions.", { userId: user.id, revoked });
+      response.json({ ok: true, revoked });
+    } catch (error) {
+      sendAuthenticatedRouteError(response, error);
+    }
+  });
+
+  /**
+   * End one session of this account, from its list.
+   *
+   * Someone else's session, a made-up id and one already ended all answer
+   * SESSION_NOT_FOUND, so the route reveals nothing about ids it does not own.
+   */
+  router.delete("/sessions/:sessionId", requireAuth, async (request, response) => {
+    try {
+      await enforceLimit(sessionLimiter, request);
+      const user = await requireLiveSession(request);
+
+      const { sessionId } = request.params;
+      const revoked =
+        UUID_PATTERN.test(sessionId) &&
+        (await sessions.revokeUserSession({ userId: user.id, sessionId, reason: "revoked_by_user" }));
+      if (!revoked) throw new AuthError("SESSION_NOT_FOUND", { detail: "not a live session of this user" });
+
+      logger.info?.("[auth] Ended a session.", { userId: user.id, sessionId });
+      response.json({ ok: true });
+    } catch (error) {
+      sendAuthenticatedRouteError(response, error);
+    }
+  });
+
+  /**
+   * The account behind the access token, checked against the database: its
+   * session still live, its token_version current, the account active.
+   *
+   * For the routes that must not outlive a sign-out. requireAuth alone trusts
+   * the signature, which stays valid for up to 15 minutes after one.
+   */
+  async function requireLiveSession(request) {
+    const user = await sessions.findSessionUser({
+      userId: request.user.id,
+      sessionId: request.user.sessionId,
+    });
+
+    if (!user) throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "session ended or account gone" });
+    if (user.tokenVersion !== request.user.tokenVersion) {
+      throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "stale token_version" });
+    }
+    if (user.status !== "active") {
+      throw new AuthError("ACCOUNT_UNAVAILABLE", { detail: `status ${user.status}` });
+    }
+    return user;
+  }
+
+  /** The one error path for routes behind requireAuth. */
+  function sendAuthenticatedRouteError(response, error) {
+    const authError = toAuthError(error);
+    // A well-signed token that is no longer good gets the same challenge
+    // requireAuth sends for a bad one (RFC 6750).
+    if (authError.code === "AUTHENTICATION_REQUIRED") setBearerChallenge(response, "invalid_token");
+    logFailure(logger, authError);
+    sendError(response, authError);
+  }
 
   /**
    * Create the session row and its first refresh token, and sign an access

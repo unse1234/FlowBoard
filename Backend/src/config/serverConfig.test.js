@@ -313,3 +313,15 @@ test("Turnstile is off unless its secret key is set", () => {
   assert.equal(getServerConfig({ TURNSTILE_SECRET_KEY: "  " }).auth.turnstileSecretKey, null);
   assert.equal(getServerConfig({ TURNSTILE_SECRET_KEY: " 0x4AAA-secret " }).auth.turnstileSecretKey, "0x4AAA-secret");
 });
+
+test("dead sessions are kept 30 days, and purged once per 200 session writes", () => {
+  const { auth } = getServerConfig({});
+  assert.equal(auth.sessionRetentionDays, 30);
+  assert.equal(auth.sessionPurgeEvery, 200);
+
+  assert.equal(getServerConfig({ AUTH_SESSION_RETENTION_DAYS: "90" }).auth.sessionRetentionDays, 90);
+  for (const bad of ["0", "366", "forever"]) {
+    assert.equal(getServerConfig({ AUTH_SESSION_RETENTION_DAYS: bad }).auth.sessionRetentionDays, 30, bad);
+  }
+  assert.equal(getServerConfig({ AUTH_SESSION_PURGE_EVERY: "0" }).auth.sessionPurgeEvery, 200);
+});

@@ -61,6 +61,15 @@ const DEFAULT_AUTH_SESSION_RATE_LIMIT_PER_MINUTE = 60;
 const DEFAULT_AUTH_LOGIN_BACKOFF_THRESHOLD = 5;
 
 /**
+ * Dead sessions (revoked or expired) are deleted this long after they died,
+ * with their refresh tokens (3.1). Long enough to look into a detected theft.
+ */
+const DEFAULT_SESSION_RETENTION_DAYS = 30;
+
+/** Purge once per this many sign-ins and refreshes, per process. */
+const DEFAULT_SESSION_PURGE_EVERY = 200;
+
+/**
  * How long a browser should refuse to reach this API over plain HTTP.
  *
  * 180 days. Zero omits the header entirely, for a deployment that is not
@@ -182,6 +191,13 @@ function getServerConfig(env = process.env) {
         env.AUTH_LOGIN_BACKOFF_THRESHOLD,
         DEFAULT_AUTH_LOGIN_BACKOFF_THRESHOLD,
       ),
+      sessionRetentionDays: readIntegerInRange(
+        env.AUTH_SESSION_RETENTION_DAYS,
+        DEFAULT_SESSION_RETENTION_DAYS,
+        1,
+        365,
+      ),
+      sessionPurgeEvery: readPositiveInteger(env.AUTH_SESSION_PURGE_EVERY, DEFAULT_SESSION_PURGE_EVERY),
       accessToken: {
         // Server-side only. Never logged, never returned, never defaulted.
         keys: readSigningKeys(env.AUTH_ACCESS_TOKEN_KEYS),

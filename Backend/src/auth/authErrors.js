@@ -95,6 +95,14 @@ const AUTH_ERRORS = Object.freeze({
     message: "We couldn't check you're human just now. Try again in a moment.",
   },
 
+  // A session to end that is not this account's, does not exist, or has
+  // already ended. One answer for all three, so the route cannot be used to
+  // learn which session ids exist.
+  SESSION_NOT_FOUND: {
+    status: 404,
+    message: "That session has already ended.",
+  },
+
   // A protected route called without a valid access token. Deliberately the
   // same whether the token was missing, expired, forged or revoked: the
   // client's move is the same in every case, which is to refresh and retry

@@ -109,6 +109,10 @@ function createApp(
                 logger,
               })
             : null,
+        sessionPurge: {
+          retentionDays: config.auth.sessionRetentionDays,
+          every: config.auth.sessionPurgeEvery,
+        },
         botCheck: config.auth.turnstileSecretKey
           ? createTurnstileVerifier({ secretKey: config.auth.turnstileSecretKey, fetchImpl, logger })
           : null,

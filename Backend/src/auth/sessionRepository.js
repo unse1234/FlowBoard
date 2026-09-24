@@ -206,6 +206,90 @@ function createSessionRepository({ database }) {
     },
 
     /**
+     * A user's live sessions, most recently used first (chunk 3.2).
+     *
+     * @param {string} userId
+     */
+    async listLiveSessions(userId) {
+      const { rows } = await database.query(
+        `SELECT id, created_at, last_used_at, expires_at, user_agent, ip_address
+         FROM auth_sessions
+         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+         ORDER BY last_used_at DESC`,
+        [userId],
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        lastUsedAt: row.last_used_at,
+        expiresAt: row.expires_at,
+        userAgent: row.user_agent,
+        ipAddress: row.ip_address,
+      }));
+    },
+
+    /**
+     * End one live session, if and only if it belongs to this user.
+     *
+     * Scoped by user in the statement itself, so there is no check-then-act
+     * gap, and another user's session id matches nothing.
+     *
+     * @returns {Promise<boolean>} whether a session was ended
+     */
+    async revokeUserSession({ userId, sessionId, reason }) {
+      const { rowCount } = await database.query(
+        `UPDATE auth_sessions
+         SET revoked_at = now(), revoked_reason = $3
+         WHERE id = $2 AND user_id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+        [userId, sessionId, reason],
+      );
+      return rowCount === 1;
+    },
+
+    /**
+     * End every live session of this user except one: "sign out everywhere
+     * else".
+     *
+     * @returns {Promise<number>} sessions ended
+     */
+    async revokeOtherSessions({ userId, keepSessionId, reason }) {
+      const { rowCount } = await database.query(
+        `UPDATE auth_sessions
+         SET revoked_at = now(), revoked_reason = $3
+         WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL AND expires_at > now()`,
+        [userId, keepSessionId, reason],
+      );
+      return rowCount;
+    },
+
+    /**
+     * Delete sessions that died (revoked or expired) more than
+     * `retentionSeconds` ago, their refresh tokens cascading with them
+     * (chunk 3.1). The retention keeps a revoked session, a detected theft
+     * especially, long enough to be looked into.
+     *
+     * Bounded per call, so a large backlog is worked through in small steps
+     * rather than one long-running statement.
+     *
+     * @param {{ retentionSeconds: number, limit?: number }} purge
+     * @returns {Promise<number>} sessions deleted
+     */
+    async purgeDeadSessions({ retentionSeconds, limit = 500 }) {
+      const { rowCount } = await database.query(
+        `DELETE FROM auth_sessions
+         WHERE id IN (
+           SELECT id FROM auth_sessions
+           WHERE revoked_at < now() - make_interval(secs => $1)
+              OR expires_at < now() - make_interval(secs => $1)
+           LIMIT $2
+         )`,
+        [retentionSeconds, limit],
+      );
+      return rowCount;
+    },
+
+    /**
      * End the session a refresh token belongs to.
      *
      * Any token of the session will do, spent or not: whoever holds one can

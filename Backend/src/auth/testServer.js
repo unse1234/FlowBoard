@@ -153,6 +153,17 @@ async function startAuthServer(
         ...(token === null ? {} : { cookie: `${config.auth.cookie.name}=${token}` }),
         ...headers,
       }),
+    /** Any request with a bearer token, JSON and a trusted origin. */
+    authed: (method, path, accessToken, body) =>
+      fetch(`${baseUrl}${path}`, {
+        method,
+        headers: {
+          origin: TRUSTED_ORIGIN,
+          ...(accessToken === undefined ? {} : { authorization: `Bearer ${accessToken}` }),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
     /** GET /api/auth/me with a bearer token. Undefined sends no Authorization header. */
     me: (accessToken, headers = {}) =>
       fetch(`${baseUrl}/api/auth/me`, {
