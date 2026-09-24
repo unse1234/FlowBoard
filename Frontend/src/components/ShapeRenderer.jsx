@@ -1,6 +1,7 @@
 import { memo, useCallback } from "react";
 import { TOOLS } from "../constants/tools";
 import { renderShape } from "./renderers/renderingStrategies";
+import { getShapeOpacity } from "../domain/render/shapeVisuals.js";
 import { getBaseShapeStyle } from "../utils/styleUtils";
 import { isLineLike } from "../utils/shapeUtils";
 
@@ -76,7 +77,11 @@ function ShapeRenderer({
     name: "shape",
     ref: handleRef,
     draggable: tool === TOOLS.SELECT && !isEditing && !isPanMode,
-    opacity: isErasing ? 0.25 : undefined,
+    // The shape's only opacity. Konva multiplies it into every child, so no
+    // renderer below sets opacity again — doing so used to override this and
+    // lose the erase preview on lines and text, and to composite twice on
+    // sketchy shapes drawn from two overlapping strokes.
+    opacity: getShapeOpacity(shape, { isErasing }),
     hitStrokeWidth: isLineLike(shape)
       ? Math.max(style.strokeWidth, 20)
       : undefined,

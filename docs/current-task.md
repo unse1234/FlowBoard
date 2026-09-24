@@ -34,6 +34,13 @@ email that E-12 depends on needs Phase 4.
 | 1.4 | `POST /api/auth/signup` — uniform response whether or not the address is taken (E-12), always hashes before inserting, `ON CONFLICT DO NOTHING` so a race cannot leak, per-IP rate limit | `Backend/src/auth/authRouter.js`, `signupRequest.js`, `userRepository.js` |
 | 1.5 | `POST /api/auth/login` — one answer for an unknown address, a wrong password and a no-password account, each doing equal work; account status checked only after the password verifies; stale hashes upgraded transparently | `Backend/src/auth/authRouter.js`, `loginRequest.js` |
 
+## Recently fixed
+
+Four rendering bugs, recorded as F-19: the erase preview was invisible on clean
+lines and text, images ignored opacity, sketchy shapes composited opacity twice,
+and fill rendered at 18% in the default style. All had one cause — each renderer
+decided opacity for itself. Opacity is now set once, on the outermost node.
+
 ## Tests
 
 | Suite | Result |

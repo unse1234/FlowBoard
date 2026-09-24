@@ -103,7 +103,7 @@ jobs:
       - name: Test
         working-directory: Frontend
         env:
-          MINIMUM_TESTS: 194
+          MINIMUM_TESTS: 207
         run: |
           set -o pipefail
           npm run test:realtime 2>&1 | tee test-output.txt

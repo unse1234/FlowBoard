@@ -4,11 +4,10 @@ import { NOTE_DEFAULTS, RENDER_STYLES } from "../../constants/canvas";
 import { TOOLS } from "../../constants/tools";
 import { getBox, getLinePoints } from "../../utils/shapeUtils";
 import {
-  getBaseShapeStyle,
-  getReadableInk,
-  getShapeStyle,
-  getStrokeDash,
-} from "../../utils/styleUtils";
+  getFillColor,
+  getStrokeProps as getStrokeNodeProps,
+} from "../../domain/render/shapeVisuals.js";
+import { getBaseShapeStyle, getReadableInk, getShapeStyle } from "../../utils/styleUtils";
 import ImageShape from "./ImageShape";
 
 const hashShapeId = (id) =>
@@ -21,21 +20,22 @@ const roughOffset = (shape, index, amount = 1.8) => {
   return ((seed - 5) / 5) * amount;
 };
 
+/**
+ * What a renderer needs to draw a shape.
+ *
+ * `strokeProps` deliberately carries no opacity. Opacity belongs to the shape
+ * and is set once, on the outermost node, by ShapeRenderer — Konva multiplies a
+ * group's opacity into its children, so setting it here too would composite it
+ * twice and make a two-stroke sketchy shape darker where the strokes overlap.
+ */
 const getStrokeProps = (shape, isDark) => {
   const style = getShapeStyle(shape, { isDark });
-  const edgeIsRound = style.edgeStyle === "round";
 
   return {
     style,
-    edgeIsRound,
-    strokeProps: {
-      stroke: style.stroke,
-      strokeWidth: style.strokeWidth,
-      dash: getStrokeDash(style),
-      opacity: style.opacity,
-      lineCap: edgeIsRound ? "round" : "butt",
-      lineJoin: edgeIsRound ? "round" : "miter",
-    },
+    edgeIsRound: style.edgeStyle === "round",
+    fill: getFillColor(shape, { isDark }),
+    strokeProps: getStrokeNodeProps(shape, { isDark }),
   };
 };
 
@@ -56,7 +56,7 @@ const BoxGroup = ({ shape, nodeProps, children }) => {
 };
 
 const CleanRect = ({ shape, nodeProps, isDark }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
+  const { edgeIsRound, fill, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -64,7 +64,7 @@ const CleanRect = ({ shape, nodeProps, isDark }) => {
         <Rect
           width={box.width}
           height={box.height}
-          fill={style.fillEnabled ? style.fill : undefined}
+          fill={fill}
           cornerRadius={edgeIsRound ? 12 : 0}
           {...strokeProps}
         />
@@ -74,20 +74,14 @@ const CleanRect = ({ shape, nodeProps, isDark }) => {
 };
 
 const RoughRect = ({ shape, nodeProps, isDark }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
+  const { edgeIsRound, fill, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
       {(box) => (
         <>
-          {style.fillEnabled && (
-            <Rect
-              width={box.width}
-              height={box.height}
-              fill={style.fill}
-              opacity={style.opacity * 0.18}
-              listening={false}
-            />
+          {fill && (
+            <Rect width={box.width} height={box.height} fill={fill} listening={false} />
           )}
           {[0, 1].map((index) => (
             <Rect
@@ -108,7 +102,7 @@ const RoughRect = ({ shape, nodeProps, isDark }) => {
 };
 
 const CleanEllipse = ({ shape, nodeProps, isDark }) => {
-  const { style, strokeProps } = getStrokeProps(shape, isDark);
+  const { fill, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -128,7 +122,7 @@ const CleanEllipse = ({ shape, nodeProps, isDark }) => {
             y={height / 2}
             radiusX={radiusX}
             radiusY={radiusY}
-            fill={style.fillEnabled ? style.fill : undefined}
+            fill={fill}
             {...strokeProps}
           />
         );
@@ -137,7 +131,7 @@ const CleanEllipse = ({ shape, nodeProps, isDark }) => {
   );
 };
 const RoughEllipse = ({ shape, nodeProps, isDark }) => {
-  const { style, strokeProps } = getStrokeProps(shape, isDark);
+  const { fill, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -153,14 +147,13 @@ const RoughEllipse = ({ shape, nodeProps, isDark }) => {
 
         return (
           <>
-            {style.fillEnabled && (
+            {fill && (
               <Ellipse
                 x={width / 2}
                 y={height / 2}
                 radiusX={radiusX}
                 radiusY={radiusY}
-                fill={style.fill}
-                opacity={style.opacity * 0.18}
+                fill={fill}
                 listening={false}
               />
             )}
@@ -194,7 +187,7 @@ const diamondPoints = (box) => [
 ];
 
 const CleanDiamond = ({ shape, nodeProps, isDark }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
+  const { edgeIsRound, fill, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -202,7 +195,7 @@ const CleanDiamond = ({ shape, nodeProps, isDark }) => {
         <Line
           points={diamondPoints(box)}
           closed
-          fill={style.fillEnabled ? style.fill : undefined}
+          fill={fill}
           tension={edgeIsRound ? 0.08 : 0}
           {...strokeProps}
         />
@@ -212,20 +205,14 @@ const CleanDiamond = ({ shape, nodeProps, isDark }) => {
 };
 
 const RoughDiamond = ({ shape, nodeProps, isDark }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
+  const { edgeIsRound, fill, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
       {(box) => (
         <>
-          {style.fillEnabled && (
-            <Line
-              points={diamondPoints(box)}
-              closed
-              fill={style.fill}
-              opacity={style.opacity * 0.18}
-              listening={false}
-            />
+          {fill && (
+            <Line points={diamondPoints(box)} closed fill={fill} listening={false} />
           )}
           {[0, 1].map((index) => (
             <Line
@@ -311,7 +298,6 @@ const TextShape = ({ shape, nodeProps, isEditing, isDark }) => {
       fontFamily={style.fontFamily}
       fontSize={style.fontSize}
       fill={style.stroke}
-      opacity={style.opacity}
       lineHeight={1.25}
       padding={2}
     />
@@ -342,7 +328,6 @@ const NoteShape = ({ shape, nodeProps, isEditing }) => {
             height={box.height}
             fill={fill}
             cornerRadius={2}
-            opacity={style.opacity}
             shadowColor="#0f172a"
             shadowOpacity={0.18}
             shadowBlur={8}
@@ -358,7 +343,6 @@ const NoteShape = ({ shape, nodeProps, isEditing }) => {
             fontFamily={style.fontFamily}
             fontSize={style.fontSize}
             fill={getReadableInk(fill)}
-            opacity={style.opacity}
             lineHeight={1.3}
             wrap="word"
             ellipsis

@@ -32,6 +32,7 @@ resolved by Step 1 rather than by a patch.
 | F-16 | MEDIUM | Availability | Password hashing can starve the libuv threadpool |
 | F-17 | LOW | Security | Signup timing differs slightly between a free and a taken address |
 | F-18 | ~~HIGH~~ | Testing | ~~Test globs collected a fraction of the suite on Linux~~ — **RESOLVED 2026-09-24** |
+| F-19 | ~~MEDIUM~~ | Rendering | ~~Opacity and fill decided inconsistently per renderer~~ — **RESOLVED 2026-09-24** |
 
 ---
 
@@ -447,6 +448,50 @@ expands it and the behaviour no longer depends on which shell npm chose.
 **Guarded** by a minimum test count asserted in CI. A suite that quietly stops
 collecting files now fails rather than passing smaller — which is the property
 that was missing, not the glob itself.
+
+---
+
+## F-19 — RESOLVED 2026-09-24 — Opacity and fill decided inconsistently per renderer
+
+Four visible bugs, one root cause: each renderer decided opacity and fill for
+itself, and they disagreed. The decisions lived in `.jsx`, which Node cannot run
+without a build step, so nothing ever asserted them.
+
+**1. The erase preview did not appear on clean lines, arrows, pen strokes or
+text.** `ShapeRenderer` faded a shape by putting `opacity` in `nodeProps`, but
+`CleanLine` spread `{...strokeProps}` — which also carried `opacity` — *after*
+`{...nodeProps}`, and `TextShape` set `opacity` explicitly. Both overwrote the
+fade. Rectangles, ellipses, diamonds and notes faded correctly, because their
+`nodeProps` land on a wrapping `Group`, so the two values multiplied instead of
+one replacing the other. The eraser therefore worked but gave no feedback on
+roughly half the shape types.
+
+**2. Images ignored opacity entirely.** `ImageShape` never read `style.opacity`,
+so the opacity control did nothing to an image and the erase preview never
+reached one either.
+
+**3. Sketchy shapes rendered opacity unevenly.** A rough shape is drawn from two
+overlapping strokes, and each was given the shape's opacity. Two strokes at 0.5
+composite to 0.75 where they cross, so a half-transparent sketchy shape was
+patchy and darker than asked for.
+
+**4. Fill was nearly invisible in the default rendering style.** Rough fill drew
+at `opacity * 0.18` while clean drew at full opacity. `ROUGH` is the default, so
+choosing a fill colour produced an 18% wash that looked nothing like the swatch
+it came from — and switching to the clean style made the same colour solid.
+
+**Resolved** by making opacity a property of the shape: it is applied **once**,
+on the outermost node, and no inner node sets it. Konva multiplies a group's
+opacity into its children, so that is all that was needed — and it fixes 1, 3
+and 4 together. Fill now comes from one function for both styles.
+
+The decisions moved to `Frontend/src/domain/render/shapeVisuals.js`, plain `.js`
+so the suite can run it, with 13 tests covering each of the four.
+
+**Note on 4:** removing the 0.18 wash changes how existing sketchy filled shapes
+look — they become solid. That is a deliberate judgement that the fill should
+match the swatch, and the sketchiness belongs to the strokes. Restoring the old
+look is a one-line change in `getFillColor`.
 
 ---
 
