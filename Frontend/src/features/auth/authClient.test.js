@@ -4,7 +4,10 @@ import {
   AUTH_CLIENT_MESSAGES,
   AuthRequestError,
   fetchCurrentUser,
+  listSessions,
   refreshSession,
+  revokeOtherSessions,
+  revokeSession,
   signIn,
   signOut,
   signUp,
@@ -108,6 +111,54 @@ test("signup carries a Turnstile token only when there is one", async () => {
 
   assert.equal(JSON.parse(withToken.calls[0].init.body).turnstileToken, "XXXX.DUMMY.TOKEN.XXXX");
   assert.equal("turnstileToken" in JSON.parse(without.calls[0].init.body), false);
+});
+
+test("the session list is read with the bearer token and its dates parsed", async () => {
+  const { calls, fetchImpl } = recordingFetch(
+    jsonResponse(200, {
+      ok: true,
+      sessions: [
+        {
+          id: "s-1",
+          createdAt: "2026-09-20T10:00:00.000Z",
+          lastUsedAt: "2026-09-25T09:00:00.000Z",
+          userAgent: "Chrome",
+          ipAddress: "203.0.113.7",
+          current: true,
+        },
+      ],
+    }),
+  );
+
+  const sessions = await listSessions({ accessToken: "t0k3n", fetchImpl, ...BASE });
+
+  assert.equal(calls[0].url, "https://api.example/api/auth/sessions");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer t0k3n");
+  assert.equal(calls[0].init.credentials, "omit");
+  assert.deepEqual(sessions[0].lastUsedAt, new Date("2026-09-25T09:00:00.000Z"));
+  assert.equal(sessions[0].current, true);
+});
+
+test("a session list that is not what it should be is refused", async () => {
+  for (const body of [{ ok: true }, { ok: true, sessions: [{ id: 1 }] }, { ok: true, sessions: [{ id: "s", current: "yes" }] }]) {
+    const { fetchImpl } = recordingFetch(jsonResponse(200, body));
+    await assert.rejects(listSessions({ accessToken: "t", fetchImpl, ...BASE }), { code: "BAD_RESPONSE" });
+  }
+});
+
+test("ending sessions uses the right method and path, with the bearer token", async () => {
+  const one = recordingFetch(jsonResponse(200, { ok: true }));
+  const others = recordingFetch(jsonResponse(200, { ok: true, revoked: 2 }));
+
+  await revokeSession({ accessToken: "t", sessionId: "a/b", fetchImpl: one.fetchImpl, ...BASE });
+  const revoked = await revokeOtherSessions({ accessToken: "t", fetchImpl: others.fetchImpl, ...BASE });
+
+  assert.equal(one.calls[0].init.method, "DELETE");
+  // An id is always encoded into the path, never spliced in raw.
+  assert.equal(one.calls[0].url, "https://api.example/api/auth/sessions/a%2Fb");
+  assert.equal(others.calls[0].url, "https://api.example/api/auth/sessions/revoke-others");
+  assert.equal(others.calls[0].init.method, "POST");
+  assert.equal(revoked, 2);
 });
 
 test("a server error surfaces its code, message and status", async () => {

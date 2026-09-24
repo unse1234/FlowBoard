@@ -121,6 +121,66 @@ export async function fetchCurrentUser({ accessToken, ...options }) {
   return user;
 }
 
+/**
+ * @typedef {{ id: string, createdAt: Date, lastUsedAt: Date, userAgent: string | null, ipAddress: string | null, current: boolean }} AuthSessionSummary
+ */
+
+/**
+ * This account's live sessions, most recent first (Phase 3).
+ *
+ * @param {{ accessToken: string } & RequestOptions} request
+ * @returns {Promise<AuthSessionSummary[]>}
+ */
+export async function listSessions({ accessToken, ...options }) {
+  const body = await send("/api/auth/sessions", { ...options, method: "GET", accessToken });
+  if (!Array.isArray(body?.sessions)) throw badResponse();
+
+  return body.sessions.map((session) => {
+    const createdAt = new Date(session?.createdAt);
+    const lastUsedAt = new Date(session?.lastUsedAt);
+    if (
+      typeof session?.id !== "string" ||
+      typeof session.current !== "boolean" ||
+      Number.isNaN(createdAt.getTime()) ||
+      Number.isNaN(lastUsedAt.getTime())
+    ) {
+      throw badResponse();
+    }
+    return Object.freeze({
+      id: session.id,
+      createdAt,
+      lastUsedAt,
+      userAgent: typeof session.userAgent === "string" ? session.userAgent : null,
+      ipAddress: typeof session.ipAddress === "string" ? session.ipAddress : null,
+      current: session.current,
+    });
+  });
+}
+
+/**
+ * End one of this account's sessions, signing that device out.
+ *
+ * @param {{ accessToken: string, sessionId: string } & RequestOptions} request
+ */
+export async function revokeSession({ accessToken, sessionId, ...options }) {
+  await send(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+    ...options,
+    method: "DELETE",
+    accessToken,
+  });
+}
+
+/**
+ * Sign out everywhere else: end every session but this one.
+ *
+ * @param {{ accessToken: string } & RequestOptions} request
+ * @returns {Promise<number>} how many were ended
+ */
+export async function revokeOtherSessions({ accessToken, ...options }) {
+  const body = await send("/api/auth/sessions/revoke-others", { ...options, body: {}, accessToken });
+  return Number.isInteger(body?.revoked) ? body.revoked : 0;
+}
+
 async function send(
   path,
   {

@@ -326,6 +326,8 @@ export default function BoardPage() {
   const auth = useAuth();
   const [authDialog, setAuthDialog] = useState({ open: false, mode: AUTH_MODES.SIGN_IN, key: 0 });
   const [accountOpen, setAccountOpen] = useState(false);
+  // A new key each time the account dialog opens, so its device list is fresh.
+  const [accountKey, setAccountKey] = useState(0);
 
   // A new key each time, so the form opens empty rather than holding the last
   // attempt's password.
@@ -337,7 +339,10 @@ export default function BoardPage() {
     () => setAuthDialog((current) => ({ ...current, open: false })),
     [],
   );
-  const openAccount = useCallback(() => setAccountOpen(true), []);
+  const openAccount = useCallback(() => {
+    setAccountKey((key) => key + 1);
+    setAccountOpen(true);
+  }, []);
   const closeAccount = useCallback(() => setAccountOpen(false), []);
 
   const handleAuthSuccess = useCallback(
@@ -845,10 +850,12 @@ export default function BoardPage() {
       />
 
       <AccountDialog
+        key={accountKey}
         open={accountOpen && auth.user !== null}
         user={auth.user}
         onClose={closeAccount}
         onSignOut={handleSignOut}
+        getAccessToken={auth.getAccessToken}
       />
     </div>
   );
