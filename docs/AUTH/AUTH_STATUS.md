@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 1. Update it every chunk.**
 
-Last updated: 2026-09-23 (Phase 0 complete; chunks 1.1-1.4 done)
+Last updated: 2026-09-24 (Phase 1 complete except its email half)
 
 ---
 
@@ -11,9 +11,9 @@ Last updated: 2026-09-23 (Phase 0 complete; chunks 1.1-1.4 done)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 1 — Password identity. Chunks 1.1-1.4 done |
-| **Task** | Chunk 1.5 — `POST /api/auth/login` |
-| **Blocker** | None |
+| **Phase** | 1 — Password identity. **All five chunks done** |
+| **Task** | None active — pick from Next recommended task |
+| **Blocker** | None. Phase 4 (email) is needed to finish E-12 |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
 rotating opaque refresh cookie (ADR 0002), multi-instance from the first commit
@@ -34,15 +34,16 @@ underneath it, not identity itself.
 | 0.4 | Schema integration suite — 11 tests, all passing against a real server. |
 | 1.1 | `createPasswordHasher` — Argon2id at OWASP's baseline, PHC-stored parameters, `needsRehash` for transparent cost upgrades, 1024-byte input cap, verification that never throws, and `burnVerificationWork` so an unknown address costs the same as a wrong password. |
 | 1.2 | `parseEmailAddress` / `normalizeEmailAddress` — NFC then lowercase, byte-counted RFC 5321 limits, rejects CR/LF (SMTP header injection), invisible characters, bare hostnames and IP-literal domains. Accepts internationalised addresses. Verified against PostgreSQL that the app and `lower()` agree, so the CHECK constraint cannot reject a valid signup. |
+| 1.5 | `POST /api/auth/login` — one answer for an unknown address, a wrong password and an account with no password, each doing one Argon2 verification. Account status is checked **after** the password verifies, so `ACCOUNT_UNAVAILABLE` reaches the owner and never a guesser. A stale hash is replaced while the plaintext is in hand, and a failed upgrade never fails the login. |
 | 1.4 | `POST /api/auth/signup` — parses the request, hashes, inserts with `ON CONFLICT DO NOTHING`, and answers 202 `{ ok: true }` either way. `userRepository` holds every statement touching `users`, including `findByNormalizedEmail` and `upgradePasswordHash` which 1.5 needs. Per-IP rate limit, interim and per-process. |
 | 1.3 | `AuthError` and the error catalogue, mirroring `aiErrors.js`. `toResponseBody` is the only serialiser, so `detail` and `cause` cannot leak by a route spreading the object. `CREDENTIAL_CHECK_CODES` names what a sign-in may answer, and a test greps those messages for wording that would reveal whether an account exists. Password policy: 12–128 code points, with a test that a policy-valid password cannot exceed the hasher's byte cap. |
 
 ## In progress
 
-Phase 1. Chunks 1.1–1.4 are done; 1.5 (login) is next.
+Nothing. Phase 1's five chunks are complete.
 
-**An account can be created but cannot sign in.** Signup stores a user; nothing
-reads it back yet.
+**An account can be created and its credentials checked, but nothing keeps
+anyone signed in** — login issues no token, which is Phase 2.
 
 ## Not started
 
@@ -50,7 +51,7 @@ reads it back yet.
 | --- | --- | --- |
 | 0b | Realtime gateway tests | — (unblocked) |
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
-| 1 | Chunk 1.5: login | — (unblocked) |
+| 1 | Complete, except the email half of E-12 (needs Phase 4) | — |
 | 2 | Access + refresh tokens, rotation, revocation, CSRF | Phase 1 |
 | 3 | Session listing and revocation | Phase 2 |
 | 4 | Email delivery, verification, password reset | Phase 1, D-4, D-5 |
@@ -123,6 +124,7 @@ no outbound email of any kind.
 | Control | State | Evidence |
 | --- | --- | --- |
 | Password hashing | **Argon2id, OWASP baseline** | `Backend/src/auth/passwordHasher.js`, ADR 0004 |
+| Auth rate limiting | **Present, interim** — per-process, 5/min per client | `config.auth.rateLimitPerMinute`; Phase 7 replaces it |
 | Auth rate limiting | N/A — no auth endpoints | — |
 | AI rate limiting | Present, per-IP, in-memory | `Backend/src/ai/rateLimiter.js` |
 | CSRF | No surface **yet** — no cookies anywhere | Search: no cookie use |
@@ -139,7 +141,7 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **184 pass, 0 fail, 0 skipped** |
+| Backend | **201 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
@@ -189,26 +191,30 @@ rather than assumed.
 | 2026-09-23 | Chunk 1.2: email validation and normalisation, 19 unit tests plus 3 integration tests confirming the app and PostgreSQL agree on lowercasing. Backend suite 120 → 142. |
 | 2026-09-23 | Chunk 1.3: auth error envelope, 19 tests. D-10 raised (signup enumeration policy). Backend suite 142 → 161. |
 | 2026-09-23 | D-10 resolved as E-12 by the project owner: uniform signup response, email carries the truth. Chunk 1.4: signup route, request parser, user repository. F-17 recorded (residual signup timing). Test suite made serial. Backend suite 161 → 184. |
+| 2026-09-24 | Chunk 1.5: login route, `ACCOUNT_UNAVAILABLE`, transparent hash upgrade. Shared test harness extracted to `testServer.js`. Login timing measured flat across all three paths. Backend suite 184 → 201. |
 
 ---
 
 ## Next recommended task
 
-**Chunk 1.5 — `POST /api/auth/login`.** Unblocked; everything it needs exists.
+Phase 1's five chunks are done, so the next move is a choice rather than one
+obvious step. In recommended order:
 
-- `findByNormalizedEmail` and `upgradePasswordHash` are already written and
-  covered.
-- `invalidCredentials()` is the one answer for an unknown address, a wrong
-  password and an account with no password.
-- `burnVerificationWork()` must be called on the unknown-address path so it
-  costs the same as a wrong password.
-- `needsRehash()` plus `upgradePasswordHash` gives transparent cost upgrades.
+1. **Phase 7 rate limiting**, with Redis from Phase 0c.3. F-16 and F-17 are both
+   reachable now, and the limiter is per-process, so across N instances the real
+   limit is N times what is configured. This is the one part of Step 1 where the
+   current state is a weakness rather than simply an absence.
+2. **Phase 2 — tokens and sessions.** The obvious continuation: login proves who
+   someone is, but nothing keeps them signed in. `users.token_version` already
+   exists, so stateless revocation needs no migration. Cookies arrive here, so
+   CSRF protection lands in the same phase.
+3. **Phase 0b — realtime gateway tests.** Still unblocked, still a hard
+   prerequisite for Phase 5.
+4. **Phase 4 — email.** Needs D-4. Phase 1 is not truly finished without it,
+   because E-12 leaves a returning user with no explanation until it exists.
 
-Login issues no token — that is Phase 2. It reports success or failure only.
-
-After 1.5, Phase 1 is complete except for the email half of E-12, which needs
-Phase 4. **Phase 7 rate limiting is the next real priority**: F-16 and F-17 are
-both reachable now, and the current limiter is per-process only.
+**Phase 0c.1 (CI)** stays cheap and valuable: 395 tests across both suites are
+currently enforced by nothing.
 
 ## Do not touch / protected areas
 

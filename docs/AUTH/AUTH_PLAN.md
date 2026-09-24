@@ -69,7 +69,7 @@ Closes F-10 before Phase 5 touches this code.
 | 0c.2 | Security headers | CSP, HSTS, frame options, referrer policy (F-6) |
 | 0c.3 | Redis + shared rate limiting | Redis client, readiness check, the limiter Phase 7 needs (ADR 0003) |
 
-### Phase 1 — Password identity ← **next**
+### Phase 1 — Password identity ✅ **COMPLETE** (except the email half of E-12)
 
 | # | Chunk | Delivers |
 | --- | --- | --- |
@@ -77,9 +77,9 @@ Closes F-10 before Phase 5 touches this code.
 | 1.2 | Email normalisation | ✅ NFC + lowercase, RFC limits, injection-safe |
 | 1.3 | `authErrors.js` | ✅ Envelope, enumeration rules enforced by test |
 | 1.4 | `POST /api/auth/signup` | ✅ Uniform response per E-12, rate limited |
-| 1.5 | `POST /api/auth/login` | ← **next.** Uniform failure, equal work for an unknown address, transparent rehash |
+| 1.5 | `POST /api/auth/login` | ✅ Uniform failure, equal work, transparent rehash |
 
-### Phase 2 — Tokens and sessions
+### Phase 2 — Tokens and sessions ← **next**
 
 Introduces cookies, so CSRF lands **in this phase**.
 

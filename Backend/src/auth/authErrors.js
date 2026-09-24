@@ -55,9 +55,10 @@ const AUTH_ERRORS = Object.freeze({
     message: `Use at most ${MAX_DISPLAY_NAME_LENGTH} characters.`,
   },
 
-  // Whether signup is allowed to answer with this is still open — see D-10 in
-  // docs/AUTH/AUTH_DECISIONS.md. The code exists so the decision can be
-  // implemented either way; it is never reachable from a login.
+  // Unreachable from signup, which answers identically whether or not the
+  // address is taken (AUTH_DECISIONS.md E-12), and unreachable from a login.
+  // Kept for an authenticated flow that may legitimately report it, such as
+  // changing your own address in Phase 6.
   EMAIL_ALREADY_REGISTERED: {
     status: 409,
     message: "That email address is already registered.",
@@ -68,6 +69,16 @@ const AUTH_ERRORS = Object.freeze({
   INVALID_CREDENTIALS: {
     status: 401,
     message: "That email address and password don't match.",
+  },
+
+  // Reachable only *after* a password has been verified. Answering it before
+  // that would tell an unauthenticated caller that the account exists, which is
+  // why it is deliberately absent from CREDENTIAL_CHECK_CODES below. Vague
+  // between suspended and pending-deletion on purpose: the person who owns the
+  // account already knows which, and nobody else needs to.
+  ACCOUNT_UNAVAILABLE: {
+    status: 403,
+    message: "This account isn't available. Contact support if you think that's wrong.",
   },
 
   TOO_MANY_ATTEMPTS: {
@@ -82,11 +93,15 @@ const AUTH_ERRORS = Object.freeze({
 });
 
 /**
- * Codes a login or a password check may answer with.
+ * Codes a *failed* credential check may answer with.
  *
  * Anything outside this set would let a caller learn something about an account
- * from a failed sign-in. A test asserts none of these messages hints at whether
- * an address is registered.
+ * by guessing at it. A test asserts none of these messages hints at whether an
+ * address is registered.
+ *
+ * ACCOUNT_UNAVAILABLE is deliberately not here: it is reachable only once the
+ * password has already verified, so it is answered to the account's owner
+ * rather than to someone probing.
  */
 const CREDENTIAL_CHECK_CODES = Object.freeze([
   "INVALID_CREDENTIALS",

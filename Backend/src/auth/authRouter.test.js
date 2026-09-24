@@ -1,82 +1,22 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { loadLocalEnvFile } = require("../config/serverConfig");
-const { createDatabase } = require("../db/createDatabase");
-const { runMigrations } = require("../db/migrate");
 const { createApp } = require("../server");
-
-loadLocalEnvFile();
+const {
+  BASE_CONFIG: CONFIG,
+  SILENT_LOGGER,
+  SKIP,
+  VALID_SIGNUP: VALID,
+  startAuthServer: startServer,
+} = require("./testServer");
 
 /**
- * Signup end to end, against a real PostgreSQL.
+ * POST /api/auth/signup against a real PostgreSQL.
  *
- * The behaviour that matters most here — that a taken address is
- * indistinguishable from a free one — depends on a real unique index, so a
- * fake database would prove nothing.
+ * The behaviour that matters most — that a taken address is indistinguishable
+ * from a free one — depends on a real unique index, so a fake database would
+ * prove nothing. The shared harness lives in testServer.js because the login
+ * tests and, later, the token tests need the same one.
  */
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL?.trim();
-const SKIP = TEST_DATABASE_URL ? false : "set TEST_DATABASE_URL to run auth route tests";
-
-const SILENT_LOGGER = { info() {}, warn() {}, error() {} };
-
-/** Cheap Argon2 settings: these tests exercise the route, not the hash. */
-const CONFIG = Object.freeze({
-  port: 0,
-  clientOrigin: ["http://localhost:5173"],
-  ai: { geminiApiKey: null, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
-  database: {
-    connectionString: TEST_DATABASE_URL,
-    poolMax: 4,
-    idleTimeoutMs: 5_000,
-    connectionTimeoutMs: 5_000,
-    statementTimeoutMs: 15_000,
-    ssl: false,
-    applicationName: "flowboard-test",
-  },
-  auth: {
-    rateLimitPerMinute: 0,
-    argon2: { memoryCostKib: 64, timeCost: 1, parallelism: 1 },
-  },
-});
-
-const VALID = Object.freeze({
-  email: "Ada.Lovelace@Example.com",
-  password: "a-perfectly-fine-passphrase",
-  displayName: "Ada Lovelace",
-});
-
-async function startServer(t, { rateLimitPerMinute = 0 } = {}) {
-  const config = { ...CONFIG, auth: { ...CONFIG.auth, rateLimitPerMinute } };
-  const database = createDatabase({ config: config.database, logger: SILENT_LOGGER });
-
-  await database.query("DROP SCHEMA public CASCADE");
-  await database.query("CREATE SCHEMA public");
-  await runMigrations({ database, logger: SILENT_LOGGER });
-
-  const { httpServer, io } = createApp(config, {
-    database,
-    diagramService: { async generateDiagram() {} },
-    logger: SILENT_LOGGER,
-  });
-
-  await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
-  t.after(async () => {
-    httpServer.closeAllConnections();
-    await new Promise((resolve) => io.close(() => resolve()));
-    await database.close();
-  });
-
-  return {
-    database,
-    signup: (body, options = {}) =>
-      fetch(`http://127.0.0.1:${httpServer.address().port}/api/auth/signup`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: typeof body === "string" ? body : JSON.stringify(body),
-        ...options,
-      }),
-  };
-}
 
 const countUsers = async (database) =>
   (await database.query("SELECT count(*)::int AS count FROM users")).rows[0].count;
