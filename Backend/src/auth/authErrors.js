@@ -81,6 +81,20 @@ const AUTH_ERRORS = Object.freeze({
     message: "This account isn't available. Contact support if you think that's wrong.",
   },
 
+  // Signup's human check (Turnstile, E-18) did not pass: a missing, expired,
+  // replayed or failed token. Asks for exactly what fixes it.
+  BOT_CHECK_FAILED: {
+    status: 400,
+    message: "Please confirm you're human and try again.",
+  },
+
+  // Cloudflare could not be asked. Refused rather than waved through, and
+  // said plainly, because waiting a moment usually fixes it.
+  BOT_CHECK_UNAVAILABLE: {
+    status: 503,
+    message: "We couldn't check you're human just now. Try again in a moment.",
+  },
+
   // A protected route called without a valid access token. Deliberately the
   // same whether the token was missing, expired, forged or revoked: the
   // client's move is the same in every case, which is to refresh and retry

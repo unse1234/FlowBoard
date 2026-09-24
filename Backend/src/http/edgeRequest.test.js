@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  EDGE_ADDRESS_FALLBACK_HEADER,
   EDGE_ADDRESS_HEADER,
   EDGE_SECRET_HEADER,
   UNKNOWN_EDGE_CLIENT,
@@ -107,4 +108,32 @@ test("an edge request with no usable address shares one bucket, never gets none"
     assert.equal(result.trusted, true, String(value));
     assert.equal(result.address, UNKNOWN_EDGE_CLIENT, String(value));
   }
+});
+
+test("behind the edge, Vercel's x-real-ip stands in when its other header is missing", () => {
+  const read = createEdgeRequestReader({ edgeSecret: SECRET, logger: { warn() {} } });
+
+  const result = read(
+    request({ headers: { [EDGE_SECRET_HEADER]: SECRET, [EDGE_ADDRESS_FALLBACK_HEADER]: "198.51.100.44" } }),
+  );
+
+  assert.equal(result.address, "198.51.100.44");
+});
+
+test("an edge with no client address is reported once, not on every request", () => {
+  const warnings = [];
+  const read = createEdgeRequestReader({ edgeSecret: SECRET, logger: { warn: (...args) => warnings.push(args) } });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) read(request({ headers: { [EDGE_SECRET_HEADER]: SECRET } }));
+
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0][0], /no client address/);
+});
+
+test("without the edge secret, x-real-ip is believed no more than any other header", () => {
+  const read = createEdgeRequestReader({ edgeSecret: SECRET });
+
+  const result = read(request({ headers: { [EDGE_ADDRESS_FALLBACK_HEADER]: "198.51.100.44" } }));
+
+  assert.equal(result.trusted, false);
 });

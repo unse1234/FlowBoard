@@ -93,7 +93,10 @@ const VALID_SIGNUP = Object.freeze({
  *   Both limits default to off, so a test meets one only when it asks to.
  *   `auth` replaces whole sections of config.auth, such as `refreshToken`.
  */
-async function startAuthServer(t, { rateLimitPerMinute = 0, sessionRateLimitPerMinute = 0, auth = {} } = {}) {
+async function startAuthServer(
+  t,
+  { rateLimitPerMinute = 0, sessionRateLimitPerMinute = 0, auth = {}, fetchImpl } = {},
+) {
   const config = {
     ...BASE_CONFIG,
     auth: { ...BASE_CONFIG.auth, rateLimitPerMinute, sessionRateLimitPerMinute, ...auth },
@@ -108,6 +111,8 @@ async function startAuthServer(t, { rateLimitPerMinute = 0, sessionRateLimitPerM
     database,
     diagramService: { async generateDiagram() {} },
     logger: SILENT_LOGGER,
+    // Outbound calls (Turnstile) go here in tests, never to the network.
+    fetchImpl,
   });
 
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));

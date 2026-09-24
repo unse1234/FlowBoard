@@ -54,6 +54,13 @@ const DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE = 5;
 const DEFAULT_AUTH_SESSION_RATE_LIMIT_PER_MINUTE = 60;
 
 /**
+ * Consecutive failed sign-ins against one address before each further attempt
+ * must wait (7.4). The wait starts at a minute and doubles, capped at 15.
+ * Zero turns the backoff off.
+ */
+const DEFAULT_AUTH_LOGIN_BACKOFF_THRESHOLD = 5;
+
+/**
  * How long a browser should refuse to reach this API over plain HTTP.
  *
  * 180 days. Zero omits the header entirely, for a deployment that is not
@@ -171,6 +178,10 @@ function getServerConfig(env = process.env) {
         env.AUTH_SESSION_RATE_LIMIT_PER_MINUTE,
         DEFAULT_AUTH_SESSION_RATE_LIMIT_PER_MINUTE,
       ),
+      loginBackoffThreshold: readNonNegativeInteger(
+        env.AUTH_LOGIN_BACKOFF_THRESHOLD,
+        DEFAULT_AUTH_LOGIN_BACKOFF_THRESHOLD,
+      ),
       accessToken: {
         // Server-side only. Never logged, never returned, never defaulted.
         keys: readSigningKeys(env.AUTH_ACCESS_TOKEN_KEYS),
@@ -207,6 +218,8 @@ function getServerConfig(env = process.env) {
       // Server-side only, like the signing keys. Null in development, where
       // there is no edge in front and the socket address is the client.
       edgeSecret: readEdgeSecret(env.AUTH_PROXY_SECRET),
+      // Server-side only. Null turns the signup check off (E-18, 7.5).
+      turnstileSecretKey: env.TURNSTILE_SECRET_KEY?.trim() || null,
       argon2: {
         memoryCostKib: readPositiveInteger(
           env.AUTH_ARGON2_MEMORY_KIB,
@@ -224,6 +237,9 @@ function getServerConfig(env = process.env) {
 
 /**
  * How to negotiate TLS with the database.
+ *
+ * Only when DATABASE_URL names no `sslmode`: giving both refuses to start,
+ * because the URL would silently win (finding F-23).
  *
  * `require` verifies the server certificate. `no-verify` encrypts without
  * verifying, which some managed providers need because they present a

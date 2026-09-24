@@ -30,6 +30,14 @@ const EDGE_SECRET_HEADER = "x-flowboard-edge-secret";
 const EDGE_ADDRESS_HEADER = "x-vercel-forwarded-for";
 
 /**
+ * Vercel documents this as identical to the one above. The fallback, in case
+ * only one of them survives the hops between Vercel and this server, which
+ * cannot be verified before the first deploy. Trusted, like the first, only
+ * behind the edge secret.
+ */
+const EDGE_ADDRESS_FALLBACK_HEADER = "x-real-ip";
+
+/**
  * Where a request's rate-limit key and session metadata come from when the
  * edge vouched for it but sent no usable address. One shared bucket: fails
  * towards stricter limits, never towards none.
@@ -41,12 +49,14 @@ const digest = (value) => createHash("sha256").update(value, "utf8").digest();
 /**
  * @param {Object} options
  * @param {string | null} options.edgeSecret  AUTH_PROXY_SECRET, or null for no edge
+ * @param {Pick<Console, "warn">} [options.logger]
  * @returns {(request: import("express").Request) => { trusted: boolean, address: string | null, reason?: string }}
  */
-function createEdgeRequestReader({ edgeSecret }) {
+function createEdgeRequestReader({ edgeSecret, logger = console }) {
   // Compared as digests, so the comparison takes the same time whatever the
   // presented value's length. timingSafeEqual alone requires equal lengths.
   const expected = edgeSecret ? digest(edgeSecret) : null;
+  let warnedNoAddress = false;
 
   return function readEdgeRequest(request) {
     if (!expected) {
@@ -61,7 +71,17 @@ function createEdgeRequestReader({ edgeSecret }) {
       return { trusted: false, address: null, reason: "wrong edge secret" };
     }
 
-    return { trusted: true, address: edgeAddress(request) };
+    const address = edgeAddress(request);
+    if (address === UNKNOWN_EDGE_CLIENT && !warnedNoAddress) {
+      // Once per process: every edge request is now sharing one rate-limit
+      // bucket, which an operator needs to know about (docs/DEPLOYMENT.md).
+      warnedNoAddress = true;
+      logger.warn?.("[edge] Request through the edge carried no client address; limits are shared.", {
+        headers: [EDGE_ADDRESS_HEADER, EDGE_ADDRESS_FALLBACK_HEADER],
+      });
+    }
+
+    return { trusted: true, address };
   };
 }
 
@@ -71,9 +91,12 @@ function createEdgeRequestReader({ edgeSecret }) {
  * one. The first is taken in case a proxy between here and Vercel appends.
  */
 function edgeAddress(request) {
-  const header = request.get(EDGE_ADDRESS_HEADER);
-  const first = typeof header === "string" ? header.split(",")[0].trim() : "";
-  return isIP(first) !== 0 ? first : UNKNOWN_EDGE_CLIENT;
+  for (const name of [EDGE_ADDRESS_HEADER, EDGE_ADDRESS_FALLBACK_HEADER]) {
+    const header = request.get(name);
+    const first = typeof header === "string" ? header.split(",")[0].trim() : "";
+    if (isIP(first) !== 0) return first;
+  }
+  return UNKNOWN_EDGE_CLIENT;
 }
 
 function socketAddress(request) {
@@ -82,6 +105,7 @@ function socketAddress(request) {
 }
 
 module.exports = {
+  EDGE_ADDRESS_FALLBACK_HEADER,
   EDGE_ADDRESS_HEADER,
   EDGE_SECRET_HEADER,
   UNKNOWN_EDGE_CLIENT,

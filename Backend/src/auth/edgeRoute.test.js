@@ -96,3 +96,15 @@ test("refresh, logout and me all sit behind the edge too", { skip: SKIP }, async
   // And the session those refused requests carried is untouched.
   assert.equal((await server.refresh(token, viaEdge("198.51.100.23"))).status, 200);
 });
+
+test("IPv6 clients are counted by /64, so rotating addresses earns no fresh allowance", { skip: SKIP }, async (t) => {
+  const server = await edgeServer(t, { rateLimitPerMinute: 1 });
+
+  const first = await server.login(CREDENTIALS, viaEdge("2001:db8:1234:5678::1"));
+  const rotated = await server.login(CREDENTIALS, viaEdge("2001:db8:1234:5678::2"));
+  const neighbour = await server.login(CREDENTIALS, viaEdge("2001:db8:1234:5679::1"));
+
+  assert.notEqual(first.status, 429);
+  assert.equal(rotated.status, 429);
+  assert.notEqual(neighbour.status, 429);
+});

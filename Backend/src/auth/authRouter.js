@@ -1,5 +1,6 @@
 const express = require("express");
 const { isIP } = require("node:net");
+const { rateLimitKeyFor } = require("../http/clientKey");
 const { createEdgeRequestReader } = require("../http/edgeRequest");
 const { isTrustedOrigin } = require("../http/originCheck");
 const { AuthError, invalidCredentials, toAuthError } = require("./authErrors");
@@ -34,6 +35,10 @@ const MAX_USER_AGENT_LENGTH = 512;
  *   sign-in and sign-up, which each cost a password hash
  * @param {typeof options.signInLimiter} [options.sessionLimiter]
  *   refresh, sign-out and me, which do not
+ * @param {ReturnType<typeof import("./loginThrottle").createLoginThrottle> | null} [options.loginThrottle]
+ *   per-address backoff after repeated failed sign-ins
+ * @param {ReturnType<typeof import("./botCheck").createTurnstileVerifier> | null} [options.botCheck]
+ *   Turnstile on signup; null where no secret key is configured
  */
 function createAuthRouter({
   database,
@@ -45,13 +50,15 @@ function createAuthRouter({
   edgeSecret = null,
   signInLimiter = null,
   sessionLimiter = null,
+  loginThrottle = null,
+  botCheck = null,
   logger = console,
 }) {
   const router = express.Router();
   const users = createUserRepository({ database });
   const sessions = createSessionRepository({ database });
   const requireAuth = createRequireAuth({ accessTokens, logger });
-  const readEdgeRequest = createEdgeRequestReader({ edgeSecret });
+  const readEdgeRequest = createEdgeRequestReader({ edgeSecret, logger });
 
   /**
    * Nothing reaches a route here except through FlowBoard's own edge, when
@@ -124,6 +131,11 @@ function createAuthRouter({
     try {
       await enforceSignInLimit(request);
       const signup = parseSignupRequest(request.body);
+
+      // After the form is known to be valid, so a typo does not spend the
+      // single-use token, and before the hash, so a bot costs no Argon2 work.
+      await botCheck?.verify(request.body?.turnstileToken, { remoteIp: readIpAddress(request) });
+
       const passwordHash = await passwordHasher.hashPassword(signup.password);
 
       const { created, user } = await users.createUser({
@@ -171,6 +183,25 @@ function createAuthRouter({
     try {
       await enforceSignInLimit(request);
       const login = parseLoginRequest(request.body);
+
+      // Per-address backoff (7.4), before any lookup or hash, so a throttled
+      // guess costs nothing. Keyed on the address as submitted, registered or
+      // not, so it answers the same for both.
+      const throttle = await loginThrottle?.check(login.emailNormalized);
+      if (throttle?.blocked) {
+        throw new AuthError("TOO_MANY_ATTEMPTS", {
+          retryAfterSeconds: throttle.retryAfterSeconds,
+          detail: "per-address backoff",
+        });
+      }
+
+      // Every failed check is counted, on both paths below, so they do the
+      // same database work as well as the same hashing.
+      const failedCheck = async (detail) => {
+        await loginThrottle?.recordFailure(login.emailNormalized);
+        return invalidCredentials(detail);
+      };
+
       const user = await users.findByNormalizedEmail(login.emailNormalized);
 
       // No account, or an account with no password. Both still pay for a
@@ -178,11 +209,14 @@ function createAuthRouter({
       // fraction of the time and reveal which addresses are registered.
       if (!user || !user.passwordHash) {
         await passwordHasher.burnVerificationWork(login.password);
-        throw invalidCredentials(user ? "no password set" : "no account");
+        throw await failedCheck(user ? "no password set" : "no account");
       }
 
       const verified = await passwordHasher.verifyPassword(user.passwordHash, login.password);
-      if (!verified) throw invalidCredentials("password mismatch");
+      if (!verified) throw await failedCheck("password mismatch");
+
+      // The right password: whatever came before, this address starts clean.
+      await loginThrottle?.recordSuccess(login.emailNormalized);
 
       // Only now, with the password proven, may the answer acknowledge that
       // this account exists. Checking status any earlier would make it an
@@ -558,10 +592,11 @@ function logFailure(logger, error) {
 /**
  * The rate-limit key: the client's address as the edge vouched for it
  * (7.1), not the socket's, which in production is Render's proxy for
- * everyone.
+ * everyone. For IPv6, its /64, since one connection can rotate through a
+ * whole /64 (7.6).
  */
 function getClientKey(request) {
-  return request.clientAddress ?? "unknown";
+  return rateLimitKeyFor(request.clientAddress);
 }
 
 module.exports = {

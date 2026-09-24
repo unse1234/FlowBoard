@@ -8,6 +8,8 @@ const { createGeminiProvider } = require("./ai/providers/geminiProvider");
 const { createRateLimiter } = require("./ai/rateLimiter");
 const { createAccessTokens } = require("./auth/accessTokens");
 const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter");
+const { createTurnstileVerifier } = require("./auth/botCheck");
+const { createLoginThrottle } = require("./auth/loginThrottle");
 const { createPasswordHasher } = require("./auth/passwordHasher");
 const { createRefreshCookie } = require("./auth/refreshTokens");
 const { getServerConfig, loadLocalEnvFile } = require("./config/serverConfig");
@@ -20,7 +22,10 @@ const { registerBoardGateway } = require("./realtime/boardGateway");
 /** How long a shutdown may take before the process stops waiting and exits. */
 const SHUTDOWN_GRACE_MS = 15_000;
 
-function createApp(config = getServerConfig(), { diagramService, database = null, logger = console } = {}) {
+function createApp(
+  config = getServerConfig(),
+  { diagramService, database = null, logger = console, fetchImpl = globalThis.fetch } = {},
+) {
   const app = express();
   const httpServer = createServer(app);
   const operationStore = new OperationStore();
@@ -101,6 +106,17 @@ function createApp(config = getServerConfig(), { diagramService, database = null
                 database,
                 name: "sign-in",
                 limit: config.auth.rateLimitPerMinute,
+                logger,
+              })
+            : null,
+        botCheck: config.auth.turnstileSecretKey
+          ? createTurnstileVerifier({ secretKey: config.auth.turnstileSecretKey, fetchImpl, logger })
+          : null,
+        loginThrottle:
+          config.auth.loginBackoffThreshold > 0
+            ? createLoginThrottle({
+                database,
+                policy: { threshold: config.auth.loginBackoffThreshold },
                 logger,
               })
             : null,

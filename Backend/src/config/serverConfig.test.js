@@ -300,3 +300,16 @@ test("refresh, sign-out and me get a generous allowance of their own", () => {
   assert.equal(getServerConfig({ AUTH_SESSION_RATE_LIMIT_PER_MINUTE: "0" }).auth.sessionRateLimitPerMinute, 0);
   assert.equal(getServerConfig({ AUTH_SESSION_RATE_LIMIT_PER_MINUTE: "lots" }).auth.sessionRateLimitPerMinute, 60);
 });
+
+test("sign-in backoff starts after five failures, and zero turns it off", () => {
+  assert.equal(getServerConfig({}).auth.loginBackoffThreshold, 5);
+  assert.equal(getServerConfig({ AUTH_LOGIN_BACKOFF_THRESHOLD: "10" }).auth.loginBackoffThreshold, 10);
+  assert.equal(getServerConfig({ AUTH_LOGIN_BACKOFF_THRESHOLD: "0" }).auth.loginBackoffThreshold, 0);
+  assert.equal(getServerConfig({ AUTH_LOGIN_BACKOFF_THRESHOLD: "never" }).auth.loginBackoffThreshold, 5);
+});
+
+test("Turnstile is off unless its secret key is set", () => {
+  assert.equal(getServerConfig({}).auth.turnstileSecretKey, null);
+  assert.equal(getServerConfig({ TURNSTILE_SECRET_KEY: "  " }).auth.turnstileSecretKey, null);
+  assert.equal(getServerConfig({ TURNSTILE_SECRET_KEY: " 0x4AAA-secret " }).auth.turnstileSecretKey, "0x4AAA-secret");
+});
