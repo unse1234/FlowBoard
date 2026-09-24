@@ -10,6 +10,13 @@
  * Batch variants exist alongside the singular ones rather than replacing them:
  * bulk edits (multi-select drag, paste, group) would otherwise emit one
  * operation per shape into an append-only log that is replayed in full on join.
+ *
+ * Undo and redo travel as ordinary operations: the client that undoes works out
+ * the inverse edit and publishes that, so a peer applies it like any other
+ * change and never needs anyone's history. Two parts of the contract exist for
+ * those inverse edits — `unset` on an UPDATE_SHAPES entry, naming keys to
+ * remove, and REORDER_SHAPES, which puts shapes back at a place in the stack.
+ * UNDO and REDO are reserved and never sent.
  */
 export const OPERATION_TYPES = Object.freeze({
   CREATE_SHAPE: "CREATE_SHAPE",
@@ -28,13 +35,17 @@ export const OPERATION_TYPES = Object.freeze({
   SEND_TO_BACK: "SEND_TO_BACK",
   GROUP: "GROUP",
   UNGROUP: "UNGROUP",
+  REORDER_SHAPES: "REORDER_SHAPES",
   UNDO: "UNDO",
   REDO: "REDO",
 });
 
 export const SUPPORTED_OPERATION_TYPES = new Set(Object.values(OPERATION_TYPES));
 
-/** Operations that rearrange the shape array rather than edit a shape. */
+/**
+ * Operations that move shapes relative to where they are: a step, or to one end
+ * of the stack. REORDER_SHAPES is not one of them — it names exact places.
+ */
 export const ORDERING_OPERATION_TYPES = new Set([
   OPERATION_TYPES.BRING_FORWARD,
   OPERATION_TYPES.SEND_BACKWARD,
@@ -59,6 +70,10 @@ export const SINGLE_PATCH_OPERATION_TYPES = new Set([
  * @typedef {string} ShapeId
  *
  * @typedef {Record<string, unknown> & { id: ShapeId, type: string }} BoardShape
+ *
+ * Move `shapeId` to sit directly above `afterShapeId`, or to the bottom of the
+ * stack when that is null.
+ * @typedef {{ shapeId: ShapeId, afterShapeId: ShapeId | null }} ShapePlacement
  *
  * @typedef {Object} BoardOperation
  * @property {BoardId} boardId

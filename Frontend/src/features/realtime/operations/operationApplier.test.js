@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createBoardOperation, OperationApplier, OPERATION_TYPES } from "./index.js";
+import {
+  applyOperationPayload,
+  createBoardOperation,
+  OperationApplier,
+  OPERATION_TYPES,
+} from "./index.js";
 
 const boardId = "board_test";
 const userId = "user_test";
@@ -229,4 +234,81 @@ test("UNGROUP on an already-ungrouped board is a noop", () => {
   );
 
   assert.equal(result.status, "noop");
+});
+
+test("UPDATE_SHAPES removes the keys an entry unsets", () => {
+  const applier = new OperationApplier();
+  const shapes = [{ id: "a", type: "rect", groupId: "g1", x: 0, version: 1 }];
+
+  const result = applier.apply(
+    shapes,
+    op(
+      OPERATION_TYPES.UPDATE_SHAPES,
+      { patches: [{ shapeId: "a", patch: { x: 5 }, unset: ["groupId"] }] },
+      "op_us_4",
+    ),
+  );
+
+  assert.equal(result.status, "applied");
+  assert.equal("groupId" in result.shapes[0], false, "the key is removed, not nulled");
+  assert.equal(result.shapes[0].x, 5);
+  assert.equal(result.shapes[0].version, 2);
+
+  const touchingId = applier.apply(
+    shapes,
+    op(
+      OPERATION_TYPES.UPDATE_SHAPES,
+      { patches: [{ shapeId: "a", patch: {}, unset: ["id"] }] },
+      "op_us_5",
+    ),
+  );
+  assert.equal(touchingId.status, "invalid");
+});
+
+test("REORDER_SHAPES puts shapes at exact places", () => {
+  const applier = new OperationApplier();
+  const shapes = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  const result = applier.apply(
+    shapes,
+    op(
+      OPERATION_TYPES.REORDER_SHAPES,
+      {
+        placements: [
+          { shapeId: "c", afterShapeId: null },
+          { shapeId: "a", afterShapeId: "c" },
+        ],
+      },
+      "op_ro_1",
+    ),
+  );
+  assert.equal(result.status, "applied");
+  assert.deepEqual(result.shapes.map((s) => s.id), ["c", "a", "b"]);
+
+  const settled = applier.apply(
+    result.shapes,
+    op(OPERATION_TYPES.REORDER_SHAPES, { placements: [{ shapeId: "a", afterShapeId: "c" }] }, "op_ro_2"),
+  );
+  assert.equal(settled.status, "noop");
+
+  const missing = applier.apply(
+    shapes,
+    op(OPERATION_TYPES.REORDER_SHAPES, { placements: [{ shapeId: "ghost", afterShapeId: null }] }, "op_ro_3"),
+  );
+  assert.equal(missing.status, "not_found");
+});
+
+test("applyOperationPayload applies an edit without an envelope or de-duplication", () => {
+  const payload = { shapes: [{ id: "a", type: "rect" }] };
+
+  const first = applyOperationPayload([], { type: OPERATION_TYPES.CREATE_SHAPES, payload });
+  const again = applyOperationPayload([], { type: OPERATION_TYPES.CREATE_SHAPES, payload });
+  assert.equal(first.status, "applied");
+  assert.equal(again.status, "applied", "nothing remembers the first call");
+
+  const invalid = applyOperationPayload([], {
+    type: OPERATION_TYPES.CREATE_SHAPES,
+    payload: { shapes: [] },
+  });
+  assert.equal(invalid.status, "invalid");
 });

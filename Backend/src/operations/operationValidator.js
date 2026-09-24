@@ -79,12 +79,36 @@ function validatePayload(operation) {
         typeof entry === "object" &&
         isShapeId(entry.shapeId) &&
         entry.patch &&
-        typeof entry.patch === "object",
+        typeof entry.patch === "object" &&
+        isUnsetList(entry.unset),
     );
     if (!everyPatchIsValid) {
       return {
         valid: false,
-        reason: "UPDATE_SHAPES requires every entry to have shapeId and patch.",
+        reason:
+          "UPDATE_SHAPES requires every entry to have shapeId and patch, and any unset to list keys other than id.",
+      };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.REORDER_SHAPES) {
+    if (!Array.isArray(payload.placements) || payload.placements.length === 0) {
+      return { valid: false, reason: "REORDER_SHAPES requires a non-empty payload.placements." };
+    }
+
+    const everyPlacementIsValid = payload.placements.every((entry) => {
+      if (!entry || typeof entry !== "object" || !isShapeId(entry.shapeId)) return false;
+      if (entry.afterShapeId === null) return true;
+
+      return isShapeId(entry.afterShapeId) && String(entry.afterShapeId) !== String(entry.shapeId);
+    });
+    if (!everyPlacementIsValid) {
+      return {
+        valid: false,
+        reason:
+          "REORDER_SHAPES requires every placement to have shapeId and an afterShapeId that is null or another shape.",
       };
     }
 
@@ -143,6 +167,14 @@ function validatePayload(operation) {
 
 function hasShapeIdList(value) {
   return Array.isArray(value) && value.length > 0 && value.every(isShapeId);
+}
+
+/** Keys an UPDATE_SHAPES entry removes. Optional; a shape's id is never one. */
+function isUnsetList(value) {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.every((key) => isNonEmptyString(key) && key !== "id"))
+  );
 }
 
 function isShapeId(value) {

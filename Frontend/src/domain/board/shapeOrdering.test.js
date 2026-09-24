@@ -4,6 +4,7 @@ import {
   bringShapesToFront,
   moveShapesBackward,
   moveShapesForward,
+  placeShapes,
   sendShapesToBack,
 } from "./shapeOrdering.js";
 
@@ -62,4 +63,41 @@ test("ignores ids that are not on the board", () => {
   const shapes = board("a", "b");
 
   assert.deepEqual(order(bringShapesToFront(shapes, ["a", "ghost"])), ["b", "a"]);
+});
+
+test("places a shape directly above an anchor, or at the bottom", () => {
+  const shapes = board("a", "b", "c", "d");
+
+  assert.deepEqual(order(placeShapes(shapes, [{ shapeId: "d", afterShapeId: "a" }])), [
+    "a",
+    "d",
+    "b",
+    "c",
+  ]);
+  assert.deepEqual(order(placeShapes(shapes, [{ shapeId: "c", afterShapeId: null }])), [
+    "c",
+    "a",
+    "b",
+    "d",
+  ]);
+});
+
+test("runs placements in order, so a run listed bottom to top lands together", () => {
+  const shapes = board("c", "d", "a", "b");
+
+  const placed = placeShapes(shapes, [
+    { shapeId: "a", afterShapeId: null },
+    { shapeId: "b", afterShapeId: "a" },
+  ]);
+
+  assert.deepEqual(order(placed), ["a", "b", "c", "d"]);
+});
+
+test("skips a placement whose shape or anchor is gone, and keeps the array when nothing moved", () => {
+  const shapes = board("a", "b", "c");
+
+  assert.equal(placeShapes(shapes, [{ shapeId: "ghost", afterShapeId: "a" }]), shapes);
+  assert.equal(placeShapes(shapes, [{ shapeId: "c", afterShapeId: "ghost" }]), shapes);
+  assert.equal(placeShapes(shapes, [{ shapeId: "b", afterShapeId: "a" }]), shapes, "already there");
+  assert.equal(placeShapes(shapes, [{ shapeId: "a", afterShapeId: null }]), shapes, "already bottom");
 });

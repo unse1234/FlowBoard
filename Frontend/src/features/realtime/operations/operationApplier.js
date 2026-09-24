@@ -17,6 +17,7 @@ import {
   bringShapesToFront,
   moveShapesBackward,
   moveShapesForward,
+  placeShapes,
   sendShapesToBack,
 } from "../../../domain/board/shapeOrdering.js";
 import {
@@ -24,11 +25,34 @@ import {
   ORDERING_OPERATION_TYPES,
   SINGLE_PATCH_OPERATION_TYPES,
 } from "./operationTypes.js";
-import { validateOperation } from "./operationValidator.js";
+import { validateOperation, validateOperationPayload } from "./operationValidator.js";
 
 /**
- * @import { BoardOperation, BoardShape, OperationApplyResult } from "./operationTypes"
+ * @import { BoardOperation, BoardShape, OperationApplyResult, OperationType } from "./operationTypes"
  */
+
+/**
+ * Apply an operation's type and payload to a board, as a pure function.
+ *
+ * What a peer does with an operation, minus the envelope check and the
+ * de-duplication. For a client applying an edit to its own board before it
+ * publishes it — undo does — so both boards run exactly the same code.
+ *
+ * @param {BoardShape[]} shapes
+ * @param {{ type: OperationType, payload: Record<string, any>, timestamp?: number }} operation
+ * @returns {OperationApplyResult}
+ */
+export function applyOperationPayload(shapes, { type, payload, timestamp = Date.now() }) {
+  const validation = validateOperationPayload({ type, payload });
+  if (!validation.valid) {
+    return { status: "invalid", shapes, reason: validation.reason };
+  }
+
+  return applyValidatedOperation(
+    shapes,
+    /** @type {BoardOperation} */ ({ type, payload, timestamp }),
+  );
+}
 
 export class OperationApplier {
   #processedOperationIds = new Set();
@@ -94,6 +118,7 @@ function applyValidatedOperation(shapes, operation) {
   if (ORDERING_OPERATION_TYPES.has(type)) return applyOrdering(shapes, operation);
   if (type === OPERATION_TYPES.GROUP) return applyGroup(shapes, operation);
   if (type === OPERATION_TYPES.UNGROUP) return applyUngroup(shapes, operation);
+  if (type === OPERATION_TYPES.REORDER_SHAPES) return applyReorder(shapes, operation);
 
   return {
     status: "noop",
@@ -105,14 +130,23 @@ function applyValidatedOperation(shapes, operation) {
 /**
  * Merge a patch into a shape without letting the payload rewrite its identity.
  *
+ * A merge can only add or replace keys, so keys to take away — the groupId an
+ * undone GROUP added — are listed separately in `unset`.
+ *
  * @param {BoardShape} shape
  * @param {Record<string, unknown>} patch
  * @param {number} timestamp
+ * @param {unknown} [unset]
  * @returns {BoardShape}
  */
-function patchShape(shape, patch, timestamp) {
+function patchShape(shape, patch, timestamp, unset) {
+  const base = { ...shape };
+  if (Array.isArray(unset)) {
+    for (const key of unset) delete base[key];
+  }
+
   return {
-    ...shape,
+    ...base,
     ...patch,
     id: shape.id,
     version: Math.max(Number(shape.version ?? 0) + 1, Number(patch.version ?? 0)),
@@ -212,20 +246,20 @@ function applyPatchShape(shapes, operation) {
  * @returns {OperationApplyResult}
  */
 function applyUpdateShapes(shapes, operation) {
-  const patchesById = new Map();
+  const entriesById = new Map();
 
   for (const entry of operation.payload.patches) {
     const id = normalizeShapeId(entry.shapeId);
-    if (id) patchesById.set(id, entry.patch);
+    if (id) entriesById.set(id, entry);
   }
 
   let matched = 0;
   const nextShapes = shapes.map((shape) => {
-    const patch = patchesById.get(normalizeShapeId(shape.id));
-    if (!patch) return shape;
+    const entry = entriesById.get(normalizeShapeId(shape.id));
+    if (!entry) return shape;
 
     matched += 1;
-    return patchShape(shape, patch, operation.timestamp);
+    return patchShape(shape, entry.patch, operation.timestamp, entry.unset);
   });
 
   if (matched === 0) return { status: "not_found", shapes };
@@ -290,6 +324,25 @@ function applyUngroup(shapes, operation) {
     ids: operation.payload.shapeIds ?? [],
   });
 
+  if (nextShapes === shapes) return { status: "noop", shapes };
+
+  return { status: "applied", shapes: nextShapes };
+}
+
+/**
+ * Move shapes to exact places in the stack.
+ *
+ * @param {BoardShape[]} shapes
+ * @param {BoardOperation} operation
+ * @returns {OperationApplyResult}
+ */
+function applyReorder(shapes, operation) {
+  const placements = operation.payload.placements;
+  const anyPresent = placements.some((entry) => Boolean(getShapeById(shapes, entry.shapeId)));
+
+  if (!anyPresent) return { status: "not_found", shapes };
+
+  const nextShapes = placeShapes(shapes, placements);
   if (nextShapes === shapes) return { status: "noop", shapes };
 
   return { status: "applied", shapes: nextShapes };

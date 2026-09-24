@@ -1,5 +1,5 @@
 export { createBoardOperation } from "./createBoardOperation.js";
-export { OperationApplier } from "./operationApplier.js";
+export { applyOperationPayload, OperationApplier } from "./operationApplier.js";
 export {
   OPERATION_TYPES,
   ORDERING_OPERATION_TYPES,

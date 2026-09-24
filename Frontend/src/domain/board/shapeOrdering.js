@@ -1,6 +1,6 @@
 // @ts-check
 
-import { normalizeShapeIdSet } from "./shapeIdentity.js";
+import { normalizeShapeId, normalizeShapeIdSet } from "./shapeIdentity.js";
 
 /**
  * Z-order operations.
@@ -108,6 +108,52 @@ export function sendShapesToBack(shapes, ids) {
   const next = [...moving, ...rest];
 
   return isSameOrder(shapes, next) ? shapes : next;
+}
+
+/**
+ * Put shapes at exact places in the stack.
+ *
+ * Each placement moves one shape to sit directly above another, or to the very
+ * bottom when its anchor is null. Placements run in order, so a run of shapes
+ * listed bottom to top, each anchored on the one before, lands as a run.
+ *
+ * This is how undo puts back an order it took away. The relative operations
+ * above cannot say "back where it was": what one step passes depends on
+ * everything else that has changed since.
+ *
+ * A placement whose shape or anchor is not on the board is skipped, so a shape
+ * a collaborator deleted in the meantime changes nothing.
+ *
+ * @param {Object[]} shapes
+ * @param {Iterable<{ shapeId: unknown, afterShapeId: unknown }>} placements
+ * @returns {Object[]}
+ */
+export function placeShapes(shapes, placements) {
+  let next = shapes;
+
+  for (const { shapeId, afterShapeId } of placements) {
+    const id = normalizeShapeId(shapeId);
+    const from = id === null ? -1 : next.findIndex((shape) => idOf(shape) === id);
+    if (from === -1) continue;
+
+    const rest = [...next.slice(0, from), ...next.slice(from + 1)];
+    let to = 0;
+
+    if (afterShapeId !== null) {
+      const anchorId = normalizeShapeId(afterShapeId);
+      const anchor = anchorId === null ? -1 : rest.findIndex((shape) => idOf(shape) === anchorId);
+      if (anchor === -1) continue;
+
+      to = anchor + 1;
+    }
+
+    // Re-inserting where it was taken out leaves the order as it is.
+    if (to === from) continue;
+
+    next = [...rest.slice(0, to), next[from], ...rest.slice(to)];
+  }
+
+  return next;
 }
 
 /**

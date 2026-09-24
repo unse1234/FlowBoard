@@ -40,15 +40,26 @@ export function validateOperation(operation) {
     return { valid: false, reason: "Operation requires a finite timestamp." };
   }
 
-  if (!candidate.type || !SUPPORTED_OPERATION_TYPES.has(candidate.type)) {
+  return validateOperationPayload(candidate);
+}
+
+/**
+ * Check an operation's type and payload, without its envelope — for an edit a
+ * client applies to its own board before publishing it, such as an undo.
+ *
+ * @param {Partial<BoardOperation>} operation
+ * @returns {{ valid: true } | { valid: false, reason: string }}
+ */
+export function validateOperationPayload(operation) {
+  if (!operation.type || !SUPPORTED_OPERATION_TYPES.has(operation.type)) {
     return { valid: false, reason: "Operation type is unsupported." };
   }
 
-  if (!candidate.payload || typeof candidate.payload !== "object") {
+  if (!operation.payload || typeof operation.payload !== "object") {
     return { valid: false, reason: "Operation requires an object payload." };
   }
 
-  return validatePayload(candidate);
+  return validatePayload(operation);
 }
 
 /**
@@ -100,12 +111,41 @@ function validatePayload(operation) {
         typeof entry === "object" &&
         normalizeShapeId(entry.shapeId) &&
         entry.patch &&
-        typeof entry.patch === "object",
+        typeof entry.patch === "object" &&
+        isUnsetList(entry.unset),
     );
     if (!everyPatchIsValid) {
       return {
         valid: false,
-        reason: "UPDATE_SHAPES requires every entry to have shapeId and patch.",
+        reason:
+          "UPDATE_SHAPES requires every entry to have shapeId and patch, and any unset to list keys other than id.",
+      };
+    }
+
+    return { valid: true };
+  }
+
+  if (type === OPERATION_TYPES.REORDER_SHAPES) {
+    const placements = payload.placements;
+    if (!Array.isArray(placements) || placements.length === 0) {
+      return { valid: false, reason: "REORDER_SHAPES requires a non-empty payload.placements." };
+    }
+
+    const everyPlacementIsValid = placements.every((entry) => {
+      if (!entry || typeof entry !== "object") return false;
+
+      const shapeId = normalizeShapeId(entry.shapeId);
+      if (!shapeId) return false;
+      if (entry.afterShapeId === null) return true;
+
+      const afterShapeId = normalizeShapeId(entry.afterShapeId);
+      return Boolean(afterShapeId) && afterShapeId !== shapeId;
+    });
+    if (!everyPlacementIsValid) {
+      return {
+        valid: false,
+        reason:
+          "REORDER_SHAPES requires every placement to have shapeId and an afterShapeId that is null or another shape.",
       };
     }
 
@@ -160,6 +200,20 @@ function validatePayload(operation) {
   }
 
   return { valid: true };
+}
+
+/**
+ * Keys an UPDATE_SHAPES entry removes. Optional; a shape's id is never one.
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isUnsetList(value) {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every((key) => typeof key === "string" && key.trim().length > 0 && key !== "id"))
+  );
 }
 
 /**

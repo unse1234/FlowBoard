@@ -87,6 +87,52 @@ test("both validators reach the same verdict on the same operations", () => {
   }
 });
 
+test("both validators accept undo's inverse edits and reject malformed ones", () => {
+  const base = {
+    boardId: "board_1",
+    userId: "user_1",
+    operationId: "op_1",
+    timestamp: 1,
+  };
+  const update = (entry) => ({
+    ...base,
+    type: OPERATION_TYPES.UPDATE_SHAPES,
+    payload: { patches: [{ shapeId: "s1", patch: {}, ...entry }] },
+  });
+  const reorder = (placements) => ({
+    ...base,
+    type: OPERATION_TYPES.REORDER_SHAPES,
+    payload: { placements },
+  });
+
+  const cases = [
+    [update({ unset: ["groupId"] }), true],
+    [update({ unset: [] }), true],
+    [update({ unset: ["id"] }), false],
+    [update({ unset: "groupId" }), false],
+    [update({ unset: [""] }), false],
+    [
+      reorder([
+        { shapeId: "s1", afterShapeId: null },
+        { shapeId: "s2", afterShapeId: "s1" },
+      ]),
+      true,
+    ],
+    [reorder([]), false],
+    [reorder([{ shapeId: "s1" }]), false],
+    [reorder([{ shapeId: "s1", afterShapeId: "s1" }]), false],
+    [reorder([{ afterShapeId: null }]), false],
+    [{ ...base, type: OPERATION_TYPES.REORDER_SHAPES, payload: {} }, false],
+  ];
+
+  for (const [operation, expected] of cases) {
+    const label = operation.type + " " + JSON.stringify(operation.payload);
+
+    assert.equal(validateOperation(operation).valid, expected, "frontend on " + label);
+    assert.equal(backendValidator.validateOperation(operation).valid, expected, "backend on " + label);
+  }
+});
+
 test("the singular ordering payload still validates, for older peers", () => {
   const operation = {
     boardId: "board_1",
