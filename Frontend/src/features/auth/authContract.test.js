@@ -14,6 +14,7 @@ import {
 const require = createRequire(import.meta.url);
 const backendErrors = require("../../../../Backend/src/auth/authErrors.js");
 const backendEmail = require("../../../../Backend/src/auth/emailAddress.js");
+const backendBotCheck = require("../../../../Backend/src/auth/botCheck.js");
 
 /**
  * The sign-up rules live on both sides: the server enforces them, and the form
@@ -49,6 +50,13 @@ test("both sides draw the line on address length in the same place", () => {
     validateAuthForm({ email: overLimit, password: "x" }, AUTH_MODES.SIGN_IN).email,
     "EMAIL_TOO_LONG",
   );
+});
+
+test("the signup widget declares the action the server expects", async () => {
+  const { TURNSTILE_SIGNUP_ACTION } = await import("./turnstile.js");
+
+  // A mismatch would fail every signup once Turnstile is switched on.
+  assert.equal(TURNSTILE_SIGNUP_ACTION, backendBotCheck.SIGNUP_ACTION);
 });
 
 test("a message reads the same whichever side caught the problem", () => {

@@ -98,6 +98,18 @@ test("signup and me never send the cookie", async () => {
   assert.deepEqual(user, USER);
 });
 
+test("signup carries a Turnstile token only when there is one", async () => {
+  const withToken = recordingFetch(jsonResponse(202, { ok: true }));
+  const without = recordingFetch(jsonResponse(202, { ok: true }));
+  const details = { email: "a@b.co", password: "p", displayName: "A" };
+
+  await signUp({ ...details, turnstileToken: "XXXX.DUMMY.TOKEN.XXXX", fetchImpl: withToken.fetchImpl, ...BASE });
+  await signUp({ ...details, fetchImpl: without.fetchImpl, ...BASE });
+
+  assert.equal(JSON.parse(withToken.calls[0].init.body).turnstileToken, "XXXX.DUMMY.TOKEN.XXXX");
+  assert.equal("turnstileToken" in JSON.parse(without.calls[0].init.body), false);
+});
+
 test("a server error surfaces its code, message and status", async () => {
   const { fetchImpl } = recordingFetch(
     jsonResponse(401, {

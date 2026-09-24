@@ -66,10 +66,13 @@ export class AuthRequestError extends Error {
  * whether or not the address was already registered (AUTH_DECISIONS.md E-12),
  * so there is nothing to report beyond "accepted".
  *
- * @param {{ email: string, password: string, displayName: string } & RequestOptions} details
+ * @param {{ email: string, password: string, displayName: string, turnstileToken?: string } & RequestOptions} details
+ *   `turnstileToken` where the server has Turnstile on (7.5)
  */
-export async function signUp({ email, password, displayName, ...options }) {
-  await send("/api/auth/signup", { ...options, body: { email, password, displayName } });
+export async function signUp({ email, password, displayName, turnstileToken, ...options }) {
+  const body = { email, password, displayName };
+  if (turnstileToken) body.turnstileToken = turnstileToken;
+  await send("/api/auth/signup", { ...options, body });
 }
 
 /**

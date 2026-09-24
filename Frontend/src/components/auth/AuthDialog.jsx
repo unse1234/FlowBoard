@@ -7,8 +7,11 @@ import {
   passwordLengthHint,
   validateAuthForm,
 } from "../../features/auth/authForm.js";
+import { getTurnstileSiteKey } from "../../features/auth/turnstile.js";
+import { useThemeContext } from "../../features/theme/themeContext.js";
 import { Button, Dialog, IconButton } from "../ui/index.js";
 import { AuthField } from "./AuthField.jsx";
+import { TurnstileWidget } from "./TurnstileWidget.jsx";
 
 const { SIGN_IN, SIGN_UP } = AUTH_MODES;
 
@@ -42,6 +45,9 @@ const COPY = Object.freeze({
 
 const EMPTY = Object.freeze({ displayName: "", email: "", password: "" });
 
+/** Turnstile guards sign-up only where a site key is configured (7.5). */
+const TURNSTILE_SITE_KEY = getTurnstileSiteKey();
+
 /**
  * AuthDialog — sign in, or create an account, in one place.
  *
@@ -63,6 +69,12 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
   const [formError, setFormError] = useState(null);
   const [pending, setPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Turnstile's single-use token, and a key that remounts the widget for a
+  // fresh one after a failed attempt.
+  const [botToken, setBotToken] = useState(null);
+  const [botWidgetKey, setBotWidgetKey] = useState(0);
+  const { theme } = useThemeContext();
+  const needsBotCheck = mode === SIGN_UP && TURNSTILE_SITE_KEY !== null;
 
   const displayNameRef = useRef(null);
   const emailRef = useRef(null);
@@ -119,6 +131,13 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
       return;
     }
 
+    // Cloudflare usually hands over a token within a second, unseen. If it has
+    // not yet, or asked for a click that has not happened, say so.
+    if (needsBotCheck && !botToken) {
+      setFormError({ message: "Confirming you're human. Try again in a moment." });
+      return;
+    }
+
     setPending(true);
     setFormError(null);
 
@@ -126,10 +145,21 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
       const email = values.email.trim();
       const user =
         mode === SIGN_UP
-          ? await onSignUp({ email, password: values.password, displayName: values.displayName.trim() })
+          ? await onSignUp({
+              email,
+              password: values.password,
+              displayName: values.displayName.trim(),
+              ...(needsBotCheck ? { turnstileToken: botToken } : {}),
+            })
           : await onSignIn({ email, password: values.password });
       onSuccess(user, mode);
     } catch (error) {
+      // The token is single-use and may have been spent: start a fresh check.
+      if (needsBotCheck) {
+        setBotToken(null);
+        setBotWidgetKey((current) => current + 1);
+      }
+
       const code = typeof error?.code === "string" ? error.code : "";
       const field = fieldForErrorCode(code);
 
@@ -235,6 +265,10 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
             </IconButton>
           }
         />
+
+        {needsBotCheck ? (
+          <TurnstileWidget key={botWidgetKey} siteKey={TURNSTILE_SITE_KEY} theme={theme} onToken={setBotToken} />
+        ) : null}
 
         {formError ? (
           <div
