@@ -1,5 +1,5 @@
 import { Circle, Line } from "react-konva";
-import { getShapeStyle } from "../utils/styleUtils";
+import { getBaseShapeStyle } from "../utils/styleUtils";
 import { isBendable } from "../utils/shapeUtils";
 
 /**
@@ -28,7 +28,7 @@ export default function LineEditor({
 
   const handleRadius = (touch ? 9 : 5.5) / scale;
   const skeletonWidth = 1.5 / scale;
-  const style = getShapeStyle(selectedShape);
+  const style = getBaseShapeStyle(selectedShape);
 
   return (
     <>

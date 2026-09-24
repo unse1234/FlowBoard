@@ -77,14 +77,6 @@ export class ThemeManager {
       ?.setAttribute("content", THEME_COLORS[theme]);
   }
 
-  isDarkTheme() {
-    if (typeof document === "undefined") {
-      return false;
-    }
-
-    return document.documentElement.classList.contains("dark");
-  }
-
   toggleTheme(currentTheme) {
     return currentTheme === ThemeMode.DARK ? ThemeMode.LIGHT : ThemeMode.DARK;
   }

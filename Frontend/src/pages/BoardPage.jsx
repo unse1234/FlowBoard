@@ -495,6 +495,7 @@ export default function BoardPage() {
           eraserPoints={board.eraserPoints}
           liveCursors={board.liveCursors}
           palette={palette}
+          isDark={isDark}
           isCoarsePointer={isCoarsePointer}
           registerShapeRef={board.registerShapeRef}
           onWheel={board.handleWheel}
@@ -517,6 +518,7 @@ export default function BoardPage() {
         key={board.editingTextShape?.id ?? "idle-text-editor"}
         shape={board.editingTextShape}
         transform={transform}
+        isDark={isDark}
         onCommit={board.handleTextCommit}
         onCancel={board.handleTextCancel}
       />

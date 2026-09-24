@@ -1,7 +1,7 @@
 import { TOOLS } from "../constants/tools.js";
 import { BENDABLE_SHAPES, BOX_SHAPES, LINE_SHAPES } from "../domain/shapes/shapeTypes.js";
 import { getDistanceToSegment } from "./geometry.js";
-import { getShapeStyle } from "./styleUtils.js";
+import { getBaseShapeStyle } from "./styleUtils.js";
 
 /**
  * Identifies if a shape is line-like (line, arrow, or pen)
@@ -29,7 +29,7 @@ export const isBendable = (shape) => BENDABLE_SHAPES.has(shape?.type);
  * @returns {Array} Display points [x1, y1, x2, y2, ...]
  */
 export const getLinePoints = (shape) => {
-  const style = getShapeStyle(shape);
+  const style = getBaseShapeStyle(shape);
   if (style.bendStyle !== "straight" || shape.points.length <= 4) {
     return shape.points;
   }
@@ -110,16 +110,17 @@ export const insertBreakpoint = (shape, worldPoint) => {
   const points = [...shape.points];
   points.splice(insertIndex, 0, localPoint.x, localPoint.y);
 
+  // The stored style, never the drawn one: this is written back into the shape,
+  // and on the dark canvas the drawn stroke of ink is white.
+  const style = getBaseShapeStyle(shape);
+
   return {
     ...shape,
     points,
     style: {
-      ...getShapeStyle(shape),
+      ...style,
       // Switch from straight to corner mode when first breakpoint is added
-      bendStyle:
-        shape.style?.bendStyle === "straight"
-          ? "corner"
-          : getShapeStyle(shape).bendStyle,
+      bendStyle: style.bendStyle === "straight" ? "corner" : style.bendStyle,
     },
   };
 };

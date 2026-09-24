@@ -1,8 +1,5 @@
 import { DEFAULT_STYLE } from "../constants/canvas.js";
-import { ThemeManager } from "../features/theme/ThemeManager.js";
 import { needsLightInkOnDarkCanvas } from "./color.js";
-
-const themeManager = new ThemeManager();
 
 const normalizeHexColor = (color) =>
   String(color || "")
@@ -47,37 +44,12 @@ export const getReadableInk = (background) =>
   isDarkColor(background) ? "#f8fafc" : "#111827";
 
 /**
- * Merges shape's custom style with global default style
- * Shape properties take precedence, filling gaps with defaults
- *
- * On the dark canvas a near-black stroke is drawn white so it stays visible.
- * Only strokes that would all but vanish are swapped; a chosen blue, red or
- * green keeps its colour.
- *
- * @param {Object} shape - Shape object with optional style property
- * @returns {Object} Complete style object with all properties defined
- */
-export const getShapeStyle = (shape) => {
-  const baseStyle = {
-    ...DEFAULT_STYLE,
-    ...(shape?.style ?? {}),
-  };
-
-  if (themeManager.isDarkTheme() && needsLightInkOnDarkCanvas(baseStyle.stroke)) {
-    return {
-      ...baseStyle,
-      stroke: "#ffffff",
-    };
-  }
-
-  return baseStyle;
-};
-
-/**
  * The stored style merged over the defaults, without the dark-mode stroke flip.
  *
  * Style controls compare against this rather than getShapeStyle, so the ink
- * swatch stays selected on the dark canvas where ink strokes render white.
+ * swatch stays selected on the dark canvas where ink strokes render white. It
+ * is also what an edit may write back into a shape: the drawn colour must never
+ * be saved, or ink drawn on the dark canvas turns white for good.
  *
  * @param {Object} shape
  * @returns {Object}
@@ -86,6 +58,35 @@ export const getBaseShapeStyle = (shape) => ({
   ...DEFAULT_STYLE,
   ...(shape?.style ?? {}),
 });
+
+/**
+ * The style a shape is drawn with: its stored style over the defaults, adjusted
+ * for the canvas it is drawn on.
+ *
+ * On the dark canvas a near-black stroke is drawn white so it stays visible.
+ * Only strokes that would all but vanish are swapped; a chosen blue, red or
+ * green keeps its colour.
+ *
+ * The theme is passed in rather than read from the page. Shape renderers are
+ * memoised, so a component that draws with this has to receive the theme as a
+ * prop for a theme change to reach it.
+ *
+ * @param {Object} shape - Shape object with optional style property
+ * @param {{ isDark?: boolean }} [canvas] - whether the canvas is dark
+ * @returns {Object} Complete style object with all properties defined
+ */
+export const getShapeStyle = (shape, { isDark = false } = {}) => {
+  const baseStyle = getBaseShapeStyle(shape);
+
+  if (isDark && needsLightInkOnDarkCanvas(baseStyle.stroke)) {
+    return {
+      ...baseStyle,
+      stroke: "#ffffff",
+    };
+  }
+
+  return baseStyle;
+};
 
 /**
  * Converts stroke style setting to Konva dash array format

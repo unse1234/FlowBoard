@@ -39,6 +39,7 @@ const MIN_TRANSFORM_SIZE = 5;
  * @param {Array} laserPoints - Laser pointer trail points
  * @param {Array} eraserPoints - Eraser trail points
  * @param {Object} palette - Canvas colour tokens (design/canvasTokens.js)
+ * @param {boolean} isDark - Whether shapes are drawn on the dark canvas
  * @param {boolean} isCoarsePointer - Enlarge handles for touch
  * @param {Function} registerShapeRef - Register shape node references
  * @param {Function} onWheel - Scroll event handler (zoom)
@@ -69,6 +70,7 @@ export default function WhiteboardCanvas({
   eraserPoints,
   liveCursors,
   palette,
+  isDark = false,
   isCoarsePointer = false,
   registerShapeRef,
   onWheel,
@@ -150,6 +152,7 @@ export default function WhiteboardCanvas({
             shape={shape}
             tool={tool}
             isPanMode={isPanMode}
+            isDark={isDark}
             isErasing={erasingShapeIds.has(String(shape.id))}
             isEditing={isShapeIdEqual(editingTextShape?.id, shape.id)}
             registerShapeRef={registerShapeRef}

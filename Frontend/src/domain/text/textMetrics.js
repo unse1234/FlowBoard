@@ -12,7 +12,7 @@ export const EMPTY_TEXT_PLACEHOLDER = "";
  * clamp it to the card, so typing looks like it is happening on the note rather
  * than over it; a bare text shape instead grows to fit.
  */
-export function getTextEditorStyle({ shape, transform }) {
+export function getTextEditorStyle({ shape, transform, isDark = false }) {
   const style = {
     ...DEFAULT_STYLE,
     ...(shape.style ?? {}),
@@ -52,7 +52,7 @@ export function getTextEditorStyle({ shape, transform }) {
     fontFamily: style.fontFamily,
     // The colour the text will be drawn in, so ink typed on the dark canvas is
     // visible while typing, not only once committed.
-    color: getShapeStyle(shape).stroke,
+    color: getShapeStyle(shape, { isDark }).stroke,
     lineHeight: 1.25,
   };
 }

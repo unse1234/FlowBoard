@@ -1,7 +1,7 @@
 import { memo, useCallback } from "react";
 import { TOOLS } from "../constants/tools";
 import { renderShape } from "./renderers/renderingStrategies";
-import { getShapeStyle } from "../utils/styleUtils";
+import { getBaseShapeStyle } from "../utils/styleUtils";
 import { isLineLike } from "../utils/shapeUtils";
 
 /**
@@ -13,6 +13,10 @@ import { isLineLike } from "../utils/shapeUtils";
  * the board each frame. In particular the Konva `ref` must be stable — a fresh
  * arrow each render makes React detach (call with null) and reattach every node,
  * which thrashes the shape registry the Transformer reads from.
+ *
+ * `isDark` is a prop for the same reason: ink strokes are drawn white on the
+ * dark canvas, and the memo only lets a theme change through if the theme is
+ * part of what it compares.
  */
 function ShapeRenderer({
   shape,
@@ -20,6 +24,7 @@ function ShapeRenderer({
   isErasing,
   isEditing,
   isPanMode,
+  isDark = false,
   registerShapeRef,
   onShapeMouseDown,
   onShapeDoubleClick,
@@ -30,7 +35,7 @@ function ShapeRenderer({
   onTransformEnd,
 }) {
   const shapeId = shape.id;
-  const style = getShapeStyle(shape);
+  const style = getBaseShapeStyle(shape);
 
   const handleRef = useCallback(
     (node) => registerShapeRef(shapeId, node),
@@ -86,7 +91,7 @@ function ShapeRenderer({
     onTransformEnd: handleTransformEnd,
   };
 
-  return renderShape({ shape, nodeProps, isEditing });
+  return renderShape({ shape, nodeProps, isEditing, isDark });
 }
 
 export default memo(ShapeRenderer);

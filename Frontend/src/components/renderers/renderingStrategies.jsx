@@ -3,7 +3,12 @@ import { Arrow, Ellipse, Group, Line, Rect, Text } from "react-konva";
 import { NOTE_DEFAULTS, RENDER_STYLES } from "../../constants/canvas";
 import { TOOLS } from "../../constants/tools";
 import { getBox, getLinePoints } from "../../utils/shapeUtils";
-import { getReadableInk, getShapeStyle, getStrokeDash } from "../../utils/styleUtils";
+import {
+  getBaseShapeStyle,
+  getReadableInk,
+  getShapeStyle,
+  getStrokeDash,
+} from "../../utils/styleUtils";
 import ImageShape from "./ImageShape";
 
 const hashShapeId = (id) =>
@@ -16,8 +21,8 @@ const roughOffset = (shape, index, amount = 1.8) => {
   return ((seed - 5) / 5) * amount;
 };
 
-const getStrokeProps = (shape) => {
-  const style = getShapeStyle(shape);
+const getStrokeProps = (shape, isDark) => {
+  const style = getShapeStyle(shape, { isDark });
   const edgeIsRound = style.edgeStyle === "round";
 
   return {
@@ -50,8 +55,8 @@ const BoxGroup = ({ shape, nodeProps, children }) => {
   );
 };
 
-const CleanRect = ({ shape, nodeProps }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
+const CleanRect = ({ shape, nodeProps, isDark }) => {
+  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -68,8 +73,8 @@ const CleanRect = ({ shape, nodeProps }) => {
   );
 };
 
-const RoughRect = ({ shape, nodeProps }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
+const RoughRect = ({ shape, nodeProps, isDark }) => {
+  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -102,8 +107,8 @@ const RoughRect = ({ shape, nodeProps }) => {
   );
 };
 
-const CleanEllipse = ({ shape, nodeProps }) => {
-  const { style, strokeProps } = getStrokeProps(shape);
+const CleanEllipse = ({ shape, nodeProps, isDark }) => {
+  const { style, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -131,8 +136,8 @@ const CleanEllipse = ({ shape, nodeProps }) => {
     </BoxGroup>
   );
 };
-const RoughEllipse = ({ shape, nodeProps }) => {
-  const { style, strokeProps } = getStrokeProps(shape);
+const RoughEllipse = ({ shape, nodeProps, isDark }) => {
+  const { style, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -188,8 +193,8 @@ const diamondPoints = (box) => [
   box.height / 2,
 ];
 
-const CleanDiamond = ({ shape, nodeProps }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
+const CleanDiamond = ({ shape, nodeProps, isDark }) => {
+  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -206,8 +211,8 @@ const CleanDiamond = ({ shape, nodeProps }) => {
   );
 };
 
-const RoughDiamond = ({ shape, nodeProps }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
+const RoughDiamond = ({ shape, nodeProps, isDark }) => {
+  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
 
   return (
     <BoxGroup shape={shape} nodeProps={nodeProps}>
@@ -240,8 +245,8 @@ const RoughDiamond = ({ shape, nodeProps }) => {
   );
 };
 
-const CleanLine = ({ shape, nodeProps }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
+const CleanLine = ({ shape, nodeProps, isDark }) => {
+  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
   const Component = shape.type === TOOLS.ARROW ? Arrow : Line;
 
   return (
@@ -261,8 +266,8 @@ const CleanLine = ({ shape, nodeProps }) => {
   );
 };
 
-const RoughLine = ({ shape, nodeProps }) => {
-  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape);
+const RoughLine = ({ shape, nodeProps, isDark }) => {
+  const { style, edgeIsRound, strokeProps } = getStrokeProps(shape, isDark);
   const Component = shape.type === TOOLS.ARROW ? Arrow : Line;
   const points = shape.type === TOOLS.PEN ? shape.points : getLinePoints(shape);
   // A group has no hit width of its own, so both strokes carry the shape's —
@@ -291,8 +296,8 @@ const RoughLine = ({ shape, nodeProps }) => {
   );
 };
 
-const TextShape = ({ shape, nodeProps, isEditing }) => {
-  const { style } = getStrokeProps(shape);
+const TextShape = ({ shape, nodeProps, isEditing, isDark }) => {
+  const { style } = getStrokeProps(shape, isDark);
 
   return (
     <Text
@@ -324,7 +329,7 @@ const TextShape = ({ shape, nodeProps, isEditing }) => {
  * sticky reads as a mistake rather than a style.
  */
 const NoteShape = ({ shape, nodeProps, isEditing }) => {
-  const style = getShapeStyle(shape);
+  const style = getBaseShapeStyle(shape);
   const fill = shape.style?.fill ?? NOTE_DEFAULTS.fill;
   const padding = NOTE_DEFAULTS.padding;
 
@@ -397,7 +402,7 @@ export const RENDERING_STRATEGIES = {
 };
 
 export function getRendererForShape(shape) {
-  const style = getShapeStyle(shape);
+  const style = getBaseShapeStyle(shape);
   const strategy =
     RENDERING_STRATEGIES[style.renderStyle] ??
     RENDERING_STRATEGIES[RENDER_STYLES.CLEAN];
@@ -405,9 +410,11 @@ export function getRendererForShape(shape) {
   return strategy[shape.type] ?? null;
 }
 
-export function renderShape({ shape, nodeProps, isEditing }) {
+export function renderShape({ shape, nodeProps, isEditing, isDark = false }) {
   const Renderer = getRendererForShape(shape);
   if (!Renderer) return null;
 
-  return <Renderer shape={shape} nodeProps={nodeProps} isEditing={isEditing} />;
+  return (
+    <Renderer shape={shape} nodeProps={nodeProps} isEditing={isEditing} isDark={isDark} />
+  );
 }

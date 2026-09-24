@@ -8,6 +8,7 @@ import {
 export default function TextEditorOverlay({
   shape,
   transform,
+  isDark = false,
   onCommit,
   onCancel,
 }) {
@@ -39,7 +40,7 @@ export default function TextEditorOverlay({
 
   if (!shape) return null;
 
-  const editorStyle = getTextEditorStyle({ shape, transform });
+  const editorStyle = getTextEditorStyle({ shape, transform, isDark });
 
   const commit = () => {
     const textarea = textareaRef.current;
