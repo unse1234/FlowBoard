@@ -51,7 +51,9 @@ function JoinRoomDialog({ open, isRoomOwner, suggestedName = "", color, onSubmit
               placeholder="Your name"
               onFocus={(event) => event.target.select()}
               onChange={(event) => setName(event.target.value)}
-              className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-body text-text placeholder:text-text-soft"
+              // 16px on touch: iOS Safari zooms the page into any smaller
+              // input, and does not zoom back out (finding F-22).
+              className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-body text-text placeholder:text-text-soft pointer-coarse:h-11 pointer-coarse:text-[16px]"
             />
           </div>
         </div>
