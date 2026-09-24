@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { randomBytes } = require("node:crypto");
 const test = require("node:test");
 const { getServerConfig } = require("./config/serverConfig");
 const { createApp, createShutdownHandler } = require("./server");
@@ -18,7 +19,12 @@ const CONFIG = {
   clientOrigin: ["http://localhost:5173"],
   ai: { ...DEFAULTS.ai, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
   // Cheap Argon2: these tests never hash anything.
-  auth: { ...DEFAULTS.auth, rateLimitPerMinute: 0, argon2: { memoryCostKib: 64, timeCost: 1, parallelism: 1 } },
+  auth: {
+    ...DEFAULTS.auth,
+    rateLimitPerMinute: 0,
+    argon2: { memoryCostKib: 64, timeCost: 1, parallelism: 1 },
+    accessToken: { ...DEFAULTS.auth.accessToken, keys: [{ id: "test", secret: randomBytes(32) }] },
+  },
 };
 
 async function startServer(t, { database } = {}) {
@@ -281,4 +287,43 @@ test("the headers do not interfere with CORS", async (t) => {
     "http://localhost:5173",
   );
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("with a database but no signing key the server refuses to start", () => {
+  const withoutKeys = {
+    ...CONFIG,
+    auth: { ...CONFIG.auth, accessToken: { ...CONFIG.auth.accessToken, keys: null } },
+  };
+
+  // Otherwise it would serve sign-in routes that can never sign anyone in,
+  // behind a readiness check that reports all is well.
+  assert.throws(
+    () => createApp(withoutKeys, { database: { async ping() {} }, logger: SILENT_LOGGER }),
+    /AUTH_ACCESS_TOKEN_KEYS/,
+  );
+});
+
+test("only the auth routes let a trusted page send credentials", async (t) => {
+  const baseUrl = await startServer(t, { database: { async ping() {} } });
+
+  const preflight = (path, origin) =>
+    fetch(`${baseUrl}${path}`, {
+      method: "OPTIONS",
+      headers: {
+        origin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    });
+
+  const auth = await preflight("/api/auth/login", "http://localhost:5173");
+  const ai = await preflight("/api/ai/generate-diagram", "http://localhost:5173");
+  const stranger = await preflight("/api/auth/login", "https://evil.example");
+
+  assert.equal(auth.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(auth.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  // Nothing outside /api/auth reads the cookie, so nothing else may ask for it.
+  assert.equal(ai.headers.get("access-control-allow-credentials"), null);
+  // An origin not on the list is never granted anything.
+  assert.equal(stranger.headers.get("access-control-allow-origin"), null);
 });

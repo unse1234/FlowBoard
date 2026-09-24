@@ -98,4 +98,5 @@ function toUser(row) {
 module.exports = {
   UNIQUE_VIOLATION,
   createUserRepository,
+  toUser,
 };

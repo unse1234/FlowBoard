@@ -6,10 +6,13 @@ const { createAiRouter, handleAiRequestError } = require("./ai/aiRouter");
 const { createDiagramService } = require("./ai/diagramService");
 const { createGeminiProvider } = require("./ai/providers/geminiProvider");
 const { createRateLimiter } = require("./ai/rateLimiter");
+const { createAccessTokens } = require("./auth/accessTokens");
 const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter");
 const { createPasswordHasher } = require("./auth/passwordHasher");
+const { createRefreshCookie } = require("./auth/refreshTokens");
 const { getServerConfig, loadLocalEnvFile } = require("./config/serverConfig");
 const { createDatabase } = require("./db/createDatabase");
+const { createPostgresRateLimiter } = require("./http/rateLimiter");
 const { createSecurityHeaders } = require("./http/securityHeaders");
 const { OperationStore } = require("./operations/operationStore");
 const { registerBoardGateway } = require("./realtime/boardGateway");
@@ -30,7 +33,18 @@ function createApp(config = getServerConfig(), { diagramService, database = null
   // produced by an error handler, which is where they are easiest to lose.
   app.use(createSecurityHeaders(config.security));
 
-  app.use(cors({ origin: config.clientOrigin }));
+  // Only the auth routes let a page send credentials, because only they read
+  // the refresh cookie, and the cookie's Path means no other route receives it.
+  // Every other route stays cookie-less, so it is never a CSRF target.
+  const authPath = `${config.auth.cookie.path}/`;
+  app.use(
+    cors((request, callback) => {
+      callback(null, {
+        origin: config.clientOrigin,
+        credentials: request.path.startsWith(authPath),
+      });
+    }),
+  );
   app.use(express.json({ limit: "1mb" }));
 
   // Liveness: is this process running? Deliberately checks nothing else, so a
@@ -63,15 +77,41 @@ function createApp(config = getServerConfig(), { diagramService, database = null
   // Authentication needs the database, so the routes only exist when one is
   // configured. Without them a request answers 404 rather than failing inside
   // a handler that has nothing to query.
+  //
+  // With a database but no signing key, createAccessTokens throws and the
+  // server does not start. Serving sign-in pages that can never sign anyone
+  // in, behind a readiness check that says all is well, would be worse.
   if (database) {
     app.use(
       "/api/auth",
       createAuthRouter({
         database,
         passwordHasher: createPasswordHasher({ config: config.auth.argon2, logger }),
-        rateLimiter:
+        accessTokens: createAccessTokens({ config: config.auth.accessToken }),
+        refreshCookie: createRefreshCookie(config.auth.cookie),
+        sessionLifetimes: config.auth.refreshToken,
+        // The same list CORS uses: the pages that may talk to this API.
+        trustedOrigins: config.clientOrigin,
+        edgeSecret: config.auth.edgeSecret,
+        // Counted in PostgreSQL, so each limit holds across every instance
+        // rather than multiplying by them (E-17). Zero turns one off.
+        signInLimiter:
           config.auth.rateLimitPerMinute > 0
-            ? createRateLimiter({ limit: config.auth.rateLimitPerMinute })
+            ? createPostgresRateLimiter({
+                database,
+                name: "sign-in",
+                limit: config.auth.rateLimitPerMinute,
+                logger,
+              })
+            : null,
+        sessionLimiter:
+          config.auth.sessionRateLimitPerMinute > 0
+            ? createPostgresRateLimiter({
+                database,
+                name: "session",
+                limit: config.auth.sessionRateLimitPerMinute,
+                logger,
+              })
             : null,
         logger,
       }),

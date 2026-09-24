@@ -138,3 +138,165 @@ test("reads the HSTS age, and zero means omit the header", () => {
     15_552_000,
   );
 });
+
+const key = (bytes = 32, fill = 7) => Buffer.alloc(bytes, fill).toString("base64url");
+
+test("access-token signing keys are absent unless configured, never defaulted", () => {
+  assert.equal(getServerConfig({}).auth.accessToken.keys, null);
+  assert.equal(getServerConfig({ AUTH_ACCESS_TOKEN_KEYS: "   " }).auth.accessToken.keys, null);
+});
+
+test("reads signing keys in order, so the first signs and the rest only verify", () => {
+  const { keys } = getServerConfig({
+    AUTH_ACCESS_TOKEN_KEYS: ` 2026-09:${key(32, 1)} , 2026-06:${key(48, 2)} `,
+  }).auth.accessToken;
+
+  assert.deepEqual(
+    keys.map((entry) => entry.id),
+    ["2026-09", "2026-06"],
+  );
+  assert.ok(keys[0].secret.equals(Buffer.alloc(32, 1)));
+  assert.ok(keys[1].secret.equals(Buffer.alloc(48, 2)));
+});
+
+test("a malformed signing key stops startup instead of falling back", () => {
+  const cases = [
+    ["no separator", key()],
+    ["empty id", `:${key()}`],
+    ["id with a space", `my key:${key()}`],
+    ["secret too short", `k1:${key(31)}`],
+    ["standard base64, not base64url", `k1:${Buffer.alloc(32, 251).toString("base64")}`],
+    ["empty entry", `k1:${key()},`],
+    ["duplicate id", `k1:${key(32, 1)},k1:${key(32, 2)}`],
+  ];
+
+  for (const [label, value] of cases) {
+    assert.throws(
+      () => getServerConfig({ AUTH_ACCESS_TOKEN_KEYS: value }),
+      /AUTH_ACCESS_TOKEN_KEYS/,
+      label,
+    );
+  }
+});
+
+test("a signing-key error never repeats the secret", () => {
+  const secret = key(16, 9);
+
+  assert.throws(
+    () => getServerConfig({ AUTH_ACCESS_TOKEN_KEYS: `k1:${secret}` }),
+    (error) => !error.message.includes(secret),
+  );
+});
+
+test("access tokens live fifteen minutes, and an out-of-range lifetime falls back", () => {
+  const { accessToken } = getServerConfig({}).auth;
+
+  assert.equal(accessToken.ttlSeconds, 900);
+  assert.equal(accessToken.issuer, "flowboard");
+  assert.equal(accessToken.audience, "flowboard-api");
+
+  assert.equal(
+    getServerConfig({ AUTH_ACCESS_TOKEN_TTL_SECONDS: "300" }).auth.accessToken.ttlSeconds,
+    300,
+  );
+  // A day-long token would make "sign out everywhere" take a day.
+  for (const bad of ["86400", "59", "0", "soon"]) {
+    assert.equal(
+      getServerConfig({ AUTH_ACCESS_TOKEN_TTL_SECONDS: bad }).auth.accessToken.ttlSeconds,
+      900,
+      bad,
+    );
+  }
+});
+
+test("refresh tokens idle out after 14 days, sessions after 30, and nonsense falls back", () => {
+  assert.deepEqual(getServerConfig({}).auth.refreshToken, {
+    idleTtlSeconds: 1_209_600,
+    sessionTtlSeconds: 2_592_000,
+    reuseGraceSeconds: 20,
+  });
+
+  assert.deepEqual(
+    getServerConfig({
+      AUTH_REFRESH_IDLE_TTL_SECONDS: "86400",
+      AUTH_SESSION_TTL_SECONDS: "604800",
+      AUTH_REFRESH_REUSE_GRACE_SECONDS: "0",
+    }).auth.refreshToken,
+    { idleTtlSeconds: 86_400, sessionTtlSeconds: 604_800, reuseGraceSeconds: 0 },
+  );
+
+  // Under an hour would sign people out constantly; over the ceiling would
+  // make a stolen cookie good for years.
+  for (const bad of ["60", "999999999", "a week"]) {
+    assert.deepEqual(
+      getServerConfig({ AUTH_REFRESH_IDLE_TTL_SECONDS: bad, AUTH_SESSION_TTL_SECONDS: bad }).auth
+        .refreshToken,
+      { idleTtlSeconds: 1_209_600, sessionTtlSeconds: 2_592_000, reuseGraceSeconds: 20 },
+      bad,
+    );
+  }
+
+  // A long grace window is a long window for a thief's copy to work unnoticed.
+  assert.equal(
+    getServerConfig({ AUTH_REFRESH_REUSE_GRACE_SECONDS: "3600" }).auth.refreshToken.reuseGraceSeconds,
+    20,
+  );
+});
+
+test("the refresh cookie is secure, strict and scoped to the auth routes by default", () => {
+  assert.deepEqual(getServerConfig({}).auth.cookie, {
+    name: "__Secure-flowboard_refresh",
+    secure: true,
+    sameSite: "strict",
+    path: "/api/auth",
+  });
+});
+
+test("only an explicit false turns Secure off, and the prefix goes with it", () => {
+  assert.deepEqual(getServerConfig({ AUTH_COOKIE_SECURE: "false" }).auth.cookie, {
+    name: "flowboard_refresh",
+    secure: false,
+    sameSite: "strict",
+    path: "/api/auth",
+  });
+
+  // A typo must not produce an insecure cookie.
+  for (const typo of ["flase", "0", "no", "off", ""]) {
+    assert.equal(getServerConfig({ AUTH_COOKIE_SECURE: typo }).auth.cookie.secure, true, typo);
+  }
+});
+
+test("SameSite can be relaxed by name, and a typo keeps it strict", () => {
+  assert.equal(getServerConfig({ AUTH_COOKIE_SAME_SITE: "Lax" }).auth.cookie.sameSite, "lax");
+  assert.equal(getServerConfig({ AUTH_COOKIE_SAME_SITE: "none" }).auth.cookie.sameSite, "none");
+  assert.equal(getServerConfig({ AUTH_COOKIE_SAME_SITE: "loose" }).auth.cookie.sameSite, "strict");
+});
+
+test("SameSite=None without Secure stops startup, since browsers would drop the cookie", () => {
+  assert.throws(
+    () => getServerConfig({ AUTH_COOKIE_SAME_SITE: "none", AUTH_COOKIE_SECURE: "false" }),
+    /AUTH_COOKIE_SAME_SITE=none/,
+  );
+});
+
+test("the edge secret is absent unless configured, and a weak one stops startup", () => {
+  assert.equal(getServerConfig({}).auth.edgeSecret, null);
+  assert.equal(getServerConfig({ AUTH_PROXY_SECRET: "  " }).auth.edgeSecret, null);
+
+  const strong = Buffer.alloc(32, 5).toString("base64url");
+  assert.equal(getServerConfig({ AUTH_PROXY_SECRET: ` ${strong} ` }).auth.edgeSecret, strong);
+
+  for (const weak of ["short", strong.slice(1), `${strong.slice(0, -1)}+`, "a".repeat(42)]) {
+    assert.throws(() => getServerConfig({ AUTH_PROXY_SECRET: weak }), /AUTH_PROXY_SECRET/, weak);
+  }
+});
+
+test("refresh, sign-out and me get a generous allowance of their own", () => {
+  const { auth } = getServerConfig({});
+
+  assert.equal(auth.sessionRateLimitPerMinute, 60);
+  // Several tabs refresh routinely; it must be far looser than sign-in's.
+  assert.ok(auth.sessionRateLimitPerMinute >= auth.rateLimitPerMinute * 10);
+  assert.equal(getServerConfig({ AUTH_SESSION_RATE_LIMIT_PER_MINUTE: "0" }).auth.sessionRateLimitPerMinute, 0);
+  assert.equal(getServerConfig({ AUTH_SESSION_RATE_LIMIT_PER_MINUTE: "lots" }).auth.sessionRateLimitPerMinute, 60);
+});

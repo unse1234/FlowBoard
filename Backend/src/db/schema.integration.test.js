@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { createHash, randomBytes } = require("node:crypto");
 const test = require("node:test");
 const { loadLocalEnvFile } = require("../config/serverConfig");
 const { createDatabase } = require("./createDatabase");
@@ -290,4 +291,250 @@ test("differing case cannot create a second account", { skip: SKIP }, async (t) 
   await insert("ada@example.com");
 
   await assert.rejects(insert("ADA@Example.COM"), /users_email_normalized_active_key/);
+});
+
+/**
+ * auth_sessions and refresh_tokens (0002).
+ *
+ * The token behaviour itself — issuing, rotation, reuse detection — belongs to
+ * chunks 2.3 and 2.4. These tests pin what the schema promises on its own, so
+ * those chunks can rely on it rather than re-checking it.
+ */
+
+const tokenHash = () => createHash("sha256").update(randomBytes(32)).digest();
+
+const insertSession = async (database, userId, overrides = {}) => {
+  const session = {
+    expiresAt: "now() + interval '30 days'",
+    revokedAt: null,
+    revokedReason: null,
+    userAgent: null,
+    ipAddress: null,
+    ...overrides,
+  };
+
+  // expiresAt is an SQL expression chosen by the test, never input.
+  const { rows } = await database.query(
+    `INSERT INTO auth_sessions (user_id, expires_at, revoked_at, revoked_reason, user_agent, ip_address)
+     VALUES ($1, ${session.expiresAt}, $2, $3, $4, $5)
+     RETURNING *`,
+    [userId, session.revokedAt, session.revokedReason, session.userAgent, session.ipAddress],
+  );
+
+  return rows[0];
+};
+
+const insertToken = async (database, sessionId, overrides = {}) => {
+  const token = { hash: tokenHash(), expiresAt: "now() + interval '14 days'", ...overrides };
+
+  const { rows } = await database.query(
+    `INSERT INTO refresh_tokens (session_id, token_hash, expires_at)
+     VALUES ($1, $2, ${token.expiresAt})
+     RETURNING *`,
+    [sessionId, token.hash],
+  );
+
+  return rows[0];
+};
+
+/** A migrated database with one user, for the session tests. */
+async function databaseWithUser(t) {
+  const database = await freshDatabase(t);
+  const { rows } = await insertUser(database);
+  return { database, userId: rows[0].id };
+}
+
+const countRows = async (database, table) => {
+  const { rows } = await database.query(`SELECT count(*)::int AS count FROM ${table}`);
+  return rows[0].count;
+};
+
+test("migrations record the sessions migration after the users one", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  const { rows } = await database.query("SELECT id FROM schema_migrations ORDER BY id");
+
+  assert.deepEqual(
+    rows.map((row) => row.id).slice(0, 2),
+    ["0001_create_users", "0002_create_auth_sessions_and_refresh_tokens"],
+  );
+});
+
+test("a new session and its token get sane defaults", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+
+  const session = await insertSession(database, userId, {
+    userAgent: "Mozilla/5.0 (X11; Linux x86_64)",
+    ipAddress: "2001:db8::1",
+  });
+  const hash = tokenHash();
+  const token = await insertToken(database, session.id, { hash });
+
+  assert.match(session.id, /^[0-9a-f-]{36}$/);
+  assert.equal(session.revoked_at, null);
+  assert.equal(session.revoked_reason, null);
+  assert.ok(session.last_used_at instanceof Date);
+  assert.ok(session.expires_at > session.created_at);
+  assert.equal(session.ip_address, "2001:db8::1");
+
+  assert.equal(token.session_id, session.id);
+  assert.equal(token.consumed_at, null);
+  // Stored and returned as the raw digest, so a lookup can compare bytes.
+  assert.ok(Buffer.isBuffer(token.token_hash));
+  assert.ok(token.token_hash.equals(hash));
+});
+
+test("a token hash can belong to only one token", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  const session = await insertSession(database, userId);
+  const hash = tokenHash();
+  await insertToken(database, session.id, { hash });
+
+  // Even in another session: the hash alone must identify one token, because
+  // it is the only thing the refresh request carries.
+  const other = await insertSession(database, userId);
+
+  await assert.rejects(insertToken(database, other.id, { hash }), /refresh_tokens_token_hash_key/);
+});
+
+test("the database stores a digest, not the token's text", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  const session = await insertSession(database, userId);
+  const raw = randomBytes(32);
+
+  // The digest as hex, and the token as the cookie carries it: both are the
+  // mistakes a length check can catch.
+  for (const wrong of [
+    Buffer.from(createHash("sha256").update(raw).digest("hex")),
+    Buffer.from(raw.toString("base64url")),
+  ]) {
+    await assert.rejects(
+      insertToken(database, session.id, { hash: wrong }),
+      /refresh_tokens_token_hash_length_check/,
+    );
+  }
+});
+
+test("a revoked session must say why, and only a revoked one may", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+
+  await assert.rejects(
+    insertSession(database, userId, { revokedAt: new Date(), revokedReason: null }),
+    /auth_sessions_revocation_check/,
+  );
+  await assert.rejects(
+    insertSession(database, userId, { revokedAt: null, revokedReason: "logout" }),
+    /auth_sessions_revocation_check/,
+  );
+});
+
+test("every planned way of ending a session is accepted, and nothing else", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+
+  // AUTH_PLAN.md names these. A reason missing here would fail the phase that
+  // needs it at runtime, as a 500.
+  for (const reason of [
+    "logout",
+    "reuse_detected",
+    "revoked_by_user",
+    "password_reset",
+    "password_changed",
+    "account_deleted",
+  ]) {
+    await assert.doesNotReject(
+      insertSession(database, userId, { revokedAt: new Date(), revokedReason: reason }),
+      `${reason} should be accepted`,
+    );
+  }
+
+  await assert.rejects(
+    insertSession(database, userId, { revokedAt: new Date(), revokedReason: "expired" }),
+    /auth_sessions_revoked_reason_check/,
+  );
+});
+
+test("neither a session nor a token can end before it starts", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+
+  await assert.rejects(
+    insertSession(database, userId, { expiresAt: "now() - interval '1 second'" }),
+    /auth_sessions_expiry_check/,
+  );
+
+  const session = await insertSession(database, userId);
+
+  await assert.rejects(
+    insertToken(database, session.id, { expiresAt: "now()" }),
+    /refresh_tokens_expiry_check/,
+  );
+});
+
+test("a user agent is capped at 512 characters", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+
+  await assert.doesNotReject(insertSession(database, userId, { userAgent: "a".repeat(512) }));
+  await assert.rejects(
+    insertSession(database, userId, { userAgent: "a".repeat(513) }),
+    /auth_sessions_user_agent_length_check/,
+  );
+});
+
+test("a session cannot belong to a user who does not exist", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  await assert.rejects(
+    insertSession(database, "00000000-0000-4000-8000-000000000000"),
+    /auth_sessions_user_id_fkey/,
+  );
+});
+
+test("a token cannot belong to a session that does not exist", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  await assert.rejects(
+    insertToken(database, "00000000-0000-4000-8000-000000000000"),
+    /refresh_tokens_session_id_fkey/,
+  );
+});
+
+test("purging an account removes its sessions and their tokens", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  const session = await insertSession(database, userId);
+  await insertToken(database, session.id);
+  await insertToken(database, session.id);
+
+  await database.query("DELETE FROM users WHERE id = $1", [userId]);
+
+  assert.equal(await countRows(database, "auth_sessions"), 0);
+  assert.equal(await countRows(database, "refresh_tokens"), 0);
+});
+
+test("purging a session removes its tokens and no one else's", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  const doomed = await insertSession(database, userId);
+  const kept = await insertSession(database, userId);
+  await insertToken(database, doomed.id);
+  const survivor = await insertToken(database, kept.id);
+
+  await database.query("DELETE FROM auth_sessions WHERE id = $1", [doomed.id]);
+
+  const { rows } = await database.query("SELECT id FROM refresh_tokens");
+  assert.deepEqual(rows.map((row) => row.id), [survivor.id]);
+});
+
+test("the refresh lookup uses the token hash index", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  const session = await insertSession(database, userId);
+  const hash = tokenHash();
+  await insertToken(database, session.id, { hash });
+
+  const { rows } = await database.query(
+    `EXPLAIN (FORMAT JSON)
+     SELECT id, session_id FROM refresh_tokens WHERE token_hash = $1`,
+    [hash],
+  );
+
+  // Every refresh, from every open tab, runs this. It must be an index probe.
+  const plan = JSON.stringify(rows[0]["QUERY PLAN"]);
+  assert.match(plan, /refresh_tokens_token_hash_key/);
 });

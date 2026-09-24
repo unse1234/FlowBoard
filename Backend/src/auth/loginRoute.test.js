@@ -270,13 +270,24 @@ test("a failed hash upgrade does not fail the login", { skip: SKIP }, async (t) 
     config: { memoryCostKib: 8, timeCost: 1, parallelism: 1 },
     logger: SILENT_LOGGER,
   });
-  await server.database.query("UPDATE users SET password_hash = $1", [
-    await weak.hashPassword(VALID_SIGNUP.password),
-  ]);
+  const weakHash = await weak.hashPassword(VALID_SIGNUP.password);
+  await server.database.query("UPDATE users SET password_hash = $1", [weakHash]);
 
-  // Make the upgrade's UPDATE fail while leaving the SELECT working.
-  await server.database.query("REVOKE UPDATE ON users FROM CURRENT_USER");
-  t.after(() => server.database.query("GRANT UPDATE ON users TO CURRENT_USER").catch(() => {}));
+  // Make the upgrade's UPDATE fail and nothing else. Revoking UPDATE on users,
+  // as this test once did, is too broad now that sign-in creates a session:
+  // the foreign-key check on auth_sessions locks the users row, and that lock
+  // needs the same privilege.
+  await server.database.query(`
+    CREATE FUNCTION refuse_hash_upgrade() RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'hash upgrade refused by test';
+    END;
+    $$ LANGUAGE plpgsql;
+
+    CREATE TRIGGER refuse_hash_upgrade
+      BEFORE UPDATE OF password_hash ON users
+      FOR EACH ROW EXECUTE FUNCTION refuse_hash_upgrade();
+  `);
 
   const response = await server.login({
     email: VALID_SIGNUP.email,
@@ -286,6 +297,8 @@ test("a failed hash upgrade does not fail the login", { skip: SKIP }, async (t) 
   // The password was correct and the stored hash is still valid — it is only
   // older than we would like, so an upgrade failure must not lock anyone out.
   assert.equal(response.status, 200);
+  // And the upgrade really was attempted and refused, not quietly skipped.
+  assert.equal(await readHash(server), weakHash);
 });
 
 test("the rate limit applies to sign-in attempts", { skip: SKIP }, async (t) => {

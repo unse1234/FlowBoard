@@ -81,6 +81,32 @@ const AUTH_ERRORS = Object.freeze({
     message: "This account isn't available. Contact support if you think that's wrong.",
   },
 
+  // A protected route called without a valid access token. Deliberately the
+  // same whether the token was missing, expired, forged or revoked: the
+  // client's move is the same in every case, which is to refresh and retry
+  // once, then send the person to sign in.
+  AUTHENTICATION_REQUIRED: {
+    status: 401,
+    message: "Sign in to continue.",
+  },
+
+  // The one answer to a refresh that cannot continue: no cookie, an unknown or
+  // expired token, a revoked session, or a replayed token. Distinguishing them
+  // would tell someone holding a stolen token whether it had been noticed.
+  SESSION_INVALID: {
+    status: 401,
+    message: "Your session has ended. Sign in again.",
+  },
+
+  // A state-changing request that did not come from a FlowBoard page: the
+  // shape of a cross-site request forgery. A real user only sees this if a
+  // page from an unlisted origin is talking to the API, which is a
+  // configuration problem, so the message sends them back to the app.
+  ORIGIN_NOT_ALLOWED: {
+    status: 403,
+    message: "This request didn't come from FlowBoard. Reload the page and try again.",
+  },
+
   TOO_MANY_ATTEMPTS: {
     status: 429,
     message: "Too many attempts. Wait a moment and try again.",
