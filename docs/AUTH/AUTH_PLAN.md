@@ -48,15 +48,15 @@ active one. Both suites must pass before a chunk is done.
 database and 503 without, migrations apply repeatably from empty, and all 97
 backend tests pass with none skipped.
 
-### Phase 0b — Realtime gateway tests · *independent, can run any time*
+### Phase 0b — Realtime gateway tests ✅ **COMPLETE**
 
 Closes F-10 before Phase 5 touches this code.
 
 | # | Chunk | Delivers |
 | --- | --- | --- |
-| 0b.1 | `boardGateway` tests | Join, replay, room isolation, `boardId` mismatch, de-duplication, presence, disconnect cleanup |
-| 0b.2 | `voiceGateway` tests | Join announcement, unicast offer/answer/ICE, absent target, disconnect cleanup |
-| 0b.3 | `OperationStore` tests | Add, duplicate, per-board isolation |
+| 0b.1 | `boardGateway` tests | ✅ 23 tests, real Socket.IO clients |
+| 0b.2 | `voiceGateway` tests | ✅ 18 tests, unicast routing proven |
+| 0b.3 | `OperationStore` tests | ✅ 9 tests |
 
 **Change no behaviour here.** If a test reveals a bug, record it in
 `AUDIT_FINDINGS.md` and pin the current behaviour.

@@ -49,7 +49,7 @@ anyone signed in** — login issues no token, which is Phase 2.
 
 | Phase | Contents | Blocked by |
 | --- | --- | --- |
-| 0b | Realtime gateway tests | — (unblocked) |
+| 0b | ✅ Realtime gateway tests — 50 tests, F-10 resolved | — |
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
 | 1 | Complete, except the email half of E-12 (needs Phase 4) | — |
 | 2 | Access + refresh tokens, rotation, revocation, CSRF | Phase 1 |
@@ -141,7 +141,7 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **201 pass, 0 fail, 0 skipped** |
+| Backend | **264 pass, 0 fail, 0 skipped** |
 | Frontend | 194 pass |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests

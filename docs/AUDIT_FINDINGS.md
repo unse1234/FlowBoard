@@ -23,7 +23,7 @@ resolved by Step 1 rather than by a patch.
 | F-7 | MEDIUM | Security | Voice signalling has no room-membership check |
 | F-8 | MEDIUM | Correctness | Board id sanitisation collapses distinct ids together |
 | F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded |
-| F-10 | MEDIUM | Testing | The entire realtime server layer is untested |
+| F-10 | ~~MEDIUM~~ | Testing | ~~The entire realtime server layer is untested~~ — **RESOLVED 2026-09-24** |
 | F-11 | MEDIUM | Correctness | Local cache and server replay can both seed a room |
 | F-12 | LOW | Maintainability | Voice event names are a third, unguarded contract copy |
 | F-13 | ~~LOW~~ | Ops | ~~`/health` reports health it never checks~~ — **RESOLVED 2026-09-23** |
@@ -204,6 +204,18 @@ user-chosen id is. Rejecting a malformed id would be safe; rewriting it is not.
 
 Also note this is a fourth copy of the same logic.
 
+**Found while writing the gateway tests (2026-09-24): the rewrite is applied
+inconsistently.** `board:join` sanitises the id and stores the rewritten form on
+the socket, but `board:event` compares `operation.boardId` **as sent** against
+that stored value. So an id that is accepted at join cannot be published with:
+joining as `team room` works, and every operation carrying `team room` is then
+refused with "Socket has not joined this board." Only the rewritten `team-room`
+is publishable.
+
+This does not bite in practice, because the frontend applies the same regex
+before connecting, so real clients only ever send the sanitised form. It is
+pinned by a test in `boardGateway.test.js`.
+
 ---
 
 ## F-9 — MEDIUM — Operation payload size and shape are effectively unbounded
@@ -224,17 +236,32 @@ Contrast: the AI endpoint validates its board context thoroughly
 
 ---
 
-## F-10 — MEDIUM — The entire realtime server layer is untested
+## F-10 — RESOLVED 2026-09-24 — The realtime server layer is untested
 
-**Evidence:** `boardGateway.js`, `voiceGateway.js`, `operationStore.js` and
-`server.js` are imported only by `server.js` — no test file imports any of them
-(verified by search). The 47 backend tests cover the AI layer, `serverConfig`
-and `operationValidator`.
+**Was:** `boardGateway.js`, `voiceGateway.js` and `operationStore.js` were
+imported only by `server.js`, with no test importing any of them. Join and
+replay, room isolation, presence, disconnect cleanup, voice routing and
+de-duplication had no regression protection — in the code Phase 5 must rewrite
+to add authorisation.
 
-**Impact:** join/replay, room isolation, presence broadcast, disconnect cleanup,
-voice routing and de-duplication have no regression protection. This is exactly
-the code Step 1 must modify to add authentication, so the tests are a
-prerequisite, not a follow-up.
+**Resolved** by 50 tests across three files:
+
+- `src/realtime/boardGateway.test.js` (23)
+- `src/realtime/voiceGateway.test.js` (18)
+- `src/operations/operationStore.test.js` (9)
+
+The gateway tests run against a real Socket.IO server with real clients, not
+fakes. What these gateways mostly decide is *who* receives something — a room,
+one target socket, everyone but the sender — and a fake that models rooms would
+be asserting its own model rather than Socket.IO's.
+
+**They pin the insecure behaviour too, deliberately.** Tests labelled with a
+finding id record what the code does today: that any client may join any board
+and receive its history (F-1), that a claimed `userId` is taken at face value on
+both gateways (F-2), that a voice room needs no board membership (F-7), and that
+the operation log is never trimmed (F-5). Each is expected to be **rewritten**
+by Phase 5 rather than deleted, with the replacement asserting the opposite —
+so a change in that behaviour reads as deliberate rather than as a regression.
 
 ---
 

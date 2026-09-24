@@ -10,7 +10,8 @@ Step 1 · Phase 1 — password identity.
 
 ## Status
 
-**Phase 1 complete except its email half. CI running. API headers set** — 2026-09-24.
+**Phase 1 complete except its email half. CI running. API headers set.
+Realtime gateways under test** — 2026-09-24.
 
 Signup and login both work end to end against PostgreSQL 18.6. Backend
 suite: **201 passing, 0 skipped.**
