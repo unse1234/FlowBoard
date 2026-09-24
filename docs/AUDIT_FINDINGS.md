@@ -19,7 +19,7 @@ resolved by Step 1 rather than by a patch.
 | F-3 | CRITICAL | Durability | Server restart destroys every collaborative board |
 | F-4 | HIGH | Correctness | Undo diverges peers, and the comments claim otherwise |
 | F-5 | HIGH | Availability | Operation log grows without bound and is fully replayed |
-| F-6 | ~~HIGH~~ → **LOW** | Security | API headers added 2026-09-24; **the web app still has none** |
+| F-6 | ~~HIGH~~ → **LOW** | Security | API headers added 2026-09-24; web app headers 2026-09-25, **CSP report-only until checked in a browser** |
 | F-7 | MEDIUM | Security | Voice signalling has no room-membership check |
 | F-8 | MEDIUM | Correctness | Board id sanitisation collapses distinct ids together |
 | F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded |
@@ -28,15 +28,15 @@ resolved by Step 1 rather than by a patch.
 | F-12 | LOW | Maintainability | Voice event names are a third, unguarded contract copy |
 | F-13 | ~~LOW~~ | Ops | ~~`/health` reports health it never checks~~ — **RESOLVED 2026-09-23** |
 | F-14 | ~~LOW~~ → **MEDIUM** | Security | AI rate limiting is per-IP, in-memory, and proxy-naive: **in production every AI user shares one allowance** |
-| F-15 | MEDIUM | Dependencies | `qs` DoS advisory reaches the app through express |
+| F-15 | ~~MEDIUM~~ | Dependencies | ~~`qs` DoS advisory reaches the app through express~~ — **RESOLVED 2026-09-25** (`qs` 6.16.0; `npm audit` clean) |
 | F-16 | MEDIUM | Availability | Password hashing can starve the libuv threadpool |
 | F-17 | LOW | Security | Signup timing differs slightly between a free and a taken address |
 | F-18 | ~~HIGH~~ | Testing | ~~Test globs collected a fraction of the suite on Linux~~ — **RESOLVED 2026-09-24** |
 | F-19 | ~~MEDIUM~~ | Rendering | ~~Opacity and fill decided inconsistently per renderer~~ — **RESOLVED 2026-09-24** |
 | F-20 | ~~MEDIUM~~ | Tooling | ~~Migration checksums change with the checkout's line endings~~ — **RESOLVED 2026-09-24** |
 | F-21 | LOW | Correctness | The 254-character address limit counts UTF-16 units, not octets |
-| F-22 | LOW | UX | `JoinRoomDialog`'s input zooms the page on iPhone |
-| F-23 | MEDIUM | Security | A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL` |
+| F-22 | ~~LOW~~ | UX | ~~`JoinRoomDialog`'s input zooms the page on iPhone~~ — **RESOLVED 2026-09-25** |
+| F-23 | ~~MEDIUM~~ | Security | ~~A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL`~~ — **RESOLVED 2026-09-25** |
 
 ---
 
@@ -593,7 +593,15 @@ intended prompt.
 
 ---
 
-## F-22 — LOW — `JoinRoomDialog`'s input zooms the page on iPhone
+## F-22 — RESOLVED 2026-09-25 — `JoinRoomDialog`'s input zooms the page on iPhone
+
+**Resolved** at the owner's instruction to apply every recommendation: the
+input now takes 16px text and a 44px height on touch devices
+(`pointer-coarse:`), exactly as `AuthField.jsx` does. Pointer devices are
+unchanged.
+
+What follows is the finding as recorded.
+
 
 **Found 2026-09-24 by chunk UI-3.** iOS Safari zooms the page into any focused
 input whose text is under 16px, and the viewport (`Frontend/index.html`) does
@@ -606,7 +614,16 @@ and leaves it there.
 `pointer-coarse:text-[16px]` for exactly this reason. Not applied here, because
 `components/collab` is outside Step 1's scope.
 
-## F-23 — MEDIUM — A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL`
+## F-23 — RESOLVED 2026-09-25 — A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL`
+
+**Resolved:** `createDatabase` now refuses to start when TLS is set in both
+places (`assertSingleTlsSource`), naming the fix in its message. `sslmode` is
+matched in URL and key/value connection strings alike. Tests in
+`createDatabase.test.js` cover both forms, and a password that merely contains
+the word.
+
+What follows is the finding as recorded.
+
 
 **Found 2026-09-25 by chunk 7.0**, while writing the Neon instructions.
 

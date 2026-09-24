@@ -6,7 +6,7 @@
 
 ## Current task
 
-Step 1 · **Phase 7 — auth hardening.** 7.0–7.3 done; 7.4 (per-account backoff) next.
+Step 1 · **Phases 2 and 7 complete.** Auth is built, hardened and deployed dark: it switches on when production has a database.
 
 ## Status
 
@@ -72,11 +72,11 @@ decided opacity for itself. Opacity is now set once, on the outermost node.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **411 pass, 0 fail, 0 skipped** |
-| Frontend | **267 pass, 0 fail** |
+| Backend | **448 pass, 0 fail, 0 skipped** |
+| Frontend | **276 pass, 0 fail** |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 411. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 448. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
 
@@ -112,26 +112,25 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-**Phase 2 and its UI are complete** (2026-09-24). In order:
+**Owner first** (nothing more can be verified without these):
 
-1. **Look at the UI in a browser.** It could not be viewed in the session that
-   built it. It is verified by lint, the build, 259 frontend tests, and a Node
-   run of the real client against the live server, but nobody has seen it. Run
-   the backend and `npm run dev`, open **http://localhost:5173** (not
-   127.0.0.1, which is not on the CORS list), then use the board menu (the
-   ellipsis on desktop, the menu button on a phone), choose Sign in, then Create
-   an account. Reload, and you should still be signed in. Check dark mode and a
-   phone width.
-2. **Decide the production topology (E-15)** before auth is deployed. The web
-   app and the API must be same-site, and where the backend runs is unknown.
-   A Vercel rewrite of `/api` to the backend is the smallest change.
-3. **Phase 7: rate limiting.** F-16 and F-17 are reachable, the limiter is
-   per-process, and `POST /api/auth/refresh` has no limit at all.
-4. **Phase 5: socket authentication.** Unblocked by Phase 2 and Phase 0b, but
-   it needs D-6 decided first. `getAccessToken()` in `authSession.js` is the
-   seam it will use.
-5. **Phase 3** (a session list: the account dialog is its home) and **Phase 4**
-   (email, D-4), in either order.
+1. Provision Neon and set Render's and Vercel's variables, following
+   `DEPLOYMENT.md`. Auth switches itself on once Render has a database.
+2. Run its two deploy checks, and look at the app in a browser: sign up,
+   reload, still signed in. Check the console for CSP reports, then enforce
+   the CSP (`SECURITY_REVIEW.md`, "Before auth goes live").
+
+**Then, in the recommended order:**
+
+1. **Phase 4: email** (needs D-4 and D-5): verification and password reset. It
+   completes E-12, and until it exists a forgotten password cannot be
+   recovered.
+2. **Phase 3: sessions**: a list and "sign out everywhere", in the account
+   dialog.
+3. **Phase 5: socket authentication** (needs D-6). `getAccessToken()` in
+   `authSession.js` is the seam.
+4. F-14: give the AI endpoint the shared PostgreSQL limiter, once
+   `Backend/src/ai/` is in scope.
 
 ## Before starting the next chunk
 

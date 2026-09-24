@@ -11,8 +11,8 @@ Last updated: 2026-09-24 (Phase 2 and its web UI complete)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 2 — Tokens and sessions. **COMPLETE** |
-| **Task** | Phase 7 — auth hardening. 7.0–7.3 done; 7.4 (per-account backoff) next |
+| **Phase** | 2 and 7 **COMPLETE**; the web UI signs people in |
+| **Task** | None active. Owner steps before auth is live: `DEPLOYMENT.md`, `SECURITY_REVIEW.md` |
 | **Blocker** | None. F-20 resolved; 0002 is applied to the dev database |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
@@ -170,8 +170,8 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **411 pass, 0 fail, 0 skipped** |
-| Frontend | **267 pass** |
+| Backend | **448 pass, 0 fail, 0 skipped** |
+| Frontend | **276 pass** |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
 run against PostgreSQL 18.6 and confirm, among other things, that the login
@@ -237,31 +237,25 @@ rather than assumed.
 | 2026-09-25 | Chunk 7.1: edge-authenticated client addresses. Research: Vercel documents overwriting `x-forwarded-for`; Render's behaviour is undocumented and was not relied on. Mutation-checked. F-14 raised to MEDIUM (all AI users share one limit in production). Backend 380 → 394, frontend 260 → 263. |
 | 2026-09-25 | Chunk 7.2: rate limits in PostgreSQL (migration 0003, ADR 0006). 30 concurrent requests across two limiters, limit 5, gave exactly 5. Mutation-checked. Dev database migrated. Backend 394 → 404. |
 | 2026-09-25 | Chunk 7.3: session allowance on refresh, sign-out and me. The web app treats a 404 from auth as accounts unavailable, so it is safe to deploy before production has a database, verified against a database-less server. Backend 404 → 411, frontend 263 → 267. |
+| 2026-09-25 | Pushed to `main` (`8a9cb01..189b72f`). CI green (411 / 267), and live: Render serves the new code, Vercel the new bundle, and Vercel's route reaches Render. Accounts stay hidden until production has a database. |
+| 2026-09-25 | Chunk 7.4: per-address sign-in backoff (migration 0004). Mutation-checked, including the enumeration property: not counting unknown addresses fails a test. Dev database migrated. Backend 411 → 423. |
+| 2026-09-25 | Chunk 7.5: Turnstile on signup, off until both keys are set. Verified against Cloudflare's real siteverify with its pass, fail and spent-token test keys. Backend 423 → 436, frontend 267 → 273. |
+| 2026-09-25 | F-23 fixed (TLS in two places refuses to start). F-22 fixed (join dialog zoom on iPhone), at the owner's instruction. Chunk 7.6: security review (`SECURITY_REVIEW.md`): IPv6 limits by /64, client-address fallback, `qs` advisory, web app headers. **Phase 7 complete.** Backend 436 → 448, frontend 273 → 276. |
 
 ---
 
 ## Next recommended task
 
-**Phase 2 and its UI are complete** (2026-09-24). In order:
+Phases 2 and 7 are complete, and the web app signs people in. The code is
+deployed and **dark**: production has no database, so the API mounts no auth
+routes and the web app hides accounts until it does.
 
-1. **Look at the UI in a browser.** It could not be viewed in the session that
-   built it. It is verified by lint, the build, 259 frontend tests, and a Node
-   run of the real client against the live server, but nobody has seen it. Run
-   the backend and `npm run dev`, open **http://localhost:5173** (not
-   127.0.0.1, which is not on the CORS list), then use the board menu (the
-   ellipsis on desktop, the menu button on a phone), choose Sign in, then Create
-   an account. Reload, and you should still be signed in. Check dark mode and a
-   phone width.
-2. **Decide the production topology (E-15)** before auth is deployed. The web
-   app and the API must be same-site, and where the backend runs is unknown.
-   A Vercel rewrite of `/api` to the backend is the smallest change.
-3. **Phase 7: rate limiting.** F-16 and F-17 are reachable, the limiter is
-   per-process, and `POST /api/auth/refresh` has no limit at all.
-4. **Phase 5: socket authentication.** Unblocked by Phase 2 and Phase 0b, but
-   it needs D-6 decided first. `getAccessToken()` in `authSession.js` is the
-   seam it will use.
-5. **Phase 3** (a session list: the account dialog is its home) and **Phase 4**
-   (email, D-4), in either order.
+1. **Owner:** provision Neon and set the variables (`../DEPLOYMENT.md`), run
+   the deploy checks, and look at it in a browser. Then enforce the CSP
+   (`SECURITY_REVIEW.md`).
+2. **Phase 4: email** (D-4, D-5): verification and reset. Completes E-12.
+3. **Phase 3: session list and "sign out everywhere".**
+4. **Phase 5: socket authentication** (D-6).
 
 ## Do not touch / protected areas
 

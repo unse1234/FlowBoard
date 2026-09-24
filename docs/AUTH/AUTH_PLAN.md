@@ -141,7 +141,7 @@ that distinguishes auth failure from a network drop.
 change (verify before effect); data export; deletion with soft delete, grace
 period and hard delete; the deleted-boards policy (D-7).
 
-### Phase 7 — Auth hardening ← **in progress**
+### Phase 7 — Auth hardening ✅ **COMPLETE** (2026-09-25)
 
 Reordered on 2026-09-25 so the production blockers come first: the live API had
 no database, was cross-site to the app, and sits behind proxies that make every
@@ -153,9 +153,9 @@ client look alike.
 | 7.1 | Real client addresses | ✅ Vercel's route adds a secret (`AUTH_PROXY_SECRET`, from its environment at request time). With it configured, `/api/auth` refuses requests without it, and trusts `x-vercel-forwarded-for` on those with it. Rate limits and session records use that address. Never `X-Forwarded-For`. Contract test ties the header name across both sides |
 | 7.2 | Shared limit store | ✅ `rate_limit_counters` (0003) and `createPostgresRateLimiter`: atomic upsert per request, database-clock windows, hashed keys, self-sweeping. Sign-in and sign-up moved onto it. ADR 0006 |
 | 7.3 | Limits on every auth route | ✅ A separate "session" allowance (60/min per client) on refresh, sign-out and me. Refused whole, before any token, session or cookie is touched. The web app treats a 429 as a pause, and a 404 (accounts off: no database) as "unavailable", hiding the account menu with no retry loop |
-| 7.4 | Per-account backoff | Slows guessing at one account without letting anyone lock its owner out |
-| 7.5 | Bot protection | Cloudflare Turnstile on signup (E-18) |
-| 7.6 | Security review | The whole Step 1 surface |
+| 7.4 | Per-account backoff | ✅ `login_throttles` (0004): from the 5th consecutive failure on an address, the next attempt waits 1 min, doubling to a 15 min cap, checked before any lookup or hash. Keyed on the submitted address (hashed), registered or not, so it is no enumeration oracle. Success resets; a day's quiet forgets. Backoff, not lockout |
+| 7.5 | Bot protection | ✅ Cloudflare Turnstile on signup (E-18), off until both keys are set. Verified after the form is valid (a typo keeps the token) and before the hash; fails closed if Cloudflare is unreachable; checks the widget's `action`. Tested against Cloudflare's real API with its test keys |
+| 7.6 | Security review | ✅ `docs/AUTH/SECURITY_REVIEW.md`. Fixed: IPv6 limits by /64, `x-real-ip` fallback for the client address, `qs` advisory (F-15), web app headers with a report-only CSP (F-6). Residual risks listed with their bounds |
 
 ### Phase 8 — OAuth
 

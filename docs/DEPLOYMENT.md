@@ -113,6 +113,8 @@ has always had the same wait.
   value exactly.** A mismatch refuses every sign-in with `ORIGIN_NOT_ALLOWED`,
   and Render's log says `wrong edge secret`.
 - **Do not** set `VITE_AUTH_API_URL`. Unset means same-origin, which is the point.
+- **`VITE_TURNSTILE_SITE_KEY`** (optional, public): the Turnstile site key. It is
+  compiled into the bundle, so it takes a **redeploy** to take effect.
 - Preview deployments are not on `CLIENT_ORIGIN`, so sign-in is refused there
   (`ORIGIN_NOT_ALLOWED`). That is deliberate; add a preview origin only on
   purpose.
@@ -154,6 +156,19 @@ has a database. So the code is safe to deploy before the database is.
   once after deploying: sign in, then look at the new row in
   `auth_sessions.ip_address`. Your own address means it works; empty means it
   does not.
+
+## Bot protection: Turnstile (7.5)
+
+Off until configured, and it must be switched on **on both sides together**:
+
+1. In Cloudflare, create a Turnstile widget for `flow-board-beige.vercel.app`
+   (mode: Managed). It gives a site key and a secret key.
+2. Render: `TURNSTILE_SECRET_KEY` = the secret key.
+3. Vercel: `VITE_TURNSTILE_SITE_KEY` = the site key, then **redeploy**.
+
+With the secret set and no site key, every signup is refused for want of a
+token (`BOT_CHECK_FAILED`). With the site key set and no secret, tokens are
+sent and nobody checks them. Sign-in is not gated.
 
 ## Client addresses (7.1)
 
