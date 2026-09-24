@@ -68,7 +68,13 @@ function readMigrations(directory = MIGRATIONS_DIRECTORY) {
   }
 
   return fileNames.map((fileName) => {
-    const sql = readFileSync(path.join(directory, fileName), "utf8");
+    // Line endings are normalised before hashing, and what runs is what was
+    // hashed. git with core.autocrlf checks the same commit out as LF on one
+    // machine and CRLF on another, and hashing raw bytes read that conversion
+    // as an edited migration, so a database migrated from one checkout refused
+    // to migrate from the other (finding F-20). Every checksum recorded before
+    // this was taken over LF bytes, so they all still match.
+    const sql = readFileSync(path.join(directory, fileName), "utf8").replace(/\r\n/g, "\n");
 
     return {
       id: fileName.replace(/\.sql$/, ""),

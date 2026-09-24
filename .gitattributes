@@ -1,0 +1,5 @@
+# Migrations are checksummed when applied, so they must check out byte for byte
+# the same everywhere. core.autocrlf would otherwise give them CRLF endings on
+# Windows and LF on Linux (finding F-20). The runner also normalises before
+# hashing; this keeps the files themselves from changing.
+Backend/migrations/*.sql text eol=lf

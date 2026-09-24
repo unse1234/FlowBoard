@@ -215,3 +215,40 @@ test("the checked-in migrations are readable and well named", () => {
   assert.deepEqual(ids, [...ids].sort(), "migrations must sort into their run order");
   assert.equal(new Set(ids).size, ids.length, "migration ids must be unique");
 });
+
+test("line endings do not change a migration's checksum", (t) => {
+  const sql = "-- users\nCREATE TABLE users ();\nCREATE INDEX users_idx ON users (id);\n";
+  const lf = withMigrationDirectory(t, { "0001_a.sql": sql });
+  const crlf = withMigrationDirectory(t, { "0001_a.sql": sql.replace(/\n/g, "\r\n") });
+  const edited = withMigrationDirectory(t, {
+    "0001_a.sql": `${sql}DROP TABLE users;\n`.replace(/\n/g, "\r\n"),
+  });
+
+  // git with core.autocrlf checks one commit out either way (finding F-20).
+  assert.equal(readMigrations(crlf)[0].checksum, readMigrations(lf)[0].checksum);
+  // What runs is what was hashed.
+  assert.equal(readMigrations(crlf)[0].sql, sql);
+  // A real edit is still an edit, whatever the line endings.
+  assert.notEqual(readMigrations(edited)[0].checksum, readMigrations(lf)[0].checksum);
+});
+
+test("a CRLF checkout of a migration applied from LF is up to date", async (t) => {
+  const sql = "CREATE TABLE a ();\nCREATE TABLE b ();\n";
+  const [recorded] = readMigrations(withMigrationDirectory(t, { "0001_a.sql": sql }));
+  const directory = withMigrationDirectory(t, { "0001_a.sql": sql.replace(/\n/g, "\r\n") });
+  const database = createFakeDatabase({ applied: [{ id: "0001_a", checksum: recorded.checksum }] });
+
+  const result = await runMigrations({ database, directory, logger: SILENT_LOGGER });
+
+  assert.deepEqual(result.applied, []);
+});
+
+test("0001 hashes to the checksum databases recorded, on any checkout", () => {
+  const [users] = readMigrations(MIGRATIONS_DIRECTORY);
+
+  // Taken from schema_migrations on a database migrated before F-20 was fixed.
+  // If this fails, 0001 has been edited, or the normalisation changed, and
+  // every existing database would refuse to migrate.
+  assert.equal(users.id, "0001_create_users");
+  assert.equal(users.checksum, "1eca2330cb98751d9e86285b72b2a18aa00808347a7f0e5b6c7a274e352cfb03");
+});
