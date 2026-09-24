@@ -1,0 +1,282 @@
+const assert = require("node:assert/strict");
+const test = require("node:test");
+const { loadLocalEnvFile } = require("../config/serverConfig");
+const { createDatabase } = require("./createDatabase");
+const { runMigrations } = require("./migrate");
+
+// So `npm test` picks up a developer's configured database without them having
+// to repeat the variable on the command line. A missing .env is normal — in CI
+// the variable is set directly — and anything already in the environment wins.
+loadLocalEnvFile();
+
+/**
+ * Migrations and schema behaviour against a real PostgreSQL server.
+ *
+ * Set TEST_DATABASE_URL to run these. Without it the suite skips, so the unit
+ * tests still run on a machine with no database — but nothing here is proven
+ * until it has pointed at a real server at least once.
+ *
+ *   TEST_DATABASE_URL=postgres://user:pass@localhost:5432/flowboard_test npm test
+ *
+ * The database is emptied first, so it must be a throwaway.
+ *
+ * Every file that resets the schema shares one database, so the suite runs with
+ * --test-concurrency=1 (see package.json). Without it, `node --test` runs files
+ * in parallel and two of them drop the schema under each other, which shows up
+ * as a handful of failures that move around between runs. Do not remove the
+ * flag without first giving each file its own schema or database.
+ */
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL?.trim();
+const SKIP = TEST_DATABASE_URL
+  ? false
+  : "set TEST_DATABASE_URL to run schema integration tests";
+
+const SILENT_LOGGER = { info() {}, warn() {}, error() {} };
+
+function connect() {
+  return createDatabase({
+    config: {
+      connectionString: TEST_DATABASE_URL,
+      poolMax: 4,
+      idleTimeoutMs: 5_000,
+      connectionTimeoutMs: 5_000,
+      statementTimeoutMs: 15_000,
+      ssl: process.env.TEST_DATABASE_SSL === "require" ? { rejectUnauthorized: true } : false,
+      applicationName: "flowboard-test",
+    },
+    logger: SILENT_LOGGER,
+  });
+}
+
+/** A fresh schema for each test, so ordering never matters. */
+async function freshDatabase(t) {
+  const database = connect();
+  t.after(() => database.close());
+
+  await database.query("DROP SCHEMA public CASCADE");
+  await database.query("CREATE SCHEMA public");
+  await runMigrations({ database, logger: SILENT_LOGGER });
+
+  return database;
+}
+
+const insertUser = (database, overrides = {}) => {
+  const user = {
+    email: "Ada@Example.com",
+    emailNormalized: "ada@example.com",
+    displayName: "Ada",
+    ...overrides,
+  };
+
+  return database.query(
+    `INSERT INTO users (email, email_normalized, display_name)
+     VALUES ($1, $2, $3)
+     RETURNING id, token_version, status, created_at, updated_at`,
+    [user.email, user.emailNormalized, user.displayName],
+  );
+};
+
+test("migrations apply from an empty database", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  const { rows } = await database.query("SELECT id FROM schema_migrations ORDER BY id");
+
+  assert.ok(rows.length > 0);
+  assert.equal(rows[0].id, "0001_create_users");
+});
+
+test("migrations are idempotent", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  const second = await runMigrations({ database, logger: SILENT_LOGGER });
+
+  // A second instance booting during a rolling deploy must find nothing to do.
+  assert.deepEqual(second.applied, []);
+});
+
+test("a new user gets sane defaults", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  const { rows } = await insertUser(database);
+
+  assert.match(rows[0].id, /^[0-9a-f-]{36}$/);
+  assert.equal(rows[0].token_version, 0);
+  assert.equal(rows[0].status, "active");
+});
+
+test("an email address can hold only one live account", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  await insertUser(database);
+
+  await assert.rejects(
+    insertUser(database, { email: "ADA@example.com" }),
+    /users_email_normalized_active_key/,
+  );
+});
+
+test("deleting an account frees its address again", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { rows } = await insertUser(database);
+
+  await database.query("UPDATE users SET deleted_at = now(), status = 'pending_deletion' WHERE id = $1", [
+    rows[0].id,
+  ]);
+
+  // The unique index excludes soft-deleted rows, so this must now succeed.
+  await assert.doesNotReject(insertUser(database));
+});
+
+test("the login lookup uses the partial unique index", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  await insertUser(database);
+
+  const { rows } = await database.query(
+    `EXPLAIN (FORMAT JSON)
+     SELECT id FROM users WHERE email_normalized = $1 AND deleted_at IS NULL`,
+    ["ada@example.com"],
+  );
+
+  // Login runs on every sign-in attempt; a sequential scan here would become
+  // the first thing to fall over under load.
+  const plan = JSON.stringify(rows[0]["QUERY PLAN"]);
+  assert.match(plan, /users_email_normalized_active_key/);
+});
+
+test("the database rejects a non-normalised email", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  await assert.rejects(
+    insertUser(database, { emailNormalized: "Ada@Example.com" }),
+    /users_email_normalized_lowercase_check/,
+  );
+});
+
+test("the database rejects an unknown status", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { rows } = await insertUser(database);
+
+  await assert.rejects(
+    database.query("UPDATE users SET status = 'banished' WHERE id = $1", [rows[0].id]),
+    /users_status_check/,
+  );
+});
+
+test("the database rejects a blank display name", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  await assert.rejects(
+    insertUser(database, { displayName: "   " }),
+    /users_display_name_present_check/,
+  );
+});
+
+test("updated_at moves on its own", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { rows } = await insertUser(database);
+
+  const { rows: updated } = await database.query(
+    "UPDATE users SET display_name = $2 WHERE id = $1 RETURNING created_at, updated_at",
+    [rows[0].id, "Ada Lovelace"],
+  );
+
+  // The trigger keeps this honest even for a statement that forgot to set it.
+  assert.ok(updated[0].updated_at > updated[0].created_at);
+});
+
+test("a transaction rolls back a failed multi-step write", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+
+  await assert.rejects(
+    database.transaction(async (tx) => {
+      await tx.query(
+        "INSERT INTO users (email, email_normalized, display_name) VALUES ($1, $2, $3)",
+        ["grace@example.com", "grace@example.com", "Grace"],
+      );
+      throw new Error("changed my mind");
+    }),
+    /changed my mind/,
+  );
+
+  const { rows } = await database.query("SELECT count(*)::int AS count FROM users");
+  assert.equal(rows[0].count, 0);
+});
+
+/**
+ * Addresses whose lowercasing is worth checking against the database.
+ *
+ * `users` has CHECK (email_normalized = lower(email_normalized)), so the
+ * application's normalisation and PostgreSQL's lower() have to agree. If they
+ * ever disagree, a legitimate signup fails on an insert rather than on
+ * validation — a 500 instead of a message. PostgreSQL's lower() depends on the
+ * database's collation, so this is a property of the deployment, not only of
+ * the code, and belongs in an integration test.
+ */
+const LOWERCASE_CASES = [
+  "ADA@EXAMPLE.COM",
+  "Ada.Lovelace+Tag@Example.Co.Uk",
+  "PÄSSWORD@exämple.de",
+  "ÅNGSTRÖM@Example.COM",
+  "ΑΘΗΝΑ@example.com",
+  "МОСКВА@example.com",
+  // Turkish dotted capital I, which lowercases to "i" plus a combining dot.
+  "İSTANBUL@example.com",
+];
+
+test("the application and the database agree on lowercasing", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { normalizeEmailAddress } = require("../auth/emailAddress");
+
+  for (const input of LOWERCASE_CASES) {
+    const normalized = normalizeEmailAddress(input);
+    assert.ok(normalized, `${input} should be a valid address`);
+
+    const { rows } = await database.query(
+      "SELECT lower($1::text) AS pg_lower, ($1::text = lower($1::text)) AS check_passes",
+      [normalized],
+    );
+
+    assert.equal(rows[0].pg_lower, normalized, `lower() disagrees for ${input}`);
+    assert.equal(rows[0].check_passes, true, `CHECK would reject ${input}`);
+  }
+});
+
+test("a normalised address inserts and is found again", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { parseEmailAddress } = require("../auth/emailAddress");
+
+  const parsed = parseEmailAddress("  Ada.Lovelace@Example.COM  ");
+  assert.equal(parsed.valid, true);
+
+  await database.query(
+    "INSERT INTO users (email, email_normalized, display_name) VALUES ($1, $2, $3)",
+    [parsed.email, parsed.emailNormalized, "Ada"],
+  );
+
+  // The whole point of the normalised column: someone who signed up with mixed
+  // case must be found when they type it differently.
+  const found = await database.query(
+    "SELECT email FROM users WHERE email_normalized = $1 AND deleted_at IS NULL",
+    [parseEmailAddress("ADA.LOVELACE@example.com").emailNormalized],
+  );
+
+  assert.equal(found.rowCount, 1);
+  // The address is stored as typed, for display and for addressing mail.
+  assert.equal(found.rows[0].email, "Ada.Lovelace@Example.COM");
+});
+
+test("differing case cannot create a second account", { skip: SKIP }, async (t) => {
+  const database = await freshDatabase(t);
+  const { parseEmailAddress } = require("../auth/emailAddress");
+
+  const insert = (input) => {
+    const parsed = parseEmailAddress(input);
+    return database.query(
+      "INSERT INTO users (email, email_normalized, display_name) VALUES ($1, $2, $3)",
+      [parsed.email, parsed.emailNormalized, "Someone"],
+    );
+  };
+
+  await insert("ada@example.com");
+
+  await assert.rejects(insert("ADA@Example.COM"), /users_email_normalized_active_key/);
+});
