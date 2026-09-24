@@ -1,4 +1,4 @@
-const { loadLocalEnvFile } = require("../config/serverConfig");
+const { getServerConfig, loadLocalEnvFile } = require("../config/serverConfig");
 const { createDatabase } = require("../db/createDatabase");
 const { runMigrations } = require("../db/migrate");
 const { createApp } = require("../server");
@@ -25,20 +25,25 @@ const SILENT_LOGGER = { info() {}, warn() {}, error() {} };
 /** Argon2 at its cheapest: these tests exercise routes, not the hash. */
 const TEST_ARGON2 = Object.freeze({ memoryCostKib: 64, timeCost: 1, parallelism: 1 });
 
+/**
+ * Derived from the real configuration rather than written out, so that adding a
+ * section to serverConfig cannot leave this fixture stale. Hand-built copies
+ * drifted three times while Step 1 was being built, each time surfacing as a
+ * TypeError deep inside createApp rather than as anything informative.
+ */
+const DEFAULTS = getServerConfig({});
 const BASE_CONFIG = Object.freeze({
+  ...DEFAULTS,
   port: 0,
   clientOrigin: ["http://localhost:5173"],
-  ai: { geminiApiKey: null, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
+  ai: { ...DEFAULTS.ai, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
   database: {
+    ...DEFAULTS.database,
     connectionString: TEST_DATABASE_URL,
     poolMax: 4,
-    idleTimeoutMs: 5_000,
-    connectionTimeoutMs: 5_000,
     statementTimeoutMs: 15_000,
-    ssl: false,
-    applicationName: "flowboard-test",
   },
-  auth: { rateLimitPerMinute: 0, argon2: TEST_ARGON2 },
+  auth: { ...DEFAULTS.auth, rateLimitPerMinute: 0, argon2: TEST_ARGON2 },
 });
 
 /** A signup body that passes every rule, for tests to vary one field of. */

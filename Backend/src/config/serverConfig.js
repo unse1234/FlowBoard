@@ -44,6 +44,15 @@ const DEFAULT_ARGON2_PARALLELISM = 1;
  */
 const DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE = 5;
 
+/**
+ * How long a browser should refuse to reach this API over plain HTTP.
+ *
+ * 180 days. Zero omits the header entirely, for a deployment that is not
+ * behind TLS yet. The header is ignored over HTTP regardless, so it is safe
+ * in development.
+ */
+const DEFAULT_HSTS_MAX_AGE_SECONDS = 15_552_000;
+
 function getServerConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? DEFAULT_PORT),
@@ -80,6 +89,12 @@ function getServerConfig(env = process.env) {
       ssl: readDatabaseSsl(env.DATABASE_SSL),
       applicationName:
         env.DATABASE_APPLICATION_NAME?.trim() || DEFAULT_DATABASE_APPLICATION_NAME,
+    },
+    security: {
+      hstsMaxAgeSeconds: readNonNegativeInteger(
+        env.SECURITY_HSTS_MAX_AGE_SECONDS,
+        DEFAULT_HSTS_MAX_AGE_SECONDS,
+      ),
     },
     auth: {
       rateLimitPerMinute: readNonNegativeInteger(

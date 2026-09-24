@@ -119,3 +119,22 @@ test("reads the auth rate limit, defaulting lower than the AI limit", () => {
   assert.equal(getServerConfig({ AUTH_RATE_LIMIT_PER_MINUTE: "0" }).auth.rateLimitPerMinute, 0);
   assert.equal(getServerConfig({ AUTH_RATE_LIMIT_PER_MINUTE: "lots" }).auth.rateLimitPerMinute, 5);
 });
+
+test("reads the HSTS age, and zero means omit the header", () => {
+  assert.deepEqual(getServerConfig({}).security, { hstsMaxAgeSeconds: 15_552_000 });
+
+  assert.equal(
+    getServerConfig({ SECURITY_HSTS_MAX_AGE_SECONDS: "60" }).security.hstsMaxAgeSeconds,
+    60,
+  );
+  // Zero is a deliberate off for a deployment not behind TLS yet.
+  assert.equal(
+    getServerConfig({ SECURITY_HSTS_MAX_AGE_SECONDS: "0" }).security.hstsMaxAgeSeconds,
+    0,
+  );
+  // A typo must not quietly disable it.
+  assert.equal(
+    getServerConfig({ SECURITY_HSTS_MAX_AGE_SECONDS: "forever" }).security.hstsMaxAgeSeconds,
+    15_552_000,
+  );
+});

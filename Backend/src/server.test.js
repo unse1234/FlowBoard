@@ -1,28 +1,24 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { getServerConfig } = require("./config/serverConfig");
 const { createApp, createShutdownHandler } = require("./server");
 
 const SILENT_LOGGER = { info() {}, warn() {}, error() {} };
 
+/**
+ * Derived from the real configuration rather than written out, so that adding a
+ * section to serverConfig cannot leave this fixture stale. Hand-built copies
+ * drifted three times while Step 1 was being built, each time surfacing as a
+ * TypeError deep inside createApp rather than as anything informative.
+ */
+const DEFAULTS = getServerConfig({});
 const CONFIG = {
+  ...DEFAULTS,
   port: 0,
   clientOrigin: ["http://localhost:5173"],
-  ai: { geminiApiKey: null, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
-  database: {
-    connectionString: null,
-    poolMax: 10,
-    idleTimeoutMs: 30_000,
-    connectionTimeoutMs: 5_000,
-    statementTimeoutMs: 10_000,
-    ssl: false,
-    applicationName: "flowboard-test",
-  },
-  // Needed because createApp mounts the auth routes whenever a database is
-  // injected. Cheap Argon2 settings: these tests never hash anything.
-  auth: {
-    rateLimitPerMinute: 0,
-    argon2: { memoryCostKib: 64, timeCost: 1, parallelism: 1 },
-  },
+  ai: { ...DEFAULTS.ai, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
+  // Cheap Argon2: these tests never hash anything.
+  auth: { ...DEFAULTS.auth, rateLimitPerMinute: 0, argon2: { memoryCostKib: 64, timeCost: 1, parallelism: 1 } },
 };
 
 async function startServer(t, { database } = {}) {
@@ -222,4 +218,67 @@ test("shutdown works without a database", async () => {
   await shutdown("SIGTERM");
 
   assert.deepEqual(codes, [0]);
+});
+
+test("every response carries the security headers", async (t) => {
+  const baseUrl = await startServer(t);
+
+  // A 200, a 503 and a 404: the failure paths are where headers are easiest to
+  // lose, because they are produced by handlers nobody looks at twice.
+  for (const path of ["/health", "/ready", "/nothing-here"]) {
+    const response = await fetch(`${baseUrl}${path}`);
+
+    assert.equal(
+      response.headers.get("x-content-type-options"),
+      "nosniff",
+      `${path} is missing nosniff`,
+    );
+    assert.equal(response.headers.get("x-frame-options"), "DENY", `${path} is framable`);
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.match(response.headers.get("content-security-policy"), /default-src 'none'/);
+    assert.match(
+      response.headers.get("strict-transport-security"),
+      /^max-age=\d+; includeSubDomains$/,
+    );
+  }
+});
+
+test("the server does not announce which framework it runs", async (t) => {
+  const baseUrl = await startServer(t);
+
+  const response = await fetch(`${baseUrl}/health`);
+
+  // Express sets this by default. It tells an attacker which advisories to look
+  // up and helps nobody else.
+  assert.equal(response.headers.get("x-powered-by"), null);
+});
+
+test("security headers survive an error response", async (t) => {
+  const baseUrl = await startServer(t);
+
+  // Malformed JSON, so the body parser rejects it before any route runs.
+  const response = await fetch(`${baseUrl}/api/ai/generate-diagram`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{ not json",
+  });
+
+  assert.ok(response.status >= 400);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.match(response.headers.get("content-security-policy"), /default-src 'none'/);
+});
+
+test("the headers do not interfere with CORS", async (t) => {
+  const baseUrl = await startServer(t);
+
+  const response = await fetch(`${baseUrl}/health`, {
+    headers: { Origin: "http://localhost:5173" },
+  });
+
+  // The web app is on another origin, so breaking this would break the product.
+  assert.equal(
+    response.headers.get("access-control-allow-origin"),
+    "http://localhost:5173",
+  );
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 });

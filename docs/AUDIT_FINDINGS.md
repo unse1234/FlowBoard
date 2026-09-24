@@ -19,7 +19,7 @@ resolved by Step 1 rather than by a patch.
 | F-3 | CRITICAL | Durability | Server restart destroys every collaborative board |
 | F-4 | HIGH | Correctness | Undo diverges peers, and the comments claim otherwise |
 | F-5 | HIGH | Availability | Operation log grows without bound and is fully replayed |
-| F-6 | HIGH | Security | No security headers, no CSP, no HSTS |
+| F-6 | ~~HIGH~~ → **LOW** | Security | API headers added 2026-09-24; **the web app still has none** |
 | F-7 | MEDIUM | Security | Voice signalling has no room-membership check |
 | F-8 | MEDIUM | Correctness | Board id sanitisation collapses distinct ids together |
 | F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded |
@@ -141,20 +141,34 @@ joiner receives one snapshot and a short tail.
 
 ---
 
-## F-6 — HIGH — No security headers, no CSP, no HSTS
+## F-6 — HALF RESOLVED 2026-09-24 — Security headers
 
-**Evidence:** `Backend/src/server.js:18-19` applies `cors` and `express.json`
-only. No `helmet`, no `Content-Security-Policy`, no `Strict-Transport-Security`,
-no `X-Frame-Options` anywhere in `Backend/src` (verified by search). No
-`helmet` dependency in `Backend/package.json`.
+**The API half is closed.** `Backend/src/http/securityHeaders.js` sets
+`X-Content-Type-Options: nosniff`, a `default-src 'none'` CSP,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and HSTS on every
+response, and Express no longer announces itself through `X-Powered-By`. The
+middleware runs before the routes, so error responses and 404s carry them too,
+which is asserted rather than assumed.
 
-**Impact:** the app is clickjackable and has no defence-in-depth against script
-injection. **UNKNOWN:** whether a reverse proxy or host platform adds headers in
-the actual deployment — no deployment config is in the repository.
+The header set is written for an API that returns only JSON. `nosniff` is the
+one that matters most: without it a browser may sniff a JSON body as HTML and
+run script found inside.
 
-Mitigating: the frontend has **no** `dangerouslySetInnerHTML`, `innerHTML`,
-`eval` or `new Function` (verified by search), and React escapes by default, so
-no concrete XSS vector was identified. Canvas text is drawn by Konva, not HTML.
+**The web app half is still open, and this is the half that matters more for
+XSS.** The frontend is built by Vite and served by something else — the
+hardcoded `flow-board-beige.vercel.app` origin in `serverConfig.js` suggests
+Vercel — so its headers come from that platform's configuration, not from this
+server. No such configuration exists in the repository, and the actual
+deployment remains **UNKNOWN**.
+
+Closing the rest means adding header configuration wherever the app is hosted.
+That needs the deployment to be confirmed first; guessing at it would be
+configuration that silently applies to nothing.
+
+Severity dropped to LOW rather than resolved: the frontend has **no**
+`dangerouslySetInnerHTML`, `innerHTML`, `eval` or `new Function` (verified by
+search), React escapes by default, and canvas text is drawn by Konva rather
+than HTML — so no concrete XSS vector was identified for a CSP to stop.
 
 ---
 

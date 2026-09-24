@@ -10,6 +10,7 @@ const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter"
 const { createPasswordHasher } = require("./auth/passwordHasher");
 const { getServerConfig, loadLocalEnvFile } = require("./config/serverConfig");
 const { createDatabase } = require("./db/createDatabase");
+const { createSecurityHeaders } = require("./http/securityHeaders");
 const { OperationStore } = require("./operations/operationStore");
 const { registerBoardGateway } = require("./realtime/boardGateway");
 
@@ -20,6 +21,14 @@ function createApp(config = getServerConfig(), { diagramService, database = null
   const app = express();
   const httpServer = createServer(app);
   const operationStore = new OperationStore();
+
+  // Express announces itself in every response otherwise, which tells an
+  // attacker which framework to look up advisories for and helps nobody else.
+  app.disable("x-powered-by");
+
+  // Before the routes, so every response carries them — including the ones
+  // produced by an error handler, which is where they are easiest to lose.
+  app.use(createSecurityHeaders(config.security));
 
   app.use(cors({ origin: config.clientOrigin }));
   app.use(express.json({ limit: "1mb" }));

@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { getServerConfig } = require("../config/serverConfig");
 const { createApp } = require("../server");
 const { AiError } = require("./aiErrors");
 const { createDiagramService } = require("./diagramService");
@@ -17,10 +18,18 @@ const DIAGRAM = {
 };
 
 async function startServer(t, { diagramService, ai } = {}) {
+/**
+ * Derived from the real configuration rather than written out, so that adding a
+ * section to serverConfig cannot leave this fixture stale. Hand-built copies
+ * drifted three times while Step 1 was being built, each time surfacing as a
+ * TypeError deep inside createApp rather than as anything informative.
+ */
+  const defaults = getServerConfig({});
   const config = {
+    ...defaults,
     port: 0,
     clientOrigin: ["http://localhost:5173"],
-    ai: { geminiApiKey: null, geminiModel: "gemini-test", rateLimitPerMinute: 0, ...ai },
+    ai: { ...defaults.ai, geminiModel: "gemini-test", rateLimitPerMinute: 0, ...ai },
   };
   const { httpServer, io } = createApp(config, { diagramService, logger: SILENT_LOGGER });
 

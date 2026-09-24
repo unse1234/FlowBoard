@@ -103,6 +103,11 @@ CREATE DATABASE flowboard_test OWNER flowboard;
 Endpoints: `GET /health` is liveness (checks nothing, by design), `GET /ready`
 is readiness (checks the database, answers 503 when it cannot).
 
+Every API response carries security headers
+(`Backend/src/http/securityHeaders.js`), set before the routes so error
+responses keep them. **The web app is served elsewhere and still has none** —
+see finding F-6.
+
 **Windows:** Git Bash `kill -TERM` does not reliably terminate a Windows node
 process — a killed-looking server can keep its port and answer with stale
 config. Use `taskkill //PID <pid> //F` and verify with `netstat -ano`.

@@ -63,7 +63,7 @@ jobs:
           #
           # Raise this when adding tests. A drop means something stopped being
           # collected, which is worth failing over.
-          MINIMUM_TESTS: 201
+          MINIMUM_TESTS: 214
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-output.txt
