@@ -11,7 +11,7 @@ Last updated: 2026-09-24 (Phase 2 and its web UI complete)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 2 and 7 **COMPLETE**; the web UI signs people in |
+| **Phase** | 2, 3 and 7 **COMPLETE**; the web UI signs people in and manages devices |
 | **Task** | None active. Owner steps before auth is live: `DEPLOYMENT.md`, `SECURITY_REVIEW.md` |
 | **Blocker** | None. F-20 resolved; 0002 is applied to the dev database |
 
@@ -64,7 +64,7 @@ detection revokes a stolen session, logout ends it, CSRF is defended, and
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
 | 1 | Complete, except the email half of E-12 (needs Phase 4) | — |
 | 2 | ✅ **Complete** — sessions, access + refresh tokens, rotation, reuse detection, logout, CSRF, `requireAuth`, `GET /me` | — |
-| 3 | Session listing and revocation | Phase 2 |
+| 3 | ✅ **Complete**: purge of dead sessions, session list, end one, end everywhere else | — |
 | 4 | Email delivery, verification, password reset | Phase 1, D-4, D-5 |
 | 5 | Socket authentication and per-board authorisation | Phase 2, Phase 0b, D-6 |
 | 6 | Account settings, deletion, export, soft delete | Phase 1, D-7 |
@@ -170,8 +170,8 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **448 pass, 0 fail, 0 skipped** |
-| Frontend | **276 pass** |
+| Backend | **463 pass, 0 fail, 0 skipped** |
+| Frontend | **283 pass** |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
 run against PostgreSQL 18.6 and confirm, among other things, that the login
@@ -241,21 +241,29 @@ rather than assumed.
 | 2026-09-25 | Chunk 7.4: per-address sign-in backoff (migration 0004). Mutation-checked, including the enumeration property: not counting unknown addresses fails a test. Dev database migrated. Backend 411 → 423. |
 | 2026-09-25 | Chunk 7.5: Turnstile on signup, off until both keys are set. Verified against Cloudflare's real siteverify with its pass, fail and spent-token test keys. Backend 423 → 436, frontend 267 → 273. |
 | 2026-09-25 | F-23 fixed (TLS in two places refuses to start). F-22 fixed (join dialog zoom on iPhone), at the owner's instruction. Chunk 7.6: security review (`SECURITY_REVIEW.md`): IPv6 limits by /64, client-address fallback, `qs` advisory, web app headers. **Phase 7 complete.** Backend 436 → 448, frontend 273 → 276. |
+| 2026-09-25 | Pushed and live (`189b72f..f8b473b`, CI 448 / 276): web app headers confirmed on Vercel. |
+| 2026-09-25 | **Phase 3 complete**: dead-session purge (migration 0005), session API with cross-account negative tests, devices in the account dialog. Verified with two simulated devices against a live server. Backend 448 → 463, frontend 276 → 283. |
 
 ---
 
 ## Next recommended task
 
-Phases 2 and 7 are complete, and the web app signs people in. The code is
-deployed and **dark**: production has no database, so the API mounts no auth
-routes and the web app hides accounts until it does.
+Phases 2, 3 and 7 are complete, and the web app signs people in and manages
+their devices. The code is deployed and **dark**: production has no database,
+so the API mounts no auth routes and the web app hides accounts until it does.
 
-1. **Owner:** provision Neon and set the variables (`../DEPLOYMENT.md`), run
-   the deploy checks, and look at it in a browser. Then enforce the CSP
+1. **Owner:** provision Neon and set the variables (`../DEPLOYMENT.md`), run the
+   deploy checks, and look at it in a browser. Then enforce the CSP
    (`SECURITY_REVIEW.md`).
-2. **Phase 4: email** (D-4, D-5): verification and reset. Completes E-12.
-3. **Phase 3: session list and "sign out everywhere".**
-4. **Phase 5: socket authentication** (D-6).
+2. **Phase 4: email** (needs D-4, D-5): verification and password reset.
+   Completes E-12, and until it exists a forgotten password cannot be
+   recovered.
+3. **Phase 5: socket authentication** (needs D-6). `getAccessToken()` in
+   `authSession.js` is the seam.
+4. **Phase 6: account settings** (needs D-7): name, password change (ending
+   other sessions), deletion.
+5. F-14: give the AI endpoint the shared PostgreSQL limiter, once
+   `Backend/src/ai/` is in scope.
 
 ## Do not touch / protected areas
 

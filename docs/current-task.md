@@ -6,7 +6,7 @@
 
 ## Current task
 
-Step 1 · **Phases 2 and 7 complete.** Auth is built, hardened and deployed dark: it switches on when production has a database.
+Step 1 · **Phases 2, 3 and 7 complete.** Auth is built, hardened and deployed dark: it switches on when production has a database.
 
 ## Status
 
@@ -72,11 +72,11 @@ decided opacity for itself. Opacity is now set once, on the outermost node.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **448 pass, 0 fail, 0 skipped** |
-| Frontend | **276 pass, 0 fail** |
+| Backend | **463 pass, 0 fail, 0 skipped** |
+| Frontend | **283 pass, 0 fail** |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 448. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 463. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
 
@@ -112,24 +112,21 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-**Owner first** (nothing more can be verified without these):
+Phases 2, 3 and 7 are complete, and the web app signs people in and manages
+their devices. The code is deployed and **dark**: production has no database,
+so the API mounts no auth routes and the web app hides accounts until it does.
 
-1. Provision Neon and set Render's and Vercel's variables, following
-   `DEPLOYMENT.md`. Auth switches itself on once Render has a database.
-2. Run its two deploy checks, and look at the app in a browser: sign up,
-   reload, still signed in. Check the console for CSP reports, then enforce
-   the CSP (`SECURITY_REVIEW.md`, "Before auth goes live").
-
-**Then, in the recommended order:**
-
-1. **Phase 4: email** (needs D-4 and D-5): verification and password reset. It
-   completes E-12, and until it exists a forgotten password cannot be
+1. **Owner:** provision Neon and set the variables (`DEPLOYMENT.md`), run the
+   deploy checks, and look at it in a browser. Then enforce the CSP
+   (`AUTH/SECURITY_REVIEW.md`).
+2. **Phase 4: email** (needs D-4, D-5): verification and password reset.
+   Completes E-12, and until it exists a forgotten password cannot be
    recovered.
-2. **Phase 3: sessions**: a list and "sign out everywhere", in the account
-   dialog.
 3. **Phase 5: socket authentication** (needs D-6). `getAccessToken()` in
    `authSession.js` is the seam.
-4. F-14: give the AI endpoint the shared PostgreSQL limiter, once
+4. **Phase 6: account settings** (needs D-7): name, password change (ending
+   other sessions), deletion.
+5. F-14: give the AI endpoint the shared PostgreSQL limiter, once
    `Backend/src/ai/` is in scope.
 
 ## Before starting the next chunk

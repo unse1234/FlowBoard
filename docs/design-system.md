@@ -183,7 +183,7 @@ a static ring.
 | `VoiceButton` / `VoicePill` | header / phone | Join, connecting, mute with speaking ring, leave, reconnecting, error |
 | `JoinRoomDialog` | all | Display name before connecting; suggests the last name; dismiss joins as Guest |
 | `AuthDialog` | all | Sign in / create account in one dialog; visible labels; errors on blur or submit, never while typing; server errors on their field; password managers supported; 44px targets and 16px input text on touch (iOS zoom) |
-| `AccountDialog` | all | Name, email, Sign out. Future home of sessions (Phase 3) and settings (Phase 6) |
+| `AccountDialog` | all | Name, email, Sign out, and "Where you're signed in": each device in plain words, last active, this one marked, sign out one or everywhere else. Future home of settings (Phase 6) |
 | Account menu section | all | Leads the board menu: Sign in, or the person's name (opens Account) and Sign out; empty while a session restores |
 | `ShortcutsDialog` | keyboard | Generated from the binding tables (press `?`) |
 | `EmptyCanvasHint` | all | Real single-key shortcuts, or touch guidance |

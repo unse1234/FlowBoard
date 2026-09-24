@@ -109,14 +109,13 @@ components change only where the account entry points attach.
 | UI-2 | Session controller | ✅ `authSession.js`: restore on load, refresh a minute before expiry, retry on network failure without signing out, Web Locks single-flight, cross-tab sign-in/out carrying no token, generation counter so a late refresh cannot undo a sign-out, sign-out that waits for the server |
 | UI-3 | Dialogs and entry points | ✅ `AuthDialog` (both modes, field and form errors, password managers, 44px targets and 16px text on touch), `AccountDialog`, account section leading the board menu on every layout, `AuthProvider` |
 
-### Phase 3 — Session management
+### Phase 3 — Session management ✅ **COMPLETE** (2026-09-25)
 
-`GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id`, revoke-all-others.
-
-Also a scheduled purge of sessions that expired or were revoked more than a
-retention period ago. Their tokens cascade with them. Without it,
-`refresh_tokens` grows by one row per rotation forever (E-13). **Required before
-launch**, and it gets an index on `auth_sessions` when its query is written.
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| 3.1 | Purge of dead sessions | ✅ Sessions revoked or expired more than 30 days ago are deleted with their tokens, in batches of 500, once per 200 sign-ins and refreshes per process. Indexes in migration 0005. Closes E-13's "required before launch" |
+| 3.2 | Session API | ✅ `GET /api/auth/sessions` (live, most recent first, current marked), `DELETE /api/auth/sessions/:id`, `POST /api/auth/sessions/revoke-others`. All behind `requireAuth` plus the live-session check. Another account's session, a made-up id and an ended one all answer the same 404. Mutation-checked, cross-account cases included |
+| 3.3 | Devices in the account dialog | ✅ "Where you're signed in": each device in plain words ("Chrome on Windows"), last active, this one marked, sign out one or everywhere else |
 
 ### Phase 4 — Email workflows · *parallel with 2/3 once Phase 1 lands*
 
