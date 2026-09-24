@@ -272,8 +272,8 @@ direction. Sequencing lives in `PRODUCTION_PLAN.md`; Step 1 detail in
 | Concern | Target | Status |
 | --- | --- | --- |
 | Database | Relational store with migrations, pooling, indexes | **UNRESOLVED** — engine not chosen, see `AUTH/AUTH_DECISIONS.md` D-1 |
-| Identity | `users`, `sessions`/`refresh_tokens`, verification and reset tokens | Not started |
-| AuthN | Email/password, then OAuth, then TOTP, then SSO | Not started |
+| Identity | `users`, `sessions`/`refresh_tokens`, verification and reset tokens | `users`, `auth_sessions`, `refresh_tokens` ✅ in use; verification and reset tokens not started (Phase 4) |
+| AuthN | Email/password, then OAuth, then TOTP, then SSO | Email/password ✅ with JWT access + rotating refresh cookie, CSRF, `requireAuth`, and sign-in in the web app; sockets not yet (Phase 5); OAuth, TOTP, SSO not started |
 | AuthZ | Centralised policy module, enforced on every HTTP route *and* socket event | Not started |
 | Board storage | Boards as rows; op log + periodic snapshots, server-authoritative | Not started |
 | Sync | CRDT (Yjs/Automerge or custom) replacing event broadcast | Not started |

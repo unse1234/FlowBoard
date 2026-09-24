@@ -79,23 +79,44 @@ Closes F-10 before Phase 5 touches this code.
 | 1.4 | `POST /api/auth/signup` | ✅ Uniform response per E-12, rate limited |
 | 1.5 | `POST /api/auth/login` | ✅ Uniform failure, equal work, transparent rehash |
 
-### Phase 2 — Tokens and sessions ← **next**
+### Phase 2 — Tokens and sessions ✅ **COMPLETE** (2026-09-24)
 
 Introduces cookies, so CSRF lands **in this phase**.
 
+The auth UI is built **after** this phase, not before. The project owner chose
+this on 2026-09-24 so the UI can ship with persistent sign-in, rather than hold
+sign-in state in memory and lose it on refresh.
+
 | # | Chunk | Delivers |
 | --- | --- | --- |
-| 2.1 | `refresh_tokens` migration | Hashed token, family id, user, device metadata, issued/expires/revoked |
-| 2.2 | Access tokens | JWT issue + verify, `token_version` check, signing key config |
-| 2.3 | Refresh tokens | Issue, hash at rest, cookie flags `HttpOnly`/`Secure`/`SameSite` |
-| 2.4 | `POST /api/auth/refresh` | Rotation, reuse detection, family revocation, concurrency-safe |
-| 2.5 | `POST /api/auth/logout` | Revoke the presented token |
-| 2.6 | CSRF | Protection for every cookie-authenticated route |
-| 2.7 | HTTP auth middleware | Verified `request.user` |
+| 2.1 | Sessions + refresh-token migration | ✅ `auth_sessions` (the family: user, device metadata, absolute expiry, revocation with a reason) and `refresh_tokens` (SHA-256 hash, idle expiry, `consumed_at`). Two tables, not a `family_id` — see E-13 |
+| 2.2 | Access tokens | ✅ HS256 via `node:crypto` (ADR 0005): strict verifier, `kid` keyring for rotation, `AUTH_ACCESS_TOKEN_KEYS`. `ver` carried; compared where the user row is already read |
+| 2.3 | Refresh tokens | ✅ Login creates a session and its first refresh token (SHA-256 at rest), sets a `__Secure-`, `HttpOnly`, `SameSite=Strict`, `Path=/api/auth` cookie, and returns a 15-minute access token. `no-store`. Credentialed CORS on `/api/auth` only. Same-site deployment required (E-15) |
+| 2.4 | `POST /api/auth/refresh` | ✅ Rotation under a session-row lock with the token read after it; reuse past a 20 s grace window revokes the session (every successor with it); one `SESSION_INVALID` answer for every refusal; cookie cleared on refusal. Proven by a controlled-interleaving test and a mutation run |
+| 2.5 | `POST /api/auth/logout` | ✅ Revokes the cookie's session (reason `logout`), never relabels one already revoked, clears the cookie first, always answers `{ ok: true }` |
+| 2.6 | CSRF | ✅ `Origin` must be on the configured list for every state-changing request under `/api/auth`, checked on the router before routes and rate limiting. No CSRF token or `Referer` fallback, and why, in `originCheck.js` |
+| 2.7 | HTTP auth middleware | ✅ `requireAuth`: `Authorization: Bearer` only, no I/O, frozen `request.user`, RFC 6750 challenges. `GET /api/auth/me` (pulled forward from Phase 6) re-checks session, `token_version` and status against the database |
+
+### Phase 2 UI — Sign-in in the web app ✅ **COMPLETE** (2026-09-24)
+
+Built on Phase 2, as the owner sequenced it. New files under
+`Frontend/src/features/auth/` and `Frontend/src/components/auth/`. Existing
+components change only where the account entry points attach.
+
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| UI-1 | Client + form rules | ✅ `authClient.js` (typed errors, cookie sent only where needed, whole-session validation), `authForm.js` (the server's codes, limits and wording), `authContract.test.js` guarding drift |
+| UI-2 | Session controller | ✅ `authSession.js`: restore on load, refresh a minute before expiry, retry on network failure without signing out, Web Locks single-flight, cross-tab sign-in/out carrying no token, generation counter so a late refresh cannot undo a sign-out, sign-out that waits for the server |
+| UI-3 | Dialogs and entry points | ✅ `AuthDialog` (both modes, field and form errors, password managers, 44px targets and 16px text on touch), `AccountDialog`, account section leading the board menu on every layout, `AuthProvider` |
 
 ### Phase 3 — Session management
 
 `GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id`, revoke-all-others.
+
+Also a scheduled purge of sessions that expired or were revoked more than a
+retention period ago. Their tokens cascade with them. Without it,
+`refresh_tokens` grows by one row per rotation forever (E-13). **Required before
+launch**, and it gets an index on `auth_sessions` when its query is written.
 
 ### Phase 4 — Email workflows · *parallel with 2/3 once Phase 1 lands*
 
@@ -116,14 +137,25 @@ that distinguishes auth failure from a network drop.
 
 ### Phase 6 — Account management
 
-`GET`/`PATCH /api/auth/me`; password change (revokes other sessions); email
+`PATCH /api/auth/me` (`GET` landed in 2.7); password change (revokes other sessions); email
 change (verify before effect); data export; deletion with soft delete, grace
 period and hard delete; the deleted-boards policy (D-7).
 
-### Phase 7 — Auth hardening
+### Phase 7 — Auth hardening ← **in progress**
 
-Redis-backed per-IP and per-account rate limits; lockout with backoff; bot
-protection (D-8); a security review of the whole surface.
+Reordered on 2026-09-25 so the production blockers come first: the live API had
+no database, was cross-site to the app, and sits behind proxies that make every
+client look alike.
+
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| 7.0 | Production topology | ✅ Same-origin auth: `Frontend/vercel.json` rewrite, Vite dev proxy, same-origin client. `docs/DEPLOYMENT.md`. E-15 resolved; E-16, E-17, E-18 recorded |
+| 7.1 | Real client addresses | ✅ Vercel's route adds a secret (`AUTH_PROXY_SECRET`, from its environment at request time). With it configured, `/api/auth` refuses requests without it, and trusts `x-vercel-forwarded-for` on those with it. Rate limits and session records use that address. Never `X-Forwarded-For`. Contract test ties the header name across both sides |
+| 7.2 | Shared limit store | ✅ `rate_limit_counters` (0003) and `createPostgresRateLimiter`: atomic upsert per request, database-clock windows, hashed keys, self-sweeping. Sign-in and sign-up moved onto it. ADR 0006 |
+| 7.3 | Limits on every auth route | ✅ A separate "session" allowance (60/min per client) on refresh, sign-out and me. Refused whole, before any token, session or cookie is touched. The web app treats a 429 as a pause, and a 404 (accounts off: no database) as "unavailable", hiding the account menu with no retry loop |
+| 7.4 | Per-account backoff | Slows guessing at one account without letting anyone lock its owner out |
+| 7.5 | Bot protection | Cloudflare Turnstile on signup (E-18) |
+| 7.6 | Security review | The whole Step 1 surface |
 
 ### Phase 8 — OAuth
 

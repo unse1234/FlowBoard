@@ -1,6 +1,6 @@
 # 0003 — Design for multiple instances from the first commit
 
-- **Status:** Accepted
+- **Status:** Accepted. Its Redis-backed rate limiting is superseded for auth by ADR 0006 (PostgreSQL), 2026-09-25
 - **Date:** 2026-09-23
 
 ## Context

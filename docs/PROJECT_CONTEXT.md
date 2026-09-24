@@ -112,18 +112,23 @@ Accounts, login, workspaces, a board dashboard, folders, templates, comments,
 version history, permissions, server-side board persistence, file/object
 storage, email, notifications, billing, an admin surface, and a public API.
 
-A database now exists, but holds only an empty `users` table — see §7.
+A database now exists, holding accounts and sessions only (§7). Boards are not in it.
 
 ## 5. Authentication state
 
-**None.** There is no authentication, authorisation, or user account anywhere in
-the repository. Verified by reading every backend route and socket handler, and
-by keyword sweeps for `jwt|bcrypt|passport|oauth|session|login|password|
-authenticat|authoriz` across `Backend/src` and `Frontend/src` — every hit was a
-false positive (an AI diagram example label such as "Login flow", or an unrelated
-WebRTC "ICE session" comment).
+**Accounts and sessions exist; authorisation does not** (updated 2026-09-24).
 
-What exists instead is an **ephemeral display identity**:
+- **Accounts:** signup and login with Argon2id passwords (Step 1 Phase 1).
+- **Sessions:** 15-minute HS256 access tokens and a rotating HttpOnly refresh
+  cookie with reuse detection, logout and CSRF protection. `requireAuth`
+  authenticates HTTP routes (Phase 2).
+- **Web app:** sign in, create an account and sign out from the board menu, and
+  stay signed in across reloads (`Frontend/src/features/auth/`,
+  `Frontend/src/components/auth/`).
+- **Not yet:** the board and realtime layer ignore accounts, nothing is
+  authorised, and boards are not stored against anyone (Phase 5, Step 2).
+
+What the board uses instead, until Phase 5, is an **ephemeral display identity**:
 
 - `userId` — `user_<uuid>`, generated fresh on every page load in
   `Frontend/src/features/realtime/hooks/useRealtimeCollaboration.js:81`. Never
@@ -169,8 +174,10 @@ PostgreSQL 18.6.
   size, connection and statement timeouts, transaction helper, graceful drain.
 - Migrations: `Backend/src/db/migrate.js`, forward-only, advisory-locked.
   `npm run migrate`.
-- Schema: one table, `users` (`Backend/migrations/0001_create_users.sql`).
-  **Nothing writes to it yet** — there is no signup.
+- Schema: `users` (`0001_create_users.sql`), written by signup and read by
+  login; `auth_sessions` and `refresh_tokens`
+  (`0002_create_auth_sessions_and_refresh_tokens.sql`), which **nothing writes
+  to yet** — tokens are Phase 2 chunks 2.2–2.4.
 - Readiness: `GET /ready` verifies connectivity; `GET /health` stays liveness.
 
 Board content is **not** in the database. That is Step 2.
@@ -202,9 +209,11 @@ operation log and into `localStorage`.
 - `Backend/.env` is loaded via `process.loadEnvFile` and is gitignored;
   `.env.example` is the committed template. **No secrets are committed.**
 - `serverConfig.js:4` hardcodes `https://flow-board-beige.vercel.app/` as a
-  default allowed origin, implying a deployed frontend. **UNKNOWN:** how and
-  where either service is actually deployed — no deployment config is in the
-  repository.
+  default allowed origin.
+- **Deployed (confirmed 2026-09-25):** the web app on Vercel
+  (`flow-board-beige.vercel.app`, root directory `Frontend`), the API on Render
+  (`flowboard-dmpm.onrender.com`, behind Cloudflare), **no production database
+  yet**. Neon is chosen (E-16). Full detail in `DEPLOYMENT.md`.
 
 ## 9. Testing state
 

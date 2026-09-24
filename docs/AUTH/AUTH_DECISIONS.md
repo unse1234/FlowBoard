@@ -185,6 +185,126 @@ single-request oracle.
 
 **Status:** Accepted 2026-09-23. Chosen by the project owner.
 
+## E-13 · A token family is a row of its own
+
+**Decision:** ADR 0002's "family" is stored as an `auth_sessions` row, and each
+refresh token references its session. There is no `family_id` column repeated
+across tokens. `AUTH_PLAN.md` chunk 2.1 said "`refresh_tokens` migration …
+family id". This is the same model with the family made explicit.
+
+**Reason:** revoking a family has to be race-free. With a shared `family_id`,
+revocation is `UPDATE refresh_tokens … WHERE family_id = $1`. Under READ
+COMMITTED, that update cannot see a successor inserted by a rotation that
+commits at the same moment, so the thief's copy of the family can outlive its
+own revocation. With a session row, rotation and revocation both go through one
+row, and a revoked session invalidates every token in it whenever it was made.
+The same row also gives Phase 3 a table to list, and holds the absolute session
+lifetime, which rotation must never extend.
+
+**Impact:**
+
+- Chunk 2.4 must check the session, not only the token, on every refresh, and
+  must lock the session row while rotating. That lock is also the natural point
+  for the concurrency safety ADR 0002 requires.
+- Consumed tokens are kept until their session is purged, because reuse
+  detection needs them. Deleting one would turn the replay of a stolen token
+  into an ordinary "unknown token". **Rows grow with every rotation,** so a purge
+  of expired and revoked sessions is required before launch. It is not built;
+  see `AUTH_PLAN.md` Phase 3.
+- Two expiries: a per-token idle limit and a per-session absolute limit. Their
+  values are chunk 2.3's to choose.
+
+**Evidence:** `Backend/migrations/0002_create_auth_sessions_and_refresh_tokens.sql`.
+
+**Status:** Accepted 2026-09-24. An implementation choice made in chunk 2.1
+within ADR 0002, not by the project owner, so reverse it here if it is wrong.
+
+## E-14 · Access tokens are HS256, signed with `node:crypto`
+
+**Decision:** no JWT library. One module, `Backend/src/auth/accessTokens.js`,
+issues and verifies. It accepts only HS256, only the header fields it writes,
+and chooses the key by `kid` from a keyring configured in
+`AUTH_ACCESS_TOKEN_KEYS`.
+**Reason:** one service issues and verifies, so an asymmetric key buys nothing
+yet, and the platform covers HMAC (rule 50).
+**Also resolves** an inconsistency in ADR 0002. `verify` does no I/O, and
+`token_version` is compared where the user row is already read, not on every
+request.
+**Evidence:** `../decisions/0005-access-token-signing.md`.
+**Status:** Accepted 2026-09-24. Chosen in chunk 2.2 at the owner's request to
+decide and record it.
+
+## E-15 · The web app and the API must be same-site
+
+**Decision:** the refresh cookie is `SameSite=Strict`, `HttpOnly`, `Secure`,
+`__Secure-` prefixed, and scoped to `Path=/api/auth`. Production must serve the
+web app and the API from the **same site**, meaning the same registrable domain
+(`app.flowboard.example` and `api.flowboard.example`), or the API proxied under
+the app's own domain.
+
+**Reason:** a browser sends a `Strict` or `Lax` cookie only to the site the
+page is on. If the API is on another site, the cookie is third-party. Safari
+blocks third-party cookies outright, and other browsers partition or restrict
+them. The symptom would be a user who signs in and is signed out again on the
+next reload.
+
+**The escape hatch:** `AUTH_COOKIE_SAME_SITE=none` works where third-party
+cookies still do. It is a stopgap, not a deployment model, and `none` without
+`Secure` stops startup.
+
+**Open:** where the backend is deployed is **UNKNOWN** (`PROJECT_CONTEXT.md`
+§8). `serverConfig.js` names `flow-board-beige.vercel.app` as a web origin, and
+`vercel.app` is on the Public Suffix List, so that deployment is its own site.
+An API anywhere else is cross-site to it. **Settle the production topology
+before the auth UI ships**: a Vercel rewrite of `/api` to the backend is the
+smallest change.
+
+**Status:** Accepted 2026-09-24 (chunk 2.3).
+
+**Resolved 2026-09-25 (chunk 7.0).** The owner confirmed the API runs on
+Render (`flowboard-dmpm.onrender.com`) and the app on Vercel, two different
+sites. The web app now calls `/api/auth` on its own origin. Vercel rewrites
+it to Render in production (`Frontend/vercel.json`), and Vite's proxy does the
+same in development. The cookie is first-party everywhere, and
+`SameSite=Strict` stands. See `../DEPLOYMENT.md`.
+
+## E-16 · Production database: Neon
+
+**Decision:** the Render backend uses a Neon PostgreSQL database, through the
+**direct** (unpooled) connection string with `sslmode=verify-full`.
+**Reason:** a free tier that does not expire. The direct string, because the
+migration runner holds a session-level advisory lock that a transaction-mode
+pooler cannot keep. `verify-full`, because `pg` 8 warns that `require` stops
+verifying certificates in v9, and a URL `sslmode` overrides `DATABASE_SSL`
+(F-23).
+**Found first:** production had no database at all on 2026-09-25 (`/ready`:
+`not_configured`), so every auth route was a 404 there.
+**Status:** Chosen by the project owner, 2026-09-25. Provisioning is the
+owner's step (`../DEPLOYMENT.md`).
+
+## E-17 · Rate-limit counters live in PostgreSQL
+
+**Decision:** Phase 7's shared rate limits keep their counters in PostgreSQL,
+behind an interface Redis can later implement.
+**Reason:** production has no Redis, and adding one means a second managed
+service for traffic that is small: sign-in, sign-up and refresh. PostgreSQL is
+already required, and an atomic upsert per attempt is cheap at that volume.
+Realtime traffic, when it needs shared limits or Socket.IO fan-out, is where
+Redis earns its place.
+**Supersedes:** ADR 0003's "Redis-backed rate limiting", for auth only. ADR
+0006 records it (chunk 7.2).
+**Status:** Chosen by the project owner, 2026-09-25.
+
+## E-18 · Bot protection: Cloudflare Turnstile · *was D-8*
+
+**Decision:** signup is protected by Cloudflare Turnstile, verified on the
+server.
+**Reason:** free, usually invisible, no image puzzles, and it does not track
+people across sites for advertising.
+**Impact:** a site key in the frontend (public) and a secret key on the server.
+Chunk 7.5.
+**Status:** Chosen by the project owner, 2026-09-25.
+
 ---
 
 # UNRESOLVED
@@ -225,10 +345,7 @@ cannot be answered from the repository. Interacts with GDPR erasure (§26).
 
 ## D-8 · Bot protection mechanism
 
-**Question:** CAPTCHA, proof-of-work, or another approach on signup.
-**Why unresolved:** no precedent; a third-party choice with privacy
-implications.
-**Status:** UNRESOLVED. Needed for Phase 7.
+**Status:** RESOLVED 2026-09-25 as E-18 (Cloudflare Turnstile).
 
 ## D-9 · OAuth email collision policy
 

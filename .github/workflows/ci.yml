@@ -63,7 +63,7 @@ jobs:
           #
           # Raise this when adding tests. A drop means something stopped being
           # collected, which is worth failing over.
-          MINIMUM_TESTS: 264
+          MINIMUM_TESTS: 411
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-output.txt
@@ -103,7 +103,7 @@ jobs:
       - name: Test
         working-directory: Frontend
         env:
-          MINIMUM_TESTS: 207
+          MINIMUM_TESTS: 267
         run: |
           set -o pipefail
           npm run test:realtime 2>&1 | tee test-output.txt

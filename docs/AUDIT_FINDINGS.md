@@ -27,12 +27,16 @@ resolved by Step 1 rather than by a patch.
 | F-11 | MEDIUM | Correctness | Local cache and server replay can both seed a room |
 | F-12 | LOW | Maintainability | Voice event names are a third, unguarded contract copy |
 | F-13 | ~~LOW~~ | Ops | ~~`/health` reports health it never checks~~ — **RESOLVED 2026-09-23** |
-| F-14 | LOW | Security | AI rate limiting is per-IP, in-memory, and proxy-naive |
+| F-14 | ~~LOW~~ → **MEDIUM** | Security | AI rate limiting is per-IP, in-memory, and proxy-naive: **in production every AI user shares one allowance** |
 | F-15 | MEDIUM | Dependencies | `qs` DoS advisory reaches the app through express |
 | F-16 | MEDIUM | Availability | Password hashing can starve the libuv threadpool |
 | F-17 | LOW | Security | Signup timing differs slightly between a free and a taken address |
 | F-18 | ~~HIGH~~ | Testing | ~~Test globs collected a fraction of the suite on Linux~~ — **RESOLVED 2026-09-24** |
 | F-19 | ~~MEDIUM~~ | Rendering | ~~Opacity and fill decided inconsistently per renderer~~ — **RESOLVED 2026-09-24** |
+| F-20 | ~~MEDIUM~~ | Tooling | ~~Migration checksums change with the checkout's line endings~~ — **RESOLVED 2026-09-24** |
+| F-21 | LOW | Correctness | The 254-character address limit counts UTF-16 units, not octets |
+| F-22 | LOW | UX | `JoinRoomDialog`'s input zooms the page on iPhone |
+| F-23 | MEDIUM | Security | A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL` |
 
 ---
 
@@ -495,6 +499,141 @@ look is a one-line change in `getFillColor`.
 
 ---
 
+## F-20 — RESOLVED 2026-09-24 — Migration checksums change with the checkout's line endings
+
+**Resolved** by both halves of the fix below:
+
+- `readMigrations` (`Backend/src/db/migrate.js`) converts CRLF to LF before
+  hashing, and runs the normalised text, so what runs is what was hashed.
+- `.gitattributes` checks `Backend/migrations/*.sql` out with LF everywhere.
+
+Three tests in `migrate.test.js` cover it: CRLF and LF copies hash the same while
+a real edit still differs; a CRLF checkout of a migration recorded from LF is up
+to date; and 0001 hashes to `1eca2330…`, the checksum real databases recorded.
+**All three fail with the normalisation removed.** The development database then
+migrated cleanly: 0002 applied, and a second run found nothing to do.
+
+What follows is the finding as recorded.
+
+
+**Found 2026-09-24 by chunk 2.1**, when `npm run migrate` refused to apply 0002
+to the local development database:
+
+```
+Migration "0001_create_users" has changed since it was applied.
+```
+
+0001 had not been edited. Its git history is one commit (`ba4b608`), and the
+working tree was clean.
+
+**Cause.** `readMigrations` in `Backend/src/db/migrate.js` hashes the file's raw
+bytes. This machine has `core.autocrlf=true`, and the repository has no
+`.gitattributes`, so git checks the `.sql` files out with CRLF endings. The
+development database recorded 0001's checksum when the file had LF endings:
+
+| Bytes hashed | SHA-256 |
+| --- | --- |
+| 0001 with LF endings (what `schema_migrations` holds) | `1eca2330…52cfb03` |
+| 0001 with CRLF endings (what is on disk now) | `646d1c39…e9e08ec` |
+
+The runner therefore reads a line-ending conversion as an edited migration.
+
+**Effect.**
+
+- **It fails safe.** The runner refuses to run and applies nothing, so no
+  schema is corrupted.
+- **Every migration is exposed.** 0002 is on disk with LF endings today and
+  will change checksum the first time git rewrites it.
+- **Any persistent database is exposed, not just this machine's.** A database
+  migrated from a Linux checkout (CI, a deploy) cannot then be migrated from a
+  Windows checkout, and the reverse is also true.
+- **The test suites cannot see it.** Every integration test migrates a freshly
+  emptied schema, so the checksums always agree with whatever is on disk.
+
+**Blocks:** applying 0002 to the development database. Nothing reads the new
+tables yet, but chunk 2.3 will need them.
+
+**Fix, recommended as the next chunk:**
+
+1. Normalise CRLF to LF in `readMigrations` before hashing. Every checksum
+   already recorded was taken over LF bytes, so this matches them all, and it
+   holds whatever a future checkout does.
+2. Add a `.gitattributes` rule, `Backend/migrations/*.sql text eol=lf`, so the
+   files themselves stop changing.
+
+Either one fixes this machine. Both are needed to fix it everywhere. Test the
+runner with a CRLF copy of a migration that has been recorded as LF.
+
+**Do not** repair the development database by rewriting the checksum in
+`schema_migrations`. That is the same bypass drift detection exists to prevent,
+and it would hide the next real edit.
+
+---
+
+## F-21 — LOW — The 254-character address limit counts UTF-16 units, not octets
+
+**Found 2026-09-24 by chunk UI-1**, while mirroring the server's rules in the
+sign-up form.
+
+`parseEmailAddress` (`Backend/src/auth/emailAddress.js`) measures the local
+part and the domain in UTF-8 bytes, but the whole address in UTF-16 units
+(`email.length > MAX_EMAIL_LENGTH`). The STATUS docs describe the limits as
+"byte-counted RFC 5321 limits", which is only two thirds true.
+
+**Effect:** an internationalised address under 254 units can exceed RFC 5321's
+254-octet path limit, and some mail servers would refuse it. Phase 4, which
+sends mail, would find out at delivery. **Not a security issue:** nothing is
+truncated, and the per-part byte limits still apply.
+
+**Fix, when Phase 4 lands:** count the whole address in bytes as well. The web
+form mirrors the server's measure on purpose, since a client check must never
+be stricter than the server's, and `Frontend/src/features/auth/
+authContract.test.js` will fail until the form follows. That failure is the
+intended prompt.
+
+---
+
+## F-22 — LOW — `JoinRoomDialog`'s input zooms the page on iPhone
+
+**Found 2026-09-24 by chunk UI-3.** iOS Safari zooms the page into any focused
+input whose text is under 16px, and the viewport (`Frontend/index.html`) does
+not forbid zoom, correctly, since forbidding it hurts accessibility. The display
+name input in `Frontend/src/components/collab/JoinRoomDialog.jsx` is
+`text-body`, which is 13px, so on an iPhone, joining a board zooms the page in
+and leaves it there.
+
+**Fix:** the same as `Frontend/src/components/auth/AuthField.jsx`, which adds
+`pointer-coarse:text-[16px]` for exactly this reason. Not applied here, because
+`components/collab` is outside Step 1's scope.
+
+## F-23 — MEDIUM — A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL`
+
+**Found 2026-09-25 by chunk 7.0**, while writing the Neon instructions.
+
+`createDatabase` passes `ssl` from `DATABASE_SSL` alongside the connection
+string. `pg` parses the string last, and a `sslmode` in it replaces the `ssl`
+option entirely. Measured with `pg` 8.23:
+
+| Connection string | `ssl` option | TLS settings actually used |
+| --- | --- | --- |
+| `…?sslmode=require` | `{ rejectUnauthorized: true }` | `{}`, from the URL |
+| no `sslmode` | `{ rejectUnauthorized: true }` | `{ rejectUnauthorized: true }` |
+
+**Effect:** `DATABASE_SSL=require` is documented as "verifies the certificate"
+(`serverConfig.js`, `.env.example`), and is ignored whenever the URL names a
+mode. Managed providers' strings, Neon's included, always do. Today `pg` 8
+treats `require` as full verification, so nothing is weaker **yet**. `pg`
+itself warns that v9 will give `require` libpq's meaning: encrypt, verify
+nothing. A dependency bump would then quietly drop certificate checks.
+
+**Mitigated for production** by `DEPLOYMENT.md`, which puts
+`sslmode=verify-full` in the URL.
+**Fix:** have `createDatabase` refuse a connection string whose `sslmode`
+disagrees with `DATABASE_SSL`, or read the mode from one place only. Small,
+but it is the database layer, so it gets its own chunk.
+
+---
+
 ## Things that were checked and found sound
 
 Recorded so future sessions do not re-audit them.
@@ -504,9 +643,13 @@ Recorded so future sessions do not re-audit them.
 - **No SQL injection surface** — there is no database.
 - **No XSS sink found** — no `dangerouslySetInnerHTML`, `innerHTML`, `eval`,
   `new Function` or `document.write` in `Frontend/src`.
-- **No CSRF surface today** — no cookies are set or read anywhere, and the only
-  mutating HTTP endpoint is authenticated by nothing, so there is no ambient
-  authority to ride. **This changes the moment Step 1 introduces cookies.**
+- **CSRF is defended** (updated 2026-09-24). Step 1 introduced the refresh
+  cookie in chunk 2.3, and with it ambient authority. Chunk 2.6 closed it.
+  Every state-changing request to `/api/auth` needs an `Origin` on the
+  configured list (`Backend/src/http/originCheck.js`), checked on the router
+  before any route or the rate limiter runs. The cookie is also
+  `SameSite=Strict` and scoped to `Path=/api/auth`, so no other route receives
+  it. Routes outside `/api/auth` still set and read no cookies.
 - **Prompt injection is defended.** Request and board context are tag-delimited
   with `<` escaped, the system instruction names them as data, and the model's
   output is schema-validated before it leaves the server
