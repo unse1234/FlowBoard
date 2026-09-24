@@ -32,6 +32,9 @@ function withSeparators(sections) {
  *
  * `onGenerateDiagram` adds the AI diagram entry, for layouts with no room for
  * its button beside the tool dock.
+ *
+ * `accountItems` (components/auth/accountMenuItems.js) lead the menu: signing
+ * in, or who is signed in and signing out.
  */
 export function buildBoardMenuItems({
   hasShapes,
@@ -47,8 +50,10 @@ export function buildBoardMenuItems({
   onClearBoard,
   onGenerateDiagram,
   touchActions,
+  accountItems = [],
 }) {
   return withSeparators([
+    accountItems,
     [
       onGenerateDiagram && {
         id: "generate-diagram",

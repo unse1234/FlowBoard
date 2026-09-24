@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "routes": [
+    {
+      "src": "/api/auth/(.*)",
+      "dest": "https://flowboard-dmpm.onrender.com/api/auth/$1",
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": { "key": "x-flowboard-edge-secret" },
+          "args": "$AUTH_PROXY_SECRET",
+          "env": ["AUTH_PROXY_SECRET"]
+        }
+      ]
+    }
+  ]
+}
