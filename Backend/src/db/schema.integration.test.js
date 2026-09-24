@@ -170,17 +170,28 @@ test("the database rejects a blank display name", { skip: SKIP }, async (t) => {
   );
 });
 
-test("updated_at moves on its own", { skip: SKIP }, async (t) => {
+test("updated_at is set by the trigger, not by the statement", { skip: SKIP }, async (t) => {
   const database = await freshDatabase(t);
   const { rows } = await insertUser(database);
 
+  // The statement asks for a date in 2000. The trigger must overwrite it.
+  //
+  // Deliberately not written as "updated_at is later than created_at": two
+  // statements microseconds apart can read the same clock on a virtualised CI
+  // host, which made that version fail there and pass locally. This asserts the
+  // trigger's actual job, and does so without depending on time passing.
   const { rows: updated } = await database.query(
-    "UPDATE users SET display_name = $2 WHERE id = $1 RETURNING created_at, updated_at",
+    `UPDATE users
+     SET display_name = $2, updated_at = timestamptz '2000-01-01 00:00:00Z'
+     WHERE id = $1
+     RETURNING updated_at`,
     [rows[0].id, "Ada Lovelace"],
   );
 
-  // The trigger keeps this honest even for a statement that forgot to set it.
-  assert.ok(updated[0].updated_at > updated[0].created_at);
+  assert.ok(
+    updated[0].updated_at > new Date("2020-01-01T00:00:00Z"),
+    `trigger did not overwrite updated_at: got ${updated[0].updated_at.toISOString()}`,
+  );
 });
 
 test("a transaction rolls back a failed multi-step write", { skip: SKIP }, async (t) => {
