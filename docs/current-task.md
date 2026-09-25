@@ -6,7 +6,7 @@
 
 ## Current task
 
-Step 1 · **Phases 2, 3 and 7 complete.** Auth is built, hardened and deployed dark: it switches on when production has a database.
+Step 1 · **Phases 1–4 and 7 complete; the owner's Phases B–E in progress** (account settings, boards and roles, socket security, social sign-in). Auth is deployed dark: it switches on when production has a database.
 
 ## Status
 
@@ -72,11 +72,11 @@ decided opacity for itself. Opacity is now set once, on the outermost node.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **463 pass, 0 fail, 0 skipped** |
-| Frontend | **283 pass, 0 fail** |
+| Backend | **516 pass, 0 fail, 0 skipped** |
+| Frontend | **300 pass, 0 fail** |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 463. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 516. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
 

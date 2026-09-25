@@ -117,11 +117,18 @@ components change only where the account entry points attach.
 | 3.2 | Session API | ✅ `GET /api/auth/sessions` (live, most recent first, current marked), `DELETE /api/auth/sessions/:id`, `POST /api/auth/sessions/revoke-others`. All behind `requireAuth` plus the live-session check. Another account's session, a made-up id and an ended one all answer the same 404. Mutation-checked, cross-account cases included |
 | 3.3 | Devices in the account dialog | ✅ "Where you're signed in": each device in plain words ("Chrome on Windows"), last active, this one marked, sign out one or everywhere else |
 
-### Phase 4 — Email workflows · *parallel with 2/3 once Phase 1 lands*
+### Phase 4 — Email workflows ✅ **COMPLETE** (2026-09-25, the owner's "Phase A")
 
-Provider abstraction with a no-op dev transport (D-4); single-use expiring
-hashed tokens; verification; forgot-password that always responds identically;
-reset that revokes all sessions; the unverified-account policy (D-5).
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| 4.1 | Email service | ✅ `Backend/src/email/`: Resend over `fetch` with bounded retries under one idempotency key, escaped templates, background sending with `drain()` on shutdown, `RESEND_API_KEY` / `MAIL_FROM` / `APP_URL` (E-19, ADR 0007). No dev transport: tokens are never logged |
+| 4.2 | Account tokens | ✅ `account_tokens` (migration 0006): one per account and purpose, SHA-256 at rest, replaced on reissue, deleted on use |
+| 4.3 | Verification | ✅ Signup emails a 24-hour link, or "you already have an account" (E-12 complete). `POST /verify-email`, `POST /resend-verification` (signed in, capped per address) |
+| 4.4 | Password reset | ✅ `POST /forgot-password` (one answer for every address, work done after the response), `POST /reset-password` (30-minute link, ends every session, bumps `token_version`, confirms the address, clears sign-in backoff, sends a notice) |
+| 4.5 | Web app | ✅ Verification banner (dismissible per browser session), `/verify-email` and `/reset-password` links, "Forgot password?", reset dialog. `vercel.json` serves the link paths |
+
+The unverified-account policy itself (E-20) is enforced where collaboration
+happens: the board API and the socket gateway (Phases 5 and C).
 
 ### Phase 5 — Socket authentication and authorisation
 

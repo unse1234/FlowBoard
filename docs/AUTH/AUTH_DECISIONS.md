@@ -305,43 +305,105 @@ people across sites for advertising.
 Chunk 7.5.
 **Status:** Chosen by the project owner, 2026-09-25.
 
+## E-19 · Transactional email: Resend · *was D-4*
+
+**Decision:** every email FlowBoard sends (verification, password reset,
+security notices) goes through Resend's HTTP API, behind one service
+(`Backend/src/email/emailService.js`). No SMTP, and no marketing mail.
+Configured by `RESEND_API_KEY`, `MAIL_FROM` and `APP_URL`; a key without the
+other two stops startup. Without a key, email is off and says so.
+**How:** plain `fetch`, like Turnstile, rather than Resend's SDK (rule 50).
+Every email carries an idempotency key, and retries reuse it. Sending happens
+in the background, so a response's timing never depends on whether an email
+went out (the forgot-password non-enumeration rule needs that). ADR 0007.
+**Local development:** no dev transport. Set a Resend test key (Resend sends
+to your own address from its shared test domain), or leave email off. Tests use
+an in-memory mailbox.
+**Status:** Chosen by the project owner, 2026-09-25.
+
+## E-20 · An unverified account may do everything but collaborate · *was D-5*
+
+**Decision:** an account exists and signs in before its address is confirmed.
+It may use its own boards and account freely. It may not invite anyone, accept
+an invitation, join a shared board, or use realtime collaboration or voice.
+**Enforced on the server** (the board API and the socket gateway); the web app
+only explains it, with a dismissible banner that returns each browser session
+until the address is confirmed. Never a redirect loop.
+**Links:** verification links live 24 hours; reset links 30 minutes. Both are
+single-use, stored as SHA-256 digests, and a new one replaces the old
+(`account_tokens`, migration 0006). Using a reset link also confirms the
+address, since the link reached it.
+**Status:** Chosen by the project owner, 2026-09-25.
+
+## E-21 · Sharing: private by default, three roles, invitations · *was D-6*
+
+**Decision:** a board is private to its owner until the owner invites someone.
+Roles are `owner` (one per board: everything, including deleting it and
+handing it over), `editor` (edits, collaborates in real time) and `viewer`
+(reads, sees others, cannot change anything). Membership is stored in the
+database, which is the only source of authority: a Socket.IO room is transport,
+and knowing a board id grants nothing.
+**Invitations:** a random token in the link (`/invite/<token>`), stored as a
+digest, defaulting to editor, 7 days and one use. The owner can revoke or make
+new ones. Accepting needs a signed-in, verified account. Anything invalid,
+expired, revoked or used up fails closed.
+**Replaces** today's "anyone with the link edits" rooms, when a database is
+configured. ADR 0008.
+**Status:** Chosen by the project owner, 2026-09-25.
+
+## E-22 · A deleted account's boards are never left ownerless · *was D-7*
+
+**Decision:** deleting an account deletes its private boards (no other
+members). A board it owns that has other members blocks deletion until the
+owner either hands it to one of them or deletes it. Nothing is reassigned
+automatically, and there is no "deleted user" pseudo-owner. The account's
+memberships of other people's boards are removed.
+**Status:** Chosen by the project owner, 2026-09-25.
+
+## E-23 · Social sign-in never links accounts by email · *was D-9*
+
+**Decision:** Google, GitHub and Microsoft identities are rows of their own
+(`auth_identities`), keyed on the provider's stable id: Google `sub`, GitHub's
+numeric id, Microsoft tenant plus `oid`. Never an email address. A provider
+sign-in whose identity is unknown but whose email matches an existing account
+is refused with "sign in with your existing account, then connect this
+provider", never merged. Linking happens only from a signed-in account's
+settings, and an identity already linked elsewhere is refused. The last way to
+sign in cannot be removed. Provider access tokens are not stored. ADR 0009.
+**Status:** Chosen by the project owner, 2026-09-25.
+
+## E-24 · Deleting an account is immediate
+
+**Decision:** deletion removes the account at once, with its sessions,
+identities, tokens and memberships, after a fresh proof of identity (the
+password, or a recent provider sign-in) and a typed confirmation. There is no
+grace period or restore.
+**Supersedes** the soft delete with a grace period that migration 0001's
+comments anticipated (`deleted_at`, `pending_deletion`). Those columns stay,
+unused by this path, for a later "deactivate" feature if one is wanted.
+**Reason:** the owner's specification requires personal data to go at once
+and every session to end immediately. A grace period keeps both alive.
+**Status:** Chosen by the project owner, 2026-09-25.
+
 ---
 
 # UNRESOLVED
 
 ## D-4 · Email provider
 
-**Question:** which transactional email service, and the local development
-transport.
-**Why unresolved:** no mailer dependency, no templates, no provider
-configuration anywhere.
-**Status:** UNRESOLVED. Needed for Phase 4.
+**Status:** RESOLVED 2026-09-25 as E-19 (Resend).
 
 ## D-5 · What an unverified account may do
 
-**Question:** can a user sign in, create boards or join rooms before verifying
-their email?
-**Why unresolved:** a product decision with no technical forcing function.
-**Status:** UNRESOLVED. Needed for Phase 4.
+**Status:** RESOLVED 2026-09-25 as E-20 (everything but collaboration).
 
 ## D-6 · The interim sharing model once auth exists
 
-**Question:** when Phase 5 starts authorising `board:join`, what happens to
-today's "anyone with the link edits" behaviour — before Step 12 defines roles?
-**Why unresolved:** Phase 5 must not leave boards unreachable, and must not
-keep F-1 open. Some interim rule is required, and the audit does not determine
-which.
-**Why it matters:** this is the one place Step 1 changes existing product
-behaviour. Everything else in Step 1 is additive.
-**Status:** UNRESOLVED. Needed for Phase 5. Decide before starting it.
+**Status:** RESOLVED 2026-09-25 as E-21 (private by default, three roles, invitations).
 
 ## D-7 · What happens to a deleted user's boards
 
-**Question:** on account deletion, are their boards deleted, anonymised, or
-transferred?
-**Why unresolved:** there is no board ownership model yet, so the question
-cannot be answered from the repository. Interacts with GDPR erasure (§26).
-**Status:** UNRESOLVED. Needed for Phase 6.
+**Status:** RESOLVED 2026-09-25 as E-22 (hand over or delete; never ownerless).
 
 ## D-8 · Bot protection mechanism
 
@@ -349,13 +411,7 @@ cannot be answered from the repository. Interacts with GDPR erasure (§26).
 
 ## D-9 · OAuth email collision policy
 
-**Question:** an OAuth login whose email matches an existing password account —
-auto-link, require password confirmation, or refuse?
-**Why unresolved:** a security-sensitive product decision. Auto-linking on an
-unverified provider email is an account-takeover vector.
-**Status:** UNRESOLVED. Needed for Phase 8.
-
----
+**Status:** RESOLVED 2026-09-25 as E-23 (never linked by email).
 
 ## How to resolve one
 

@@ -74,6 +74,9 @@ production.
 | `CLIENT_ORIGIN` | `https://flow-board-beige.vercel.app` | The only page allowed to call the API. The built-in default also allows `http://localhost:5173`, which production should not |
 | `AUTH_PROXY_SECRET` | The **same** value as on Vercel (below) | Proves an auth request came through Vercel's route, so the client address it carries can be trusted. Requests without it are refused |
 | `GEMINI_API_KEY` | (already set) | AI diagrams |
+| `RESEND_API_KEY` | A Resend API key with sending access | Verification, password reset and security emails (E-19). Without it nobody can confirm an address, so **nobody can collaborate**, and nobody can reset a password |
+| `MAIL_FROM` | `FlowBoard <no-reply@your-domain>`, on a domain verified in Resend | The sender. Required with the key |
+| `APP_URL` | `https://flow-board-beige.vercel.app` | Where email links point. Required with the key; an origin only, https |
 
 Leave `AUTH_COOKIE_SECURE` and `AUTH_COOKIE_SAME_SITE` unset. Their defaults
 (`Secure`, `Strict`) are the production values.
@@ -118,6 +121,24 @@ has always had the same wait.
 - Preview deployments are not on `CLIENT_ORIGIN`, so sign-in is refused there
   (`ORIGIN_NOT_ALLOWED`). That is deliberate; add a preview origin only on
   purpose.
+
+## Email: Resend (E-19)
+
+1. Create a Resend account and **verify a domain you own** (Resend → Domains:
+   add the DNS records it lists, SPF and DKIM at least). Resend's shared test
+   sender only delivers to your own address, so it is not enough for real
+   users.
+2. Create an API key with **Sending access** only.
+3. Set `RESEND_API_KEY`, `MAIL_FROM` (on the verified domain) and `APP_URL` on
+   Render. The server logs `Email enabled through Resend` at startup; anything
+   else means one of the three is missing.
+4. Sign up with an address you can read and follow the link. Then use "Forgot
+   password?" and check the reset email arrives.
+
+Links in emails open `/verify-email`, `/reset-password` and `/invite/…` on the
+web app. `Frontend/vercel.json` serves the app at exactly those paths (after
+real files), so they must stay in step with `authLinks.js`;
+`edgeContract.test.js` checks it.
 
 ## Checking a deploy
 

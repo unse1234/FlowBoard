@@ -11,7 +11,7 @@ Last updated: 2026-09-24 (Phase 2 and its web UI complete)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 2, 3 and 7 **COMPLETE**; the web UI signs people in and manages devices |
+| **Phase** | 1, 2, 3, 4 (email) and 7 **COMPLETE**; the web UI signs people in, confirms addresses, resets passwords and manages devices |
 | **Task** | None active. Owner steps before auth is live: `DEPLOYMENT.md`, `SECURITY_REVIEW.md` |
 | **Blocker** | None. F-20 resolved; 0002 is applied to the dev database |
 
@@ -62,14 +62,14 @@ detection revokes a stolen session, logout ends it, CSRF is defended, and
 | --- | --- | --- |
 | 0b | ✅ Realtime gateway tests — 50 tests, F-10 resolved | — |
 | 0c | CI pipeline; security headers; Redis | — (unblocked) |
-| 1 | Complete, except the email half of E-12 (needs Phase 4) | — |
+| 1 | ✅ **Complete**, the email half of E-12 included (Phase 4) | — |
 | 2 | ✅ **Complete** — sessions, access + refresh tokens, rotation, reuse detection, logout, CSRF, `requireAuth`, `GET /me` | — |
 | 3 | ✅ **Complete**: purge of dead sessions, session list, end one, end everywhere else | — |
-| 4 | Email delivery, verification, password reset | Phase 1, D-4, D-5 |
-| 5 | Socket authentication and per-board authorisation | Phase 2, Phase 0b, D-6 |
-| 6 | Account settings, deletion, export, soft delete | Phase 1, D-7 |
+| 4 | ✅ **Complete** (spec Phase A): Resend, verification, resend, forgot and reset password, per-address cap | — |
+| 5 | Socket authentication and per-board authorisation (spec Phases C, D) | E-21 decided |
+| 6 | Account settings and deletion (spec Phase B) | E-22, E-24 decided |
 | 7 | Auth rate limiting, lockout, bot protection | Phase 1, D-8 |
-| 8 | OAuth (Google, GitHub, Microsoft) | Phase 2, D-9 |
+| 8 | OAuth (Google, GitHub, Microsoft) (spec Phase E) | E-23 decided |
 | 9 | TOTP + recovery codes | Phase 2 |
 | 10 | SSO / SAML | Phase 8 — deferred |
 
@@ -146,8 +146,20 @@ browser's `sessionStorage`, which is why the table is `auth_sessions`.
 
 ## Email workflows
 
-**None.** No mailer dependency, no templates, no verification or reset tokens,
-no outbound email of any kind.
+**Live in code (Phase 4), off until Resend is configured** (E-19, ADR 0007).
+
+| Email | Sent when | Carries |
+| --- | --- | --- |
+| Confirm your address | Signup; "Resend link" | A single-use link, 24 hours |
+| You already have an account | Signup with a taken address (E-12) | A link to sign in, no token |
+| Reset your password | Forgot-password, for an active account with a password or a verified address | A single-use link, 30 minutes |
+| Your password was changed | A reset (and, in Phase B, a change) | Nothing actionable |
+
+Tokens live in `account_tokens` (migration 0006) as SHA-256 digests, one per
+account and purpose, so a new link replaces the old. Using one deletes it.
+Everything is sent in the background, so no response's timing depends on
+whether an email went out. At most 5 emails an hour reach one address,
+registered or not.
 
 ## Security controls relevant to Step 1
 
@@ -170,8 +182,8 @@ no outbound email of any kind.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **463 pass, 0 fail, 0 skipped** |
-| Frontend | **283 pass** |
+| Backend | **516 pass, 0 fail, 0 skipped** |
+| Frontend | **300 pass** |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
 run against PostgreSQL 18.6 and confirm, among other things, that the login
@@ -243,6 +255,8 @@ rather than assumed.
 | 2026-09-25 | F-23 fixed (TLS in two places refuses to start). F-22 fixed (join dialog zoom on iPhone), at the owner's instruction. Chunk 7.6: security review (`SECURITY_REVIEW.md`): IPv6 limits by /64, client-address fallback, `qs` advisory, web app headers. **Phase 7 complete.** Backend 436 → 448, frontend 273 → 276. |
 | 2026-09-25 | Pushed and live (`189b72f..f8b473b`, CI 448 / 276): web app headers confirmed on Vercel. |
 | 2026-09-25 | **Phase 3 complete**: dead-session purge (migration 0005), session API with cross-account negative tests, devices in the account dialog. Verified with two simulated devices against a live server. Backend 448 → 463, frontend 276 → 283. |
+| 2026-09-25 | Owner decided D-4 to D-9 (recorded as E-19 to E-24) and asked for Phases A to E. |
+| 2026-09-25 | **Phase 4 complete (spec Phase A)**: email service with a Resend transport (ADR 0007), `account_tokens` (migration 0006), verify, resend, forgot and reset password, signup's two emails (E-12 complete), per-address cap. Auth router split so routes share `routeKit.js`. Web app: verification banner, email links, forgot and reset dialogs, `vercel.json` serves the link paths. Mutation-checked; two survivors found and closed. Verified end to end with the web client against a live server. Backend 463 → 516, frontend 283 → 300. |
 
 ---
 
