@@ -52,8 +52,10 @@ test("the response carries nothing but the named fields", { skip: SKIP }, async 
     "displayName",
     "email",
     "emailVerified",
+    "hasPassword",
     "id",
   ]);
+  assert.equal(payload.user.hasPassword, true);
 
   const serialised = JSON.stringify(payload);
   assert.equal(serialised.includes("argon2"), false);

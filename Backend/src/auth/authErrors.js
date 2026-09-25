@@ -142,6 +142,21 @@ const AUTH_ERRORS = Object.freeze({
     message: "This link has expired or has already been used. Ask for a new one.",
   },
 
+  // Account settings (Phase B). The account owner is the one asking, so these
+  // may say plainly what is wrong.
+  CURRENT_PASSWORD_REQUIRED: { status: 400, message: "Enter your current password." },
+  CURRENT_PASSWORD_INCORRECT: { status: 400, message: "That isn't your current password." },
+
+  // A credential change or deletion on an account with no password, whose
+  // session has not proved itself again recently (migration 0007).
+  REAUTHENTICATION_REQUIRED: {
+    status: 403,
+    message: "For your security, confirm it's you: sign in again with your connected account, then try again.",
+  },
+
+  // Deleting an account needs the word typed, so a stray click cannot do it.
+  DELETE_CONFIRMATION_REQUIRED: { status: 400, message: 'Type DELETE to confirm.' },
+
   // The server has no email configured (E-19), so nothing can be sent. Said
   // plainly rather than pretending a message went out.
   EMAIL_UNAVAILABLE: {

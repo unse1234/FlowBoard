@@ -159,6 +159,9 @@ function publicUser(user) {
     // Collaboration needs a verified address (D-5, enforced by the board API
     // and the socket gateway). Everything else works without one.
     emailVerified: Boolean(user.emailVerifiedAt),
+    // Whether settings offer "change password" (needs the current one) or
+    // "set a password" (an account that signs in only through a provider).
+    hasPassword: user.hasPassword === true,
   };
 }
 

@@ -13,6 +13,12 @@
 const { toUser } = require("./userRepository");
 
 /**
+ * How long a fresh provider sign-in counts as proof of identity for setting a
+ * first password or deleting the account (migration 0007).
+ */
+const REAUTHENTICATION_WINDOW_SECONDS = 10 * 60;
+
+/**
  * What exchanging a refresh token can come to.
  *
  * Only ROTATED continues. The router gives the same answer to every other
@@ -104,8 +110,9 @@ function createSessionRepository({ database }) {
                   s.revoked_at IS NOT NULL AS revoked,
                   s.expires_at      AS session_expires_at,
                   s.expires_at <= now() AS session_expired,
-                  u.id, u.email, u.display_name, u.token_version,
-                  u.email_verified_at, u.status, u.deleted_at
+                  u.id, u.email, u.email_normalized, u.display_name, u.token_version,
+                  u.email_verified_at, u.status, u.deleted_at,
+                  u.password_hash IS NOT NULL AS has_password
            FROM auth_sessions s
            JOIN users u ON u.id = s.user_id
            WHERE s.id = (SELECT session_id FROM refresh_tokens WHERE token_hash = $1)
@@ -192,7 +199,9 @@ function createSessionRepository({ database }) {
     async findSessionUser({ userId, sessionId }) {
       const { rows } = await database.query(
         `SELECT u.id, u.email, u.email_normalized, u.display_name, u.token_version, u.email_verified_at,
-                u.status, u.password_hash IS NOT NULL AS has_password
+                u.status, u.password_hash IS NOT NULL AS has_password,
+                COALESCE(s.reauthenticated_at > now() - make_interval(secs => $3), false)
+                  AS recently_reauthenticated
          FROM auth_sessions s
          JOIN users u ON u.id = s.user_id
          WHERE s.id = $1
@@ -200,10 +209,26 @@ function createSessionRepository({ database }) {
            AND s.revoked_at IS NULL
            AND s.expires_at > now()
            AND u.deleted_at IS NULL`,
-        [sessionId, userId],
+        [sessionId, userId, REAUTHENTICATION_WINDOW_SECONDS],
       );
 
-      return rows.length === 0 ? null : toUser(rows[0]);
+      if (rows.length === 0) return null;
+      // Whether this session proved itself again recently (migration 0007),
+      // for the actions that need it. Measured on the database clock.
+      return { ...toUser(rows[0]), recentlyReauthenticated: rows[0].recently_reauthenticated };
+    },
+
+    /**
+     * Record that this session just proved who it is again: a fresh sign-in
+     * with the account's provider (Phase E).
+     */
+    async markReauthenticated({ userId, sessionId }) {
+      const { rowCount } = await database.query(
+        `UPDATE auth_sessions SET reauthenticated_at = now()
+         WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > now()`,
+        [sessionId, userId],
+      );
+      return rowCount === 1;
     },
 
     /**
@@ -335,6 +360,7 @@ function createSessionRepository({ database }) {
 }
 
 module.exports = {
+  REAUTHENTICATION_WINDOW_SECONDS,
   ROTATION,
   createSessionRepository,
 };

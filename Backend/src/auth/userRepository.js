@@ -61,6 +61,41 @@ function createUserRepository({ database }) {
     },
 
     /**
+     * An account by id, with its password hash, for the settings routes that
+     * check the current password. Null for an unknown or deleted account.
+     *
+     * @param {string} userId
+     */
+    async findById(userId) {
+      const { rows } = await database.query(
+        `SELECT id, email, email_normalized, display_name, password_hash, token_version,
+                email_verified_at, status
+         FROM users
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [userId],
+      );
+
+      return rows.length === 0 ? null : toUser(rows[0]);
+    },
+
+    /**
+     * Change the name shown to collaborators. Nothing else about the account.
+     *
+     * @returns {Promise<Object | null>} the updated user
+     */
+    async updateDisplayName({ userId, displayName }) {
+      const { rows } = await database.query(
+        `UPDATE users SET display_name = $2
+         WHERE id = $1 AND deleted_at IS NULL
+         RETURNING id, email, email_normalized, display_name, token_version, email_verified_at, status,
+                   password_hash IS NOT NULL AS has_password`,
+        [userId, displayName],
+      );
+
+      return rows.length === 0 ? null : toUser(rows[0]);
+    },
+
+    /**
      * Replace a stored hash, for a login that found the hash was made with
      * weaker parameters than are now configured.
      *
@@ -105,9 +140,16 @@ function createUserRepository({ database }) {
      * the link proves the address, so an unverified one becomes verified. The
      * update then also requires the account to still have that address.
      *
+     * `expectedHash` (settings) is the hash the caller just verified, or null
+     * for an account that had none. The update then only applies if nothing
+     * changed it in between, so two changes racing cannot silently overwrite
+     * each other. Undefined skips the check (a reset proves the address, not
+     * the old password).
+     *
      * @returns {Promise<Object | null>} the updated user, or null if no account matched
      */
-    async replacePassword({ userId, passwordHash, verifiedEmail = null }, runner = database) {
+    async replacePassword({ userId, passwordHash, verifiedEmail = null, expectedHash }, runner = database) {
+      const checkExpected = expectedHash !== undefined;
       const { rows } = await runner.query(
         `UPDATE users
          SET password_hash = $2,
@@ -117,9 +159,10 @@ function createUserRepository({ database }) {
          WHERE id = $1
            AND deleted_at IS NULL
            AND ($3::text IS NULL OR email_normalized = $3)
+           AND (NOT $4::boolean OR password_hash IS NOT DISTINCT FROM $5)
          RETURNING id, email, email_normalized, display_name, password_hash, token_version,
                    email_verified_at, status`,
-        [userId, passwordHash, verifiedEmail],
+        [userId, passwordHash, verifiedEmail, checkExpected, checkExpected ? expectedHash : null],
       );
       return rows.length === 0 ? null : toUser(rows[0]);
     },

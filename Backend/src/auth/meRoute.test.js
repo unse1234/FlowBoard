@@ -44,7 +44,8 @@ test("me answers with the signed-in account, uncached", { skip: SKIP }, async (t
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(Object.keys(payload.user).sort(), ["displayName", "email", "emailVerified", "id"]);
+  assert.deepEqual(Object.keys(payload.user).sort(), ["displayName", "email", "emailVerified", "hasPassword", "id"]);
+  assert.equal(payload.user.hasPassword, true);
   assert.equal(payload.user.email, VALID_SIGNUP.email);
 });
 
