@@ -134,7 +134,8 @@ export function createAuthSession({
       snapshot.user.id === user.id &&
       snapshot.user.displayName === user.displayName &&
       snapshot.user.email === user.email &&
-      snapshot.user.emailVerified === user.emailVerified;
+      snapshot.user.emailVerified === user.emailVerified &&
+      snapshot.user.hasPassword === user.hasPassword;
     if (!unchanged) publish(Object.freeze({ status: AUTH_STATUS.SIGNED_IN, user }));
   }
 
@@ -349,6 +350,31 @@ export function createAuthSession({
 
     /** A usable access token, or null when signed out. For callers of protected APIs. */
     getAccessToken,
+
+    /**
+     * Take a whole new session the server handed out mid-session: a password
+     * change ends every session and gives this device a fresh one. Other tabs
+     * share the cookie, so they are told to pick it up too.
+     *
+     * @param {import("./authClient.js").AuthSession} session
+     */
+    adoptSession(session) {
+      generation += 1;
+      apply(session);
+      broadcast("signed_in");
+    },
+
+    /**
+     * The account as the server just returned it (a rename, say), shown here
+     * and read again by every other tab.
+     *
+     * @param {import("./authClient.js").AuthUser} user
+     */
+    replaceUser(user) {
+      if (snapshot.status !== AUTH_STATUS.SIGNED_IN || snapshot.user.id !== user.id) return;
+      publishUser(user);
+      broadcast("user_changed");
+    },
 
     /**
      * Read the account from the server again, here and in every other tab.

@@ -56,7 +56,7 @@ export class AuthRequestError extends Error {
 }
 
 /**
- * @typedef {{ id: string, email: string, displayName: string, emailVerified: boolean }} AuthUser
+ * @typedef {{ id: string, email: string, displayName: string, emailVerified: boolean, hasPassword: boolean }} AuthUser
  * @typedef {{ user: AuthUser, accessToken: string, accessTokenExpiresAt: Date }} AuthSession
  * @typedef {{ signal?: AbortSignal, fetchImpl?: typeof fetch, baseUrl?: string, timeoutMs?: number }} RequestOptions
  */
@@ -228,6 +228,36 @@ export async function resetPassword({ token, password, ...options }) {
   await send("/api/auth/reset-password", { ...options, body: { token, password } });
 }
 
+/**
+ * Change the name shown to collaborators.
+ *
+ * @param {{ accessToken: string, displayName: string } & RequestOptions} request
+ * @returns {Promise<AuthUser>}
+ */
+export async function updateDisplayName({ accessToken, displayName, ...options }) {
+  const body = await send("/api/auth/me", { ...options, method: "PATCH", body: { displayName }, accessToken });
+  const user = readUser(body?.user);
+  if (!user) throw badResponse();
+  return user;
+}
+
+/**
+ * Change the password (with the current one), or set a first one for an
+ * account that signs in through a provider (after signing in with it again).
+ *
+ * Every session ends, and this device gets a new one, so the response is a
+ * whole session and the request must let the browser store its new cookie.
+ *
+ * @param {{ accessToken: string, currentPassword?: string, newPassword: string } & RequestOptions} request
+ * @returns {Promise<AuthSession>}
+ */
+export async function changePassword({ accessToken, currentPassword, newPassword, ...options }) {
+  const body = { newPassword };
+  if (currentPassword !== undefined) body.currentPassword = currentPassword;
+  const response = await send("/api/auth/password", { ...options, body, accessToken, credentials: "include" });
+  return readSession(response);
+}
+
 async function send(
   path,
   {
@@ -339,6 +369,9 @@ function readUser(user) {
     email: user.email,
     displayName: user.displayName,
     emailVerified: user.emailVerified,
+    // A server from before account settings did not say; every account it
+    // knew had a password.
+    hasPassword: typeof user.hasPassword === "boolean" ? user.hasPassword : true,
   });
 }
 

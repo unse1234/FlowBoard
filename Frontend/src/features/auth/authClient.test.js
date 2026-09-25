@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AUTH_CLIENT_MESSAGES,
   AuthRequestError,
+  changePassword,
   fetchCurrentUser,
   listSessions,
   refreshSession,
@@ -14,6 +15,7 @@ import {
   signIn,
   signOut,
   signUp,
+  updateDisplayName,
   verifyEmail,
 } from "./authClient.js";
 
@@ -22,6 +24,7 @@ const USER = Object.freeze({
   email: "ada@example.com",
   displayName: "Ada Lovelace",
   emailVerified: false,
+  hasPassword: true,
 });
 
 const SESSION_BODY = Object.freeze({
@@ -271,8 +274,54 @@ test("the user object carries only the named fields", async () => {
 
   const { user } = await refreshSession({ fetchImpl, ...BASE });
 
-  assert.deepEqual(Object.keys(user).sort(), ["displayName", "email", "emailVerified", "id"]);
+  assert.deepEqual(Object.keys(user).sort(), ["displayName", "email", "emailVerified", "hasPassword", "id"]);
   assert.ok(Object.isFrozen(user));
+});
+
+test("hasPassword is read when present, and assumed from an older server", async () => {
+  const social = recordingFetch(jsonResponse(200, { ...SESSION_BODY, user: { ...USER, hasPassword: false } }));
+  const older = recordingFetch(jsonResponse(200, SESSION_BODY));
+
+  assert.equal((await refreshSession({ fetchImpl: social.fetchImpl, ...BASE })).user.hasPassword, false);
+  assert.equal((await refreshSession({ fetchImpl: older.fetchImpl, ...BASE })).user.hasPassword, true);
+});
+
+test("renaming patches me with the bearer token and returns the account", async () => {
+  const { calls, fetchImpl } = recordingFetch(
+    jsonResponse(200, { ok: true, user: { ...USER, displayName: "Augusta Ada King", hasPassword: true } }),
+  );
+
+  const user = await updateDisplayName({ accessToken: "access", displayName: "Augusta Ada King", fetchImpl, ...BASE });
+
+  assert.equal(calls[0].url, "https://api.example/api/auth/me");
+  assert.equal(calls[0].init.method, "PATCH");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer access");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { displayName: "Augusta Ada King" });
+  assert.equal(user.displayName, "Augusta Ada King");
+});
+
+test("a password change lets the browser store its new cookie, and returns the new session", async () => {
+  const { calls, fetchImpl } = recordingFetch(jsonResponse(200, SESSION_BODY));
+
+  const session = await changePassword({
+    accessToken: "access",
+    currentPassword: "old-passphrase",
+    newPassword: "new-passphrase-here",
+    fetchImpl,
+    ...BASE,
+  });
+
+  assert.equal(calls[0].url, "https://api.example/api/auth/password");
+  assert.equal(calls[0].init.credentials, "include");
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    newPassword: "new-passphrase-here",
+    currentPassword: "old-passphrase",
+  });
+  assert.equal(session.accessToken, SESSION_BODY.accessToken);
+
+  // Setting a first password sends no current one at all.
+  await changePassword({ accessToken: "access", newPassword: "new-passphrase-here", fetchImpl, ...BASE });
+  assert.deepEqual(JSON.parse(calls[1].init.body), { newPassword: "new-passphrase-here" });
 });
 
 test("the email routes post what the server needs and never send the cookie", async () => {

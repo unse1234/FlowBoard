@@ -34,6 +34,8 @@ export default function AccountSurfaces({ ui }) {
         onClose={ui.closeAccount}
         onSignOut={ui.handleSignOut}
         getAccessToken={auth.getAccessToken}
+        onUserChange={auth.replaceUser}
+        onSessionChange={auth.adoptSession}
       />
 
       <ResetPasswordDialog

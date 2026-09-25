@@ -717,3 +717,41 @@ test("a reload that lands after a sign-out cannot bring the account back", async
 
   assert.equal(tab.getSnapshot().status, AUTH_STATUS.SIGNED_OUT);
 });
+
+test("adopting a new session replaces the token and tells other tabs to pick up the cookie", async () => {
+  const clock = createClock();
+  const bus = createBus();
+  const { client, queue } = createClient();
+  queue("refreshSession", sessionFor(clock), sessionFor(clock));
+  const tabA = createTab({ clock, client, channel: bus.endpoint() });
+  const tabB = createTab({ clock, client, channel: bus.endpoint() });
+  tabA.start();
+  tabB.start();
+  await settle();
+
+  clock.skip(MINUTE);
+  const fresh = sessionFor(clock);
+  queue("refreshSession", () => sessionFor(clock));
+  tabA.adoptSession(fresh);
+  await settle();
+
+  assert.equal(await tabA.getAccessToken(), fresh.accessToken);
+  assert.ok(bus.sent.some((message) => message.type === "signed_in"));
+  assert.equal(tabB.getSnapshot().status, AUTH_STATUS.SIGNED_IN);
+});
+
+test("replacing the user publishes it, and only for the account signed in", async () => {
+  const clock = createClock();
+  const { client, queue } = createClient();
+  queue("refreshSession", sessionFor(clock));
+  const tab = createTab({ clock, client });
+  tab.start();
+  await settle();
+
+  tab.replaceUser({ ...GRACE });
+  assert.deepEqual(tab.getSnapshot().user, ADA, "another account's user is ignored");
+
+  const renamed = Object.freeze({ ...ADA, displayName: "Augusta" });
+  tab.replaceUser(renamed);
+  assert.deepEqual(tab.getSnapshot().user, renamed);
+});

@@ -31,6 +31,7 @@ export const FORM_MESSAGES = Object.freeze({
   PASSWORD_TOO_LONG: `Use at most ${MAX_PASSWORD_LENGTH} characters.`,
   DISPLAY_NAME_REQUIRED: "Enter a name to display.",
   DISPLAY_NAME_TOO_LONG: `Use at most ${MAX_DISPLAY_NAME_LENGTH} characters.`,
+  CURRENT_PASSWORD_REQUIRED: "Enter your current password.",
 });
 
 export const AUTH_MODES = Object.freeze({
