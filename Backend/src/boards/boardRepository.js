@@ -298,6 +298,25 @@ function createBoardRepository({ database }) {
       return rows.map((row) => ({ ...toBoard(row), memberCount: row.member_count }));
     },
 
+    /** Everyone on the boards a user owns, for choosing who to hand each one to. */
+    async listMembersOfOwnedBoards(ownerId) {
+      const { rows } = await database.query(
+        `SELECT m.board_id, m.user_id, m.role, u.display_name
+         FROM board_members m
+         JOIN boards b ON b.id = m.board_id
+         JOIN users u ON u.id = m.user_id
+         WHERE b.owner_id = $1
+         ORDER BY m.joined_at`,
+        [ownerId],
+      );
+      return rows.map((row) => ({
+        boardId: row.board_id,
+        id: row.user_id,
+        displayName: row.display_name,
+        role: row.role,
+      }));
+    },
+
     /** The boards a user is a member of (not owner), for telling their rooms. */
     async listMemberBoardIds(userId, runner = database) {
       const { rows } = await runner.query("SELECT board_id FROM board_members WHERE user_id = $1", [userId]);

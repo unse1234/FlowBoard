@@ -154,6 +154,13 @@ const AUTH_ERRORS = Object.freeze({
     message: "For your security, confirm it's you: sign in again with your connected account, then try again.",
   },
 
+  // E-22: a board with other people on it is handed over or deleted first,
+  // never deleted from under them or left without an owner.
+  ACCOUNT_HAS_SHARED_BOARDS: {
+    status: 409,
+    message: "You own boards other people use. Hand each one to someone on it, or delete it, first.",
+  },
+
   // Deleting an account needs the word typed, so a stray click cannot do it.
   DELETE_CONFIRMATION_REQUIRED: { status: 400, message: 'Type DELETE to confirm.' },
 

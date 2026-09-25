@@ -4,6 +4,7 @@ const { isTrustedOrigin } = require("../http/originCheck");
 const { AuthError, invalidCredentials, toAuthError } = require("./authErrors");
 const { createRequireAuth } = require("./authenticate");
 const { createAccountEmails } = require("./accountEmails");
+const { registerAccountDeletion } = require("./accountDeletion");
 const { registerAccountRoutes } = require("./accountRoutes");
 const { registerEmailRoutes } = require("./emailRoutes");
 const { parseLoginRequest } = require("./loginRequest");
@@ -541,7 +542,7 @@ function createAuthRouter({
     logger,
   });
 
-  registerAccountRoutes(router, {
+  const { proveCurrentPassword } = registerAccountRoutes(router, {
     kit,
     database,
     passwordHasher,
@@ -551,6 +552,19 @@ function createAuthRouter({
     signInLimiter,
     sessionLimiter,
     loginThrottle,
+    logger,
+  });
+
+  registerAccountDeletion(router, {
+    kit,
+    database,
+    requireAuth,
+    refreshCookie,
+    emailService,
+    accountEvents,
+    proveCurrentPassword,
+    signInLimiter,
+    sessionLimiter,
     logger,
   });
 
