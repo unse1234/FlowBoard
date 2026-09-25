@@ -39,6 +39,7 @@ resolved by Step 1 rather than by a patch.
 | F-23 | ~~MEDIUM~~ | Security | ~~A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL`~~ — **RESOLVED 2026-09-25** |
 | F-24 | MEDIUM | Scaling | Realtime revocation reaches sockets in the same process only |
 | F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
+| F-26 | LOW | Dependencies | `npm audit` in `Frontend/` reports two high advisories in build-time packages (`nanoid`, `postcss`) |
 
 ---
 
@@ -728,3 +729,20 @@ the request's transaction commits; there is no outbox table.
 notice email. Every one of them can be asked for again (resend, forgot
 password); notices cannot. Shutdown drains pending sends first, so a normal
 deploy does not lose any. ADR 0007 records why no outbox yet.
+
+---
+
+## F-26 — LOW — Two high advisories in the web app's build-time packages
+
+**Evidence:** `cd Frontend && npm audit --omit=dev`, 2026-09-25: `nanoid <=3.3.17`
+(GHSA-28wg-ghj8-5hjv, GHSA-2v37-7h3g-55p8) and `postcss <=8.5.22`
+(GHSA-fxqj-rqcc-2cmp, GHSA-r28c-9q8g-f849). Both arrive through the build
+toolchain (Vite, Tailwind). Found while verifying Step 1; no dependency was
+changed by that work, so these predate it.
+
+**Impact:** low for FlowBoard. Both need attacker-controlled input to the
+build (a generator size, a source map path), and the build only ever processes
+FlowBoard's own source. Nothing reaches the deployed site.
+
+**Fix:** `npm audit fix` in `Frontend/`, as its own change with a build and
+both suites run, not folded into unrelated work (rule 3).
