@@ -13,7 +13,9 @@
           "env": ["AUTH_PROXY_SECRET"]
         }
       ]
-    }
+    },
+    { "handle": "filesystem" },
+    { "src": "/(verify-email|reset-password|invite/[^/]+)/?", "dest": "/index.html" }
   ],
   "headers": [
     {

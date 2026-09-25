@@ -181,6 +181,53 @@ export async function revokeOtherSessions({ accessToken, ...options }) {
   return Number.isInteger(body?.revoked) ? body.revoked : 0;
 }
 
+/**
+ * Confirm an email address with the token from its link. Works signed in or
+ * not: the link is often opened on another device.
+ *
+ * @param {{ token: string } & RequestOptions} request
+ */
+export async function verifyEmail({ token, ...options }) {
+  await send("/api/auth/verify-email", { ...options, body: { token } });
+}
+
+/**
+ * Send a new verification link to the signed-in account. The previous link
+ * stops working.
+ *
+ * @param {{ accessToken: string } & RequestOptions} request
+ * @returns {Promise<{ alreadyVerified: boolean }>}
+ */
+export async function resendVerification({ accessToken, ...options }) {
+  const body = await send("/api/auth/resend-verification", { ...options, body: {}, accessToken });
+  return { alreadyVerified: body?.alreadyVerified === true };
+}
+
+/**
+ * Ask for a password-reset link. The server answers the same whether or not
+ * the address has an account, and so does this: it resolves with the
+ * server's wording, which never says which.
+ *
+ * @param {{ email: string } & RequestOptions} request
+ * @returns {Promise<string>} the message to show
+ */
+export async function requestPasswordReset({ email, ...options }) {
+  const body = await send("/api/auth/forgot-password", { ...options, body: { email } });
+  return typeof body?.message === "string" && body.message
+    ? body.message
+    : "If an account exists for that address, a password-reset email has been sent.";
+}
+
+/**
+ * Choose a new password with the token from a reset link. Every device is
+ * signed out, this one included, so the person signs in again afterwards.
+ *
+ * @param {{ token: string, password: string } & RequestOptions} request
+ */
+export async function resetPassword({ token, password, ...options }) {
+  await send("/api/auth/reset-password", { ...options, body: { token, password } });
+}
+
 async function send(
   path,
   {

@@ -68,8 +68,8 @@ const offline = () => new AuthRequestError("NETWORK", "Can't reach FlowBoard.");
  * own queue: a value resolves, an Error rejects, a deferred stays pending.
  */
 function createClient() {
-  const queues = { signIn: [], signUp: [], refreshSession: [], signOut: [] };
-  const calls = { signIn: 0, signUp: 0, refreshSession: 0, signOut: 0 };
+  const queues = { signIn: [], signUp: [], refreshSession: [], signOut: [], fetchCurrentUser: [] };
+  const calls = { signIn: 0, signUp: 0, refreshSession: 0, signOut: 0, fetchCurrentUser: 0 };
 
   const answer = (method) => async (...args) => {
     calls[method] += 1;
@@ -89,6 +89,7 @@ function createClient() {
       signUp: answer("signUp"),
       refreshSession: answer("refreshSession"),
       signOut: answer("signOut"),
+      fetchCurrentUser: answer("fetchCurrentUser"),
     },
   };
 }
@@ -659,4 +660,60 @@ test("once disposed it stops refreshing and ignores other tabs", async () => {
 
   assert.equal(calls.refreshSession, 1);
   assert.deepEqual(clock.pending(), []);
+});
+
+test("reloading the account publishes what changed and tells other tabs", async () => {
+  const clock = createClock();
+  const bus = createBus();
+  const { client, queue, calls } = createClient();
+  queue("refreshSession", sessionFor(clock), sessionFor(clock));
+  const tabA = createTab({ clock, client, channel: bus.endpoint() });
+  const tabB = createTab({ clock, client, channel: bus.endpoint() });
+  tabA.start();
+  tabB.start();
+  await settle();
+
+  const verified = Object.freeze({ ...ADA, emailVerified: true });
+  queue("fetchCurrentUser", verified, verified);
+  const user = await tabA.reloadUser();
+  await settle();
+
+  assert.deepEqual(user, verified);
+  assert.deepEqual(tabA.getSnapshot(), { status: AUTH_STATUS.SIGNED_IN, user: verified });
+  // The other tab read the account itself rather than trusting the message.
+  assert.deepEqual(tabB.getSnapshot(), { status: AUTH_STATUS.SIGNED_IN, user: verified });
+  assert.equal(calls.fetchCurrentUser, 2);
+  assert.ok(bus.sent.every((message) => Object.keys(message).join() === "type"));
+});
+
+test("reloading while signed out asks nothing", async () => {
+  const clock = createClock();
+  const { client, queue, calls } = createClient();
+  queue("refreshSession", ended());
+  const tab = createTab({ clock, client });
+  tab.start();
+  await settle();
+
+  assert.equal(await tab.reloadUser(), null);
+  assert.equal(calls.fetchCurrentUser, 0);
+});
+
+test("a reload that lands after a sign-out cannot bring the account back", async () => {
+  const clock = createClock();
+  const { client, queue } = createClient();
+  queue("refreshSession", sessionFor(clock));
+  queue("signOut", () => undefined);
+  const tab = createTab({ clock, client });
+  tab.start();
+  await settle();
+
+  const slow = deferred();
+  queue("fetchCurrentUser", slow);
+  const reloading = tab.reloadUser();
+  await settle();
+  await tab.signOut();
+  slow.resolve({ ...ADA, emailVerified: true });
+  await reloading;
+
+  assert.equal(tab.getSnapshot().status, AUTH_STATUS.SIGNED_OUT);
 });

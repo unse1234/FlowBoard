@@ -40,6 +40,7 @@ export function AuthProvider({ children }) {
       signUp: auth.signUp,
       signOut: auth.signOut,
       getAccessToken: auth.getAccessToken,
+      reloadUser: auth.reloadUser,
     }),
     [auth, snapshot],
   );

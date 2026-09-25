@@ -6,6 +6,7 @@ import {
   messageForCode,
   passwordLengthHint,
   validateAuthForm,
+  validateNewPassword,
 } from "./authForm.js";
 
 const { SIGN_IN, SIGN_UP } = AUTH_MODES;
@@ -92,6 +93,8 @@ test("server errors land on the field they are about", () => {
   assert.equal(fieldForErrorCode("INVALID_CREDENTIALS"), null);
   assert.equal(fieldForErrorCode("TOO_MANY_ATTEMPTS"), null);
   assert.equal(fieldForErrorCode("NETWORK"), null);
+  // The server's email being down is not something wrong with the address.
+  assert.equal(fieldForErrorCode("EMAIL_UNAVAILABLE"), null);
 });
 
 test("every code the form can produce has a message", () => {
@@ -115,4 +118,21 @@ test("the password hint counts down to the minimum, then goes quiet", () => {
   assert.equal(passwordLengthHint(""), "12 more characters");
   assert.equal(passwordLengthHint("a".repeat(11)), "1 more character");
   assert.equal(passwordLengthHint("a".repeat(12)), null);
+});
+
+test("asking for a reset link needs only a usable address", () => {
+  const { FORGOT_PASSWORD } = AUTH_MODES;
+  assert.deepEqual(validateAuthForm({ email: "ada@example.com", password: "" }, FORGOT_PASSWORD), {});
+  assert.deepEqual(validateAuthForm({ email: "", password: "" }, FORGOT_PASSWORD), { email: "EMAIL_REQUIRED" });
+  assert.deepEqual(validateAuthForm({ email: "not an address", password: "" }, FORGOT_PASSWORD), {
+    email: "EMAIL_INVALID",
+  });
+});
+
+test("a new password follows the sign-up policy wherever it is chosen", () => {
+  assert.equal(validateNewPassword(""), "PASSWORD_REQUIRED");
+  assert.equal(validateNewPassword("x".repeat(11)), "PASSWORD_TOO_SHORT");
+  assert.equal(validateNewPassword("x".repeat(129)), "PASSWORD_TOO_LONG");
+  assert.equal(validateNewPassword("😀".repeat(12)), null);
+  assert.equal(validateNewPassword(VALID.password), null);
 });

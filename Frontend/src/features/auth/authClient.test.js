@@ -6,11 +6,15 @@ import {
   fetchCurrentUser,
   listSessions,
   refreshSession,
+  requestPasswordReset,
+  resendVerification,
+  resetPassword,
   revokeOtherSessions,
   revokeSession,
   signIn,
   signOut,
   signUp,
+  verifyEmail,
 } from "./authClient.js";
 
 const USER = Object.freeze({
@@ -269,4 +273,52 @@ test("the user object carries only the named fields", async () => {
 
   assert.deepEqual(Object.keys(user).sort(), ["displayName", "email", "emailVerified", "id"]);
   assert.ok(Object.isFrozen(user));
+});
+
+test("the email routes post what the server needs and never send the cookie", async () => {
+  const { calls, fetchImpl } = recordingFetch(jsonResponse(200, { ok: true }));
+
+  await verifyEmail({ token: "t-verify", fetchImpl, ...BASE });
+  await resetPassword({ token: "t-reset", password: "a-new-passphrase", fetchImpl, ...BASE });
+  await requestPasswordReset({ email: "ada@example.com", fetchImpl, ...BASE });
+
+  assert.deepEqual(
+    calls.map((call) => [call.url, JSON.parse(call.init.body)]),
+    [
+      ["https://api.example/api/auth/verify-email", { token: "t-verify" }],
+      ["https://api.example/api/auth/reset-password", { token: "t-reset", password: "a-new-passphrase" }],
+      ["https://api.example/api/auth/forgot-password", { email: "ada@example.com" }],
+    ],
+  );
+  assert.ok(calls.every((call) => call.init.credentials === "omit"));
+});
+
+test("a reset request resolves with the server's own wording", async () => {
+  const message = "If an account exists for that address, a password-reset email has been sent.";
+  const { fetchImpl } = recordingFetch(jsonResponse(202, { ok: true, message }));
+
+  assert.equal(await requestPasswordReset({ email: "ada@example.com", fetchImpl, ...BASE }), message);
+});
+
+test("resending verification uses the bearer token and reports an address already confirmed", async () => {
+  const { calls, fetchImpl } = recordingFetch(jsonResponse(200, { ok: true, alreadyVerified: true }));
+
+  const result = await resendVerification({ accessToken: "access", fetchImpl, ...BASE });
+
+  assert.equal(calls[0].url, "https://api.example/api/auth/resend-verification");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer access");
+  assert.deepEqual(result, { alreadyVerified: true });
+});
+
+test("a dead link surfaces as TOKEN_INVALID with the server's message", async () => {
+  const { fetchImpl } = recordingFetch(
+    jsonResponse(400, { ok: false, code: "TOKEN_INVALID", error: "This link has expired or has already been used." }),
+  );
+
+  await assert.rejects(verifyEmail({ token: "t", fetchImpl, ...BASE }), (error) => {
+    assert.ok(error instanceof AuthRequestError);
+    assert.equal(error.code, "TOKEN_INVALID");
+    assert.equal(error.status, 400);
+    return true;
+  });
 });

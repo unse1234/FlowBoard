@@ -64,3 +64,22 @@ test("the CSP allows the API the auth route forwards to, over HTTPS and WebSocke
   assert.match(csp, /script-src[^;]*https:\/\/challenges\.cloudflare\.com/);
   assert.match(csp, /frame-src[^;]*https:\/\/challenges\.cloudflare\.com/);
 });
+
+// ── Links from email (Phase A) and invitations (Phase C) ───────────────────
+
+const filesystemIndex = vercel.routes.findIndex((route) => route.handle === "filesystem");
+const appRoute = vercel.routes.find((route, index) => index > filesystemIndex && route.dest === "/index.html");
+
+test("links from email open the app instead of a 404", () => {
+  assert.ok(filesystemIndex > vercel.routes.indexOf(authRoute), "the auth route must come first");
+  assert.ok(appRoute, "no route serves the app for its link paths");
+
+  const serves = (path) => new RegExp(`^${appRoute.src}$`).test(path);
+  for (const path of ["/verify-email", "/reset-password", "/reset-password/", "/invite/abc_DEF-123"]) {
+    assert.ok(serves(path), path);
+  }
+  // Only those: an unknown path still 404s, and the API is never the app.
+  for (const path of ["/", "/api/auth/login", "/verify-emailx", "/invite/", "/invite/a/b", "/assets/app.js"]) {
+    assert.ok(!serves(path), path);
+  }
+});

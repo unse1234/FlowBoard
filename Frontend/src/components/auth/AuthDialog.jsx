@@ -1,4 +1,4 @@
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, MailCheck } from "lucide-react";
 import { memo, useEffect, useId, useRef, useState } from "react";
 import {
   AUTH_MODES,
@@ -13,18 +13,19 @@ import { Button, Dialog, IconButton } from "../ui/index.js";
 import { AuthField } from "./AuthField.jsx";
 import { TurnstileWidget } from "./TurnstileWidget.jsx";
 
-const { SIGN_IN, SIGN_UP } = AUTH_MODES;
+const { SIGN_IN, SIGN_UP, FORGOT_PASSWORD } = AUTH_MODES;
 
 /** Top to bottom, so focus goes to the first problem a person would reach. */
 const FIELDS = Object.freeze({
   [SIGN_IN]: ["email", "password"],
   [SIGN_UP]: ["displayName", "email", "password"],
+  [FORGOT_PASSWORD]: ["email"],
 });
 
 /**
- * Deliberately modest. An account today keeps someone signed in and nothing
- * more, since boards are not stored against it until Step 2, so no line here
- * promises otherwise.
+ * Deliberately modest: an account keeps someone signed in and, once their
+ * address is confirmed, lets them collaborate. Boards are not stored against
+ * it until Step 2, so no line here promises otherwise.
  */
 const COPY = Object.freeze({
   [SIGN_IN]: {
@@ -39,6 +40,13 @@ const COPY = Object.freeze({
     description: "It takes a moment, and you'll stay signed in on this device.",
     submit: "Create account",
     switchPrompt: "Already have an account?",
+    switchAction: "Sign in",
+  },
+  [FORGOT_PASSWORD]: {
+    title: "Reset your password",
+    description: "Enter the email address you signed up with, and we'll send you a link to choose a new password.",
+    submit: "Send reset link",
+    switchPrompt: "Remembered it?",
     switchAction: "Sign in",
   },
 });
@@ -58,9 +66,12 @@ const TURNSTILE_SITE_KEY = getTurnstileSiteKey();
  * button, and never points at a field, since that would hint which half was
  * right.
  *
+ * "Forgot password?" asks for an address only. Its answer is the server's,
+ * the same whether or not an account exists, so the dialog never says which.
+ *
  * Re-key it each time it opens, so it starts empty.
  */
-function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, onSuccess }) {
+function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, onRequestReset, onSuccess }) {
   const [mode, setMode] = useState(initialMode);
   const [values, setValues] = useState(EMPTY);
   const [blurred, setBlurred] = useState({});
@@ -69,6 +80,8 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
   const [formError, setFormError] = useState(null);
   const [pending, setPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // The server's answer to a reset request, shown in place of the form.
+  const [resetSent, setResetSent] = useState(null);
   // Turnstile's single-use token, and a key that remounts the widget for a
   // fresh one after a failed attempt.
   const [botToken, setBotToken] = useState(null);
@@ -118,6 +131,7 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
     setBlurred({});
     setServerErrors({});
     setFormError(null);
+    setResetSent(null);
   };
 
   const handleSubmit = async (event) => {
@@ -143,6 +157,11 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
 
     try {
       const email = values.email.trim();
+      if (mode === FORGOT_PASSWORD) {
+        setResetSent(await onRequestReset({ email }));
+        return;
+      }
+
       const user =
         mode === SIGN_UP
           ? await onSignUp({
@@ -187,6 +206,26 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
       : null;
 
   const id = (field) => `${idPrefix}-${field}`;
+
+  if (mode === FORGOT_PASSWORD && resetSent) {
+    return (
+      <Dialog open={open} onClose={onClose} size="sm" title="Check your email">
+        <div className="flex flex-col gap-4">
+          <p className="flex gap-2.5 text-body text-text">
+            <MailCheck size={18} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-success" />
+            <span>{resetSent}</span>
+          </p>
+          <p className="text-label text-text-muted">
+            The link works once and expires in 30 minutes. If nothing arrives, check your spam folder, then try
+            again.
+          </p>
+          <Button variant="primary" size="md" fullWidth onClick={() => switchMode(SIGN_IN)} className="pointer-coarse:h-11">
+            Back to sign in
+          </Button>
+        </div>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -233,6 +272,7 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
           onBlur={markBlurred("email")}
         />
 
+        {mode === FORGOT_PASSWORD ? null : (
         <AuthField
           id={id("password")}
           label="Password"
@@ -265,6 +305,17 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
             </IconButton>
           }
         />
+        )}
+
+        {mode === SIGN_IN && onRequestReset ? (
+          <button
+            type="button"
+            onClick={() => switchMode(FORGOT_PASSWORD)}
+            className="-mt-2 self-start rounded-sm text-label font-semibold text-text-muted underline-offset-2 hover:text-text hover:underline pointer-coarse:min-h-11"
+          >
+            Forgot password?
+          </button>
+        ) : null}
 
         {needsBotCheck ? (
           <TurnstileWidget key={botWidgetKey} siteKey={TURNSTILE_SITE_KEY} theme={theme} onToken={setBotToken} />

@@ -33,7 +33,12 @@ export const FORM_MESSAGES = Object.freeze({
   DISPLAY_NAME_TOO_LONG: `Use at most ${MAX_DISPLAY_NAME_LENGTH} characters.`,
 });
 
-export const AUTH_MODES = Object.freeze({ SIGN_IN: "sign-in", SIGN_UP: "sign-up" });
+export const AUTH_MODES = Object.freeze({
+  SIGN_IN: "sign-in",
+  SIGN_UP: "sign-up",
+  // Ask for a reset link: an address and nothing else.
+  FORGOT_PASSWORD: "forgot-password",
+});
 
 const codePoints = (text) => Array.from(text).length;
 
@@ -57,14 +62,16 @@ export function validateAuthForm(values, mode) {
   else if (email.length > MAX_EMAIL_LENGTH) errors.email = "EMAIL_TOO_LONG";
   else if (!EMAIL_SHAPE.test(email)) errors.email = "EMAIL_INVALID";
 
+  if (mode === AUTH_MODES.FORGOT_PASSWORD) return errors;
+
   // Sign-in applies no password policy, exactly like the server: an account
   // made under an older policy must still be able to sign in, and a length
   // hint there would be a small oracle of its own.
-  if (values.password === "") errors.password = "PASSWORD_REQUIRED";
-  else if (mode === AUTH_MODES.SIGN_UP) {
-    const length = codePoints(values.password);
-    if (length < MIN_PASSWORD_LENGTH) errors.password = "PASSWORD_TOO_SHORT";
-    else if (length > MAX_PASSWORD_LENGTH) errors.password = "PASSWORD_TOO_LONG";
+  if (mode === AUTH_MODES.SIGN_UP) {
+    const code = validateNewPassword(values.password);
+    if (code) errors.password = code;
+  } else if (values.password === "") {
+    errors.password = "PASSWORD_REQUIRED";
   }
 
   if (mode === AUTH_MODES.SIGN_UP) {
@@ -77,12 +84,29 @@ export function validateAuthForm(values, mode) {
 }
 
 /**
+ * The policy for a password being chosen: at sign-up, on reset, and in
+ * account settings. Null when it passes.
+ *
+ * @param {string} password
+ * @returns {"PASSWORD_REQUIRED" | "PASSWORD_TOO_SHORT" | "PASSWORD_TOO_LONG" | null}
+ */
+export function validateNewPassword(password) {
+  if (password === "") return "PASSWORD_REQUIRED";
+  const length = codePoints(password);
+  if (length < MIN_PASSWORD_LENGTH) return "PASSWORD_TOO_SHORT";
+  if (length > MAX_PASSWORD_LENGTH) return "PASSWORD_TOO_LONG";
+  return null;
+}
+
+/**
  * The field a server error belongs to, or null for one about the whole form.
  *
  * @param {string} code
  * @returns {"email" | "password" | "displayName" | null}
  */
 export function fieldForErrorCode(code) {
+  // About the server, not the address typed.
+  if (code === "EMAIL_UNAVAILABLE") return null;
   if (code.startsWith("EMAIL_")) return "email";
   if (code.startsWith("PASSWORD_")) return "password";
   if (code.startsWith("DISPLAY_NAME_")) return "displayName";

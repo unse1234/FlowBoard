@@ -6,9 +6,7 @@ import Toolbar from "../components/Toolbar";
 import ViewControls from "../components/ViewControls";
 import WhiteboardCanvas from "../components/WhiteboardCanvas";
 import AiDiagramAssistant from "../components/ai/AiDiagramAssistant";
-import AccountDialog from "../components/auth/AccountDialog";
-import AuthDialog from "../components/auth/AuthDialog";
-import { buildAccountMenuItems } from "../components/auth/accountMenuItems.js";
+import AccountSurfaces from "../components/auth/AccountSurfaces.jsx";
 import Inspector, { SelectionActions } from "../components/inspector/Inspector";
 import InspectorPanel from "../components/inspector/InspectorPanel";
 import { getInspectorModel } from "../components/inspector/inspectorModel.js";
@@ -27,8 +25,7 @@ import { ActionList, IconButton, Island, Menu, Sheet } from "../components/ui/in
 import { MAX_SCALE, MIN_SCALE } from "../constants/canvas.js";
 import { TOOLS } from "../constants/tools.js";
 import { getCanvasPalette } from "../design/canvasTokens.js";
-import { useAuth } from "../features/auth/authContext.js";
-import { AUTH_MODES } from "../features/auth/authForm.js";
+import { useAccountUi } from "../features/auth/useAccountUi.js";
 import { useVoice } from "../features/communication/voice/useVoice.js";
 import {
   downloadBlob,
@@ -323,67 +320,8 @@ export default function BoardPage() {
   const openAiSheet = useCallback(() => openSheet(SHEETS.AI), [openSheet]);
 
   // ── Account ────────────────────────────────────────────────────────────
-  const auth = useAuth();
-  const [authDialog, setAuthDialog] = useState({ open: false, mode: AUTH_MODES.SIGN_IN, key: 0 });
-  const [accountOpen, setAccountOpen] = useState(false);
-  // A new key each time the account dialog opens, so its device list is fresh.
-  const [accountKey, setAccountKey] = useState(0);
-
-  // A new key each time, so the form opens empty rather than holding the last
-  // attempt's password.
-  const openSignIn = useCallback(
-    () => setAuthDialog((current) => ({ open: true, mode: AUTH_MODES.SIGN_IN, key: current.key + 1 })),
-    [],
-  );
-  const closeAuthDialog = useCallback(
-    () => setAuthDialog((current) => ({ ...current, open: false })),
-    [],
-  );
-  const openAccount = useCallback(() => {
-    setAccountKey((key) => key + 1);
-    setAccountOpen(true);
-  }, []);
-  const closeAccount = useCallback(() => setAccountOpen(false), []);
-
-  const handleAuthSuccess = useCallback(
-    (user, mode) => {
-      setAuthDialog((current) => ({ ...current, open: false }));
-      toast({
-        id: "auth",
-        tone: "success",
-        title:
-          mode === AUTH_MODES.SIGN_UP
-            ? `Welcome to FlowBoard, ${user.displayName}`
-            : `Signed in as ${user.displayName}`,
-      });
-    },
-    [toast],
-  );
-
-  const { signOut } = auth;
-  const handleSignOut = useCallback(async () => {
-    try {
-      await signOut();
-      setAccountOpen(false);
-      toast({ id: "auth", title: "Signed out" });
-    } catch (error) {
-      // Nothing changed: only the server can clear the session cookie, so a
-      // sign-out it never received is reported, not pretended.
-      toast({ id: "auth", tone: "danger", title: "Couldn't sign out", description: error.message });
-    }
-  }, [signOut, toast]);
-
-  const accountItems = useMemo(
-    () =>
-      buildAccountMenuItems({
-        status: auth.status,
-        user: auth.user,
-        onSignIn: openSignIn,
-        onOpenAccount: openAccount,
-        onSignOut: handleSignOut,
-      }),
-    [auth.status, auth.user, handleSignOut, openAccount, openSignIn],
-  );
+  const accountUi = useAccountUi({ toast });
+  const { accountItems } = accountUi;
 
   const menuItems = useMemo(
     () =>
@@ -839,24 +777,7 @@ export default function BoardPage() {
         onSubmit={collaboration.setDisplayName}
       />
 
-      <AuthDialog
-        key={authDialog.key}
-        open={authDialog.open}
-        initialMode={authDialog.mode}
-        onClose={closeAuthDialog}
-        onSignIn={auth.signIn}
-        onSignUp={auth.signUp}
-        onSuccess={handleAuthSuccess}
-      />
-
-      <AccountDialog
-        key={accountKey}
-        open={accountOpen && auth.user !== null}
-        user={auth.user}
-        onClose={closeAccount}
-        onSignOut={handleSignOut}
-        getAccessToken={auth.getAccessToken}
-      />
+      <AccountSurfaces ui={accountUi} />
     </div>
   );
 }

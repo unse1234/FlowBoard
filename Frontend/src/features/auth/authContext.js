@@ -5,7 +5,7 @@ export const AuthContext = createContext(null);
 /**
  * useAuth — who is signed in, and the actions that change it.
  *
- * `{ status, user, signIn, signUp, signOut, getAccessToken }`, where status is
+ * `{ status, user, signIn, signUp, signOut, getAccessToken, reloadUser }`, where status is
  * one of AUTH_STATUS (authSession.js). `user` is null unless signed in.
  *
  * Throws outside an AuthProvider rather than pretending to be signed out: a

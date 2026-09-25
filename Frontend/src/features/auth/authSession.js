@@ -1,5 +1,6 @@
 import {
   AuthRequestError,
+  fetchCurrentUser,
   refreshSession,
   signIn as requestSignIn,
   signOut as requestSignOut,
@@ -26,6 +27,9 @@ import {
  * - **A generation counter.** Every sign-in and sign-out moves it on, and an
  *   async result from an older generation is dropped, so a refresh finishing
  *   after a sign-out cannot bring the session back.
+ * - **Account changes reach every tab.** A change made in one tab, such as
+ *   verifying the address, is broadcast as "user_changed", and every other
+ *   tab reads the account again rather than trusting the message.
  */
 
 export const AUTH_STATUS = Object.freeze({
@@ -69,7 +73,7 @@ const RESTORING_SNAPSHOT = Object.freeze({ status: AUTH_STATUS.RESTORING, user: 
 
 /**
  * @param {Object} [options]
- * @param {{ signIn: Function, signUp: Function, refreshSession: Function, signOut: Function }} [options.client]
+ * @param {{ signIn: Function, signUp: Function, refreshSession: Function, signOut: Function, fetchCurrentUser: Function }} [options.client]
  * @param {() => number} [options.now]
  * @param {(callback: () => void, ms: number) => unknown} [options.setTimer]
  * @param {(handle: unknown) => void} [options.clearTimer]
@@ -82,6 +86,7 @@ export function createAuthSession({
     signUp: requestSignUp,
     refreshSession,
     signOut: requestSignOut,
+    fetchCurrentUser,
   },
   now = () => Date.now(),
   setTimer = (callback, ms) => setTimeout(callback, ms),
@@ -118,19 +123,25 @@ export function createAuthSession({
     timer = null;
   }
 
+  /**
+   * Show this user as signed in. A new object only when something about them
+   * actually changed, so React does not re-render every tab on every
+   * quarter-hour refresh.
+   */
+  function publishUser(user) {
+    const unchanged =
+      snapshot.status === AUTH_STATUS.SIGNED_IN &&
+      snapshot.user.id === user.id &&
+      snapshot.user.displayName === user.displayName &&
+      snapshot.user.email === user.email &&
+      snapshot.user.emailVerified === user.emailVerified;
+    if (!unchanged) publish(Object.freeze({ status: AUTH_STATUS.SIGNED_IN, user }));
+  }
+
   function apply(session) {
     accessToken = session.accessToken;
     expiresAt = session.accessTokenExpiresAt.getTime();
-
-    // A new object only when who is signed in actually changed, so React does
-    // not re-render every tab on every quarter-hour refresh.
-    const unchanged =
-      snapshot.status === AUTH_STATUS.SIGNED_IN &&
-      snapshot.user.id === session.user.id &&
-      snapshot.user.displayName === session.user.displayName &&
-      snapshot.user.email === session.user.email &&
-      snapshot.user.emailVerified === session.user.emailVerified;
-    if (!unchanged) publish(Object.freeze({ status: AUTH_STATUS.SIGNED_IN, user: session.user }));
+    publishUser(session.user);
 
     schedule(Math.max(expiresAt - now() - REFRESH_LEAD_MS, MIN_REFRESH_DELAY_MS), () => {
       refresh().catch(() => {});
@@ -217,6 +228,9 @@ export function createAuthSession({
       // The tab that signed out already told the server and cleared the
       // cookie. Only this tab's memory is left.
       clear();
+    } else if (type === "user_changed") {
+      // Only a hint: read the account from the server, which is the truth.
+      if (snapshot.status === AUTH_STATUS.SIGNED_IN) reloadUser().catch(() => {});
     } else if (type === "signed_in") {
       // The cookie now belongs to that sign-in. Adopt it, whoever it is.
       //
@@ -232,6 +246,36 @@ export function createAuthSession({
           if (!disposed) refresh().catch(() => {});
         });
     }
+  }
+
+  /**
+   * A usable access token, refreshed first if it is about to expire, or null
+   * when signed out.
+   */
+  async function getAccessToken() {
+    if (snapshot.status === AUTH_STATUS.SIGNED_OUT || snapshot.status === AUTH_STATUS.UNAVAILABLE) {
+      return null;
+    }
+    if (accessToken && expiresAt - now() > MIN_REMAINING_MS) return accessToken;
+    return refresh();
+  }
+
+  /**
+   * Read the account again, for something that changed on the server: an
+   * address verified from an email link, a name changed in settings.
+   */
+  async function reloadUser() {
+    const startedIn = generation;
+    const token = await getAccessToken();
+    if (!token) return null;
+
+    const user = await client.fetchCurrentUser({ accessToken: token });
+    // Signed out or in as someone else meanwhile: that decision wins.
+    if (disposed || generation !== startedIn || snapshot.status !== AUTH_STATUS.SIGNED_IN) {
+      return snapshot.user;
+    }
+    publishUser(user);
+    return user;
   }
 
   channel?.addEventListener("message", onMessage);
@@ -303,16 +347,18 @@ export function createAuthSession({
       broadcast("signed_out");
     },
 
+    /** A usable access token, or null when signed out. For callers of protected APIs. */
+    getAccessToken,
+
     /**
-     * A usable access token, refreshed first if it is about to expire, or
-     * null when signed out. For callers of protected APIs.
+     * Read the account from the server again, here and in every other tab.
+     *
+     * @returns {Promise<import("./authClient.js").AuthUser | null>}
      */
-    async getAccessToken() {
-      if (snapshot.status === AUTH_STATUS.SIGNED_OUT || snapshot.status === AUTH_STATUS.UNAVAILABLE) {
-        return null;
-      }
-      if (accessToken && expiresAt - now() > MIN_REMAINING_MS) return accessToken;
-      return refresh();
+    async reloadUser() {
+      const user = await reloadUser();
+      broadcast("user_changed");
+      return user;
     },
 
     dispose() {
