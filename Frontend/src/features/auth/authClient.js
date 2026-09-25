@@ -258,6 +258,33 @@ export async function changePassword({ accessToken, currentPassword, newPassword
   return readSession(response);
 }
 
+/**
+ * What deleting the account would do: the shared boards to hand over or
+ * delete first, how many private boards go with it, and which proof of
+ * identity it will ask for.
+ *
+ * @param {{ accessToken: string } & RequestOptions} request
+ * @returns {Promise<{ sharedBoards: { id: string, title: string, members: { id: string, displayName: string, role: string }[] }[],
+ *   privateBoardCount: number, proof: "password" | "provider" }>}
+ */
+export async function getDeletionPreflight({ accessToken, ...options }) {
+  const body = await send("/api/auth/delete-account", { ...options, method: "GET", accessToken });
+  if (!Array.isArray(body?.sharedBoards) || !Number.isInteger(body.privateBoardCount)) throw badResponse();
+  return { sharedBoards: body.sharedBoards, privateBoardCount: body.privateBoardCount, proof: body.proof };
+}
+
+/**
+ * Delete the account, at once and for good. The browser is allowed to store
+ * the response's cleared refresh cookie.
+ *
+ * @param {{ accessToken: string, confirmation: string, password?: string } & RequestOptions} request
+ */
+export async function deleteAccount({ accessToken, confirmation, password, ...options }) {
+  const body = { confirmation };
+  if (password !== undefined) body.password = password;
+  await send("/api/auth/delete-account", { ...options, body, accessToken, credentials: "include" });
+}
+
 async function send(
   path,
   {

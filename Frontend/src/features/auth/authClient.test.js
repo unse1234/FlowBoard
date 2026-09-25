@@ -4,7 +4,9 @@ import {
   AUTH_CLIENT_MESSAGES,
   AuthRequestError,
   changePassword,
+  deleteAccount,
   fetchCurrentUser,
+  getDeletionPreflight,
   listSessions,
   refreshSession,
   requestPasswordReset,
@@ -370,4 +372,21 @@ test("a dead link surfaces as TOKEN_INVALID with the server's message", async ()
     assert.equal(error.status, 400);
     return true;
   });
+});
+
+test("deletion reads its preflight, then deletes with the cookie allowed to clear", async () => {
+  const preflight = { ok: true, sharedBoards: [], privateBoardCount: 2, proof: "password" };
+  const read = recordingFetch(jsonResponse(200, preflight));
+  const result = await getDeletionPreflight({ accessToken: "access", fetchImpl: read.fetchImpl, ...BASE });
+
+  assert.equal(read.calls[0].url, "https://api.example/api/auth/delete-account");
+  assert.equal(read.calls[0].init.method, "GET");
+  assert.deepEqual(result, { sharedBoards: [], privateBoardCount: 2, proof: "password" });
+
+  const done = recordingFetch(jsonResponse(200, { ok: true }));
+  await deleteAccount({ accessToken: "access", confirmation: "DELETE", password: "pw", fetchImpl: done.fetchImpl, ...BASE });
+
+  assert.equal(done.calls[0].init.method, "POST");
+  assert.equal(done.calls[0].init.credentials, "include");
+  assert.deepEqual(JSON.parse(done.calls[0].init.body), { confirmation: "DELETE", password: "pw" });
 });

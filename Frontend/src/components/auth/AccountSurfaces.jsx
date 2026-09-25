@@ -1,5 +1,6 @@
 import AccountDialog from "./AccountDialog.jsx";
 import AuthDialog from "./AuthDialog.jsx";
+import DeleteAccountDialog from "./DeleteAccountDialog.jsx";
 import ResetPasswordDialog from "./ResetPasswordDialog.jsx";
 import VerifyEmailBanner from "./VerifyEmailBanner.jsx";
 
@@ -36,6 +37,16 @@ export default function AccountSurfaces({ ui }) {
         getAccessToken={auth.getAccessToken}
         onUserChange={auth.replaceUser}
         onSessionChange={auth.adoptSession}
+        onDeleteAccount={ui.openDeleteAccount}
+      />
+
+      <DeleteAccountDialog
+        key={`delete-${ui.deletion.key}`}
+        open={ui.deletion.open && auth.user !== null}
+        user={auth.user}
+        getAccessToken={auth.getAccessToken}
+        onClose={ui.closeDeleteAccount}
+        onDeleted={ui.handleAccountDeleted}
       />
 
       <ResetPasswordDialog

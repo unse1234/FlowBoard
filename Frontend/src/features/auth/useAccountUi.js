@@ -61,6 +61,7 @@ export function useAccountUi({ toast }) {
     token: pageLink?.kind === AUTH_LINK.RESET_PASSWORD ? pageLink.token : null,
     key: 0,
   }));
+  const [deletion, setDeletion] = useState({ open: false, key: 0 });
   // Storage is not reactive; this re-renders after a dismissal.
   const [, setBannerVersion] = useState(0);
 
@@ -107,6 +108,26 @@ export function useAccountUi({ toast }) {
       // sign-out it never received is reported, not pretended.
       toast({ id: "auth", tone: "danger", title: "Couldn't sign out", description: error.message });
     }
+  }, [signOut, toast]);
+
+  // In place of the account dialog, never on top of it.
+  const openDeleteAccount = useCallback(() => {
+    setAccountOpen(false);
+    setDeletion((current) => ({ open: true, key: current.key + 1 }));
+  }, []);
+  const closeDeleteAccount = useCallback(() => setDeletion((current) => ({ ...current, open: false })), []);
+
+  const handleAccountDeleted = useCallback(async () => {
+    setDeletion((current) => ({ ...current, open: false }));
+    // The server already ended every session and cleared the cookie; this
+    // tells this tab and the others.
+    await signOut().catch(() => {});
+    // A shared board open here is no longer reachable; start clean.
+    if (new URLSearchParams(window.location.search).has("roomId")) {
+      window.location.assign("/");
+      return;
+    }
+    toast({ id: "auth", title: "Your account was deleted", description: "Everything in it is gone, and you're signed out." });
   }, [signOut, toast]);
 
   const requestReset = useCallback(({ email }) => requestPasswordReset({ email }), []);
@@ -209,6 +230,10 @@ export function useAccountUi({ toast }) {
     handleResetDone,
     requestNewResetLink,
     closeReset,
+    deletion,
+    openDeleteAccount,
+    closeDeleteAccount,
+    handleAccountDeleted,
     showVerificationBanner: shouldShowVerificationBanner(auth.user),
     resendLink,
     dismissBanner,

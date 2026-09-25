@@ -13,7 +13,7 @@ import AccountPasswordForm from "./AccountPasswordForm.jsx";
  * turn null while the exit animation plays after signing out, so nothing here
  * assumes it is present.
  */
-function AccountDialog({ open, user, onClose, onSignOut, getAccessToken, onUserChange, onSessionChange }) {
+function AccountDialog({ open, user, onClose, onSignOut, getAccessToken, onUserChange, onSessionChange, onDeleteAccount }) {
   const [signingOut, setSigningOut] = useState(false);
   // Bumped when a password change ended sessions, so the device list re-reads.
   const [devicesKey, setDevicesKey] = useState(0);
@@ -73,6 +73,15 @@ function AccountDialog({ open, user, onClose, onSignOut, getAccessToken, onUserC
       ) : null}
 
       {open ? <AccountDevices getAccessToken={getAccessToken} refreshKey={devicesKey} /> : null}
+
+      <section aria-label="Delete account" className="mt-6 border-t border-divider pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-label text-text-muted">Delete your account and your boards, for good.</p>
+          <Button variant="ghost" size="sm" onClick={onDeleteAccount} className="shrink-0 text-danger pointer-coarse:h-11">
+            Delete account
+          </Button>
+        </div>
+      </section>
     </Dialog>
   );
 }
