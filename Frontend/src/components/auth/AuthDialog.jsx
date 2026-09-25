@@ -11,6 +11,7 @@ import { getTurnstileSiteKey } from "../../features/auth/turnstile.js";
 import { useThemeContext } from "../../features/theme/themeContext.js";
 import { Button, Dialog, IconButton } from "../ui/index.js";
 import { AuthField } from "./AuthField.jsx";
+import ProviderButtons from "./ProviderButtons.jsx";
 import { TurnstileWidget } from "./TurnstileWidget.jsx";
 
 const { SIGN_IN, SIGN_UP, FORGOT_PASSWORD } = AUTH_MODES;
@@ -71,7 +72,17 @@ const TURNSTILE_SITE_KEY = getTurnstileSiteKey();
  *
  * Re-key it each time it opens, so it starts empty.
  */
-function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, onRequestReset, onSuccess }) {
+function AuthDialog({
+  open,
+  initialMode = SIGN_IN,
+  onClose,
+  onSignIn,
+  onSignUp,
+  onRequestReset,
+  onSuccess,
+  providers = [],
+  onProviderSignIn,
+}) {
   const [mode, setMode] = useState(initialMode);
   const [values, setValues] = useState(EMPTY);
   const [blurred, setBlurred] = useState({});
@@ -82,6 +93,19 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
   const [showPassword, setShowPassword] = useState(false);
   // The server's answer to a reset request, shown in place of the form.
   const [resetSent, setResetSent] = useState(null);
+  // The provider being handed over to; the page leaves for it on success.
+  const [providerPending, setProviderPending] = useState(null);
+
+  const chooseProvider = async (provider) => {
+    setProviderPending(provider);
+    setFormError(null);
+    try {
+      await onProviderSignIn(provider);
+    } catch (error) {
+      setFormError({ message: error?.message || "Couldn't reach that sign-in option. Try again." });
+      setProviderPending(null);
+    }
+  };
   // Turnstile's single-use token, and a key that remounts the widget for a
   // fresh one after a failed attempt.
   const [botToken, setBotToken] = useState(null);
@@ -237,6 +261,17 @@ function AuthDialog({ open, initialMode = SIGN_IN, onClose, onSignIn, onSignUp, 
       description={copy.description}
     >
       <form className="flex flex-col gap-4" noValidate onSubmit={handleSubmit}>
+        {mode !== FORGOT_PASSWORD && providers.length > 0 && onProviderSignIn ? (
+          <>
+            <ProviderButtons providers={providers} pending={providerPending} onSelect={chooseProvider} />
+            <div className="flex items-center gap-3 text-caption text-text-muted" aria-hidden="true">
+              <span className="h-px flex-1 bg-divider" />
+              or with email
+              <span className="h-px flex-1 bg-divider" />
+            </div>
+          </>
+        ) : null}
+
         {mode === SIGN_UP ? (
           <AuthField
             id={id("displayName")}

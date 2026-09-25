@@ -1,6 +1,8 @@
 import { LogOut } from "lucide-react";
 import { memo, useState } from "react";
+import { useIdentities } from "../../features/auth/useIdentities.js";
 import { Avatar, Badge, Button, Dialog } from "../ui/index.js";
+import AccountConnections from "./AccountConnections.jsx";
 import AccountDevices from "./AccountDevices.jsx";
 import AccountNameForm from "./AccountNameForm.jsx";
 import AccountPasswordForm from "./AccountPasswordForm.jsx";
@@ -13,8 +15,23 @@ import AccountPasswordForm from "./AccountPasswordForm.jsx";
  * turn null while the exit animation plays after signing out, so nothing here
  * assumes it is present.
  */
-function AccountDialog({ open, user, onClose, onSignOut, getAccessToken, onUserChange, onSessionChange, onDeleteAccount }) {
+function AccountDialog({
+  open,
+  user,
+  onClose,
+  onSignOut,
+  getAccessToken,
+  onUserChange,
+  onSessionChange,
+  onDeleteAccount,
+  onProvider,
+}) {
   const [signingOut, setSigningOut] = useState(false);
+  const connections = useIdentities({ getAccessToken, enabled: Boolean(open && user) });
+  // The providers this account could prove itself with, for setting a first password.
+  const connectedProviders = connections.available.filter((provider) =>
+    connections.identities.some((identity) => identity.provider === provider.id),
+  );
   // Bumped when a password change ended sessions, so the device list re-reads.
   const [devicesKey, setDevicesKey] = useState(0);
 
@@ -68,9 +85,13 @@ function AccountDialog({ open, user, onClose, onSignOut, getAccessToken, onUserC
             getAccessToken={getAccessToken}
             onSessionChange={onSessionChange}
             onPasswordChanged={() => setDevicesKey((key) => key + 1)}
+            connectedProviders={connectedProviders}
+            onReauthenticate={(provider) => onProvider(provider, "reauthenticate")}
           />
         </section>
       ) : null}
+
+      {open && user ? <AccountConnections connections={connections} hasPassword={user.hasPassword} onConnect={onProvider} /> : null}
 
       {open ? <AccountDevices getAccessToken={getAccessToken} refreshKey={devicesKey} /> : null}
 

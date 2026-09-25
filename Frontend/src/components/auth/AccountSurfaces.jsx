@@ -26,6 +26,8 @@ export default function AccountSurfaces({ ui }) {
         onSignUp={auth.signUp}
         onRequestReset={ui.requestReset}
         onSuccess={ui.handleAuthSuccess}
+        providers={ui.providers}
+        onProviderSignIn={ui.signInWithProvider}
       />
 
       <AccountDialog
@@ -38,6 +40,7 @@ export default function AccountSurfaces({ ui }) {
         onUserChange={auth.replaceUser}
         onSessionChange={auth.adoptSession}
         onDeleteAccount={ui.openDeleteAccount}
+        onProvider={ui.goToProvider}
       />
 
       <DeleteAccountDialog
@@ -47,6 +50,7 @@ export default function AccountSurfaces({ ui }) {
         getAccessToken={auth.getAccessToken}
         onClose={ui.closeDeleteAccount}
         onDeleted={ui.handleAccountDeleted}
+        onProvider={ui.goToProvider}
       />
 
       <ResetPasswordDialog

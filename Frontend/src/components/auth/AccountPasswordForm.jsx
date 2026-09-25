@@ -4,6 +4,7 @@ import { changePassword, requestPasswordReset } from "../../features/auth/authCl
 import { messageForCode, passwordLengthHint, validateNewPassword } from "../../features/auth/authForm.js";
 import { Button, IconButton } from "../ui/index.js";
 import { AuthField } from "./AuthField.jsx";
+import ProviderButtons from "./ProviderButtons.jsx";
 
 /**
  * Change the password, or set a first one (spec Phase B).
@@ -16,7 +17,7 @@ import { AuthField } from "./AuthField.jsx";
  * Success ends every session, including this device's old one; the server
  * hands this device a new session, which `onSessionChange` adopts.
  */
-function AccountPasswordForm({ user, getAccessToken, onSessionChange, onPasswordChanged }) {
+function AccountPasswordForm({ user, getAccessToken, onSessionChange, onPasswordChanged, connectedProviders = [], onReauthenticate }) {
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -185,7 +186,18 @@ function AccountPasswordForm({ user, getAccessToken, onSessionChange, onPassword
 
       {needsProof ? (
         <div role="alert" className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-label text-text">
-          <p>For your security, prove it's you first. We can email a link to {user.email} to set your password.</p>
+          <p>
+            For your security, prove it's you first: sign in again with a connected account, then set your password within 10
+            minutes. Or we can email a link to {user.email}.
+          </p>
+          {onReauthenticate ? (
+            <ProviderButtons
+              providers={connectedProviders}
+              verb="Confirm with"
+              onSelect={(provider) => onReauthenticate(provider)}
+              className="mt-2"
+            />
+          ) : null}
           <Button variant="secondary" size="sm" className="mt-2 pointer-coarse:h-11" loading={pending} onClick={emailLink}>
             Email me a link
           </Button>

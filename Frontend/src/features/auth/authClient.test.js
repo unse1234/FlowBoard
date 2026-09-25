@@ -4,9 +4,13 @@ import {
   AUTH_CLIENT_MESSAGES,
   AuthRequestError,
   changePassword,
+  connectProvider,
   deleteAccount,
+  disconnectIdentity,
   fetchCurrentUser,
   getDeletionPreflight,
+  listIdentities,
+  listProviders,
   listSessions,
   refreshSession,
   requestPasswordReset,
@@ -17,6 +21,7 @@ import {
   signIn,
   signOut,
   signUp,
+  startProviderSignIn,
   updateDisplayName,
   verifyEmail,
 } from "./authClient.js";
@@ -389,4 +394,52 @@ test("deletion reads its preflight, then deletes with the cookie allowed to clea
   assert.equal(done.calls[0].init.method, "POST");
   assert.equal(done.calls[0].init.credentials, "include");
   assert.deepEqual(JSON.parse(done.calls[0].init.body), { confirmation: "DELETE", password: "pw" });
+});
+
+test("providers are listed, and a server without accounts lists none", async () => {
+  const on = recordingFetch(jsonResponse(200, { ok: true, providers: [{ id: "google", label: "Google" }] }));
+  const off = recordingFetch(jsonResponse(404, null));
+
+  assert.deepEqual(await listProviders({ fetchImpl: on.fetchImpl, ...BASE }), [{ id: "google", label: "Google" }]);
+  assert.deepEqual(await listProviders({ fetchImpl: off.fetchImpl, ...BASE }), []);
+});
+
+test("starting a provider sign-in lets the binding cookie through and returns the provider's address", async () => {
+  const authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth?state=s";
+  const { calls, fetchImpl } = recordingFetch(jsonResponse(200, { ok: true, authorizationUrl }));
+
+  assert.equal(await startProviderSignIn({ provider: "google", fetchImpl, ...BASE }), authorizationUrl);
+  assert.equal(calls[0].url, "https://api.example/api/auth/oauth/google/start");
+  assert.equal(calls[0].init.credentials, "include");
+
+  await connectProvider({ accessToken: "access", provider: "github", intent: "link", fetchImpl, ...BASE }).catch(() => {});
+  assert.equal(calls[1].url, "https://api.example/api/auth/oauth/github/connect");
+  assert.equal(calls[1].init.headers.Authorization, "Bearer access");
+  assert.deepEqual(JSON.parse(calls[1].init.body), { intent: "link" });
+});
+
+test("a sign-in address that is not the provider's own is refused, never followed", async () => {
+  for (const authorizationUrl of ["https://evil.test/login", "http://accounts.google.com/", "javascript:alert(1)", 42]) {
+    const { fetchImpl } = recordingFetch(jsonResponse(200, { ok: true, authorizationUrl }));
+    await assert.rejects(startProviderSignIn({ provider: "google", fetchImpl, ...BASE }), { code: "BAD_RESPONSE" }, String(authorizationUrl));
+  }
+});
+
+test("connected accounts are read, and one disconnected, with the bearer token", async () => {
+  const { calls, fetchImpl } = recordingFetch(
+    jsonResponse(200, {
+      ok: true,
+      user: { ...USER, hasPassword: false },
+      identities: [{ id: "i-1", provider: "google", email: "ada@gmail.com" }],
+      available: [{ id: "google", label: "Google" }],
+    }),
+  );
+
+  const result = await listIdentities({ accessToken: "access", fetchImpl, ...BASE });
+  await disconnectIdentity({ accessToken: "access", identityId: "i-1", fetchImpl, ...BASE });
+
+  assert.equal(result.hasPassword, false);
+  assert.equal(result.identities[0].provider, "google");
+  assert.equal(calls[1].init.method, "DELETE");
+  assert.equal(calls[1].url, "https://api.example/api/auth/identities/i-1");
 });

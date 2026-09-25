@@ -285,6 +285,81 @@ export async function deleteAccount({ accessToken, confirmation, password, ...op
   await send("/api/auth/delete-account", { ...options, body, accessToken, credentials: "include" });
 }
 
+/**
+ * The sign-in providers this server has configured, e.g. `[{ id: "google",
+ * label: "Google" }]`. Empty where accounts are off.
+ *
+ * @param {RequestOptions} [options]
+ * @returns {Promise<{ id: string, label: string }[]>}
+ */
+export async function listProviders(options = {}) {
+  try {
+    const body = await send("/api/auth/providers", { ...options, method: "GET" });
+    return Array.isArray(body?.providers) ? body.providers.filter((p) => typeof p?.id === "string" && typeof p?.label === "string") : [];
+  } catch (error) {
+    if (error instanceof AuthRequestError && error.code === "AUTH_UNAVAILABLE") return [];
+    throw error;
+  }
+}
+
+/**
+ * Begin signing in with a provider. The response sets a cookie that binds
+ * the sign-in to this browser, so the request lets the browser store it;
+ * the caller then sends the browser to the address returned.
+ *
+ * @param {{ provider: string } & RequestOptions} request
+ * @returns {Promise<string>} the provider's authorisation address
+ */
+export async function startProviderSignIn({ provider, ...options }) {
+  const body = await send(`/api/auth/oauth/${encodeURIComponent(provider)}/start`, { ...options, body: {}, credentials: "include" });
+  return readAuthorizationUrl(body);
+}
+
+/**
+ * Begin connecting a provider to the signed-in account (`link`), or signing
+ * in with one again to prove it is you (`reauthenticate`).
+ *
+ * @param {{ accessToken: string, provider: string, intent: "link" | "reauthenticate" } & RequestOptions} request
+ * @returns {Promise<string>}
+ */
+export async function connectProvider({ accessToken, provider, intent, ...options }) {
+  const body = await send(`/api/auth/oauth/${encodeURIComponent(provider)}/connect`, {
+    ...options,
+    body: { intent },
+    accessToken,
+    credentials: "include",
+  });
+  return readAuthorizationUrl(body);
+}
+
+/**
+ * @param {{ accessToken: string } & RequestOptions} request
+ * @returns {Promise<{ identities: { id: string, provider: string, email: string | null }[],
+ *   available: { id: string, label: string }[], hasPassword: boolean }>}
+ */
+export async function listIdentities({ accessToken, ...options }) {
+  const body = await send("/api/auth/identities", { ...options, method: "GET", accessToken });
+  if (!Array.isArray(body?.identities) || !Array.isArray(body?.available)) throw badResponse();
+  return { identities: body.identities, available: body.available, hasPassword: body.user?.hasPassword === true };
+}
+
+/** @param {{ accessToken: string, identityId: string } & RequestOptions} request */
+export async function disconnectIdentity({ accessToken, identityId, ...options }) {
+  await send(`/api/auth/identities/${encodeURIComponent(identityId)}`, { ...options, method: "DELETE", accessToken });
+}
+
+/** Only a provider's own https address, never somewhere else the response might name. */
+function readAuthorizationUrl(body) {
+  const allowed = new Set(["accounts.google.com", "github.com", "login.microsoftonline.com"]);
+  try {
+    const url = new URL(body?.authorizationUrl);
+    if (url.protocol === "https:" && allowed.has(url.hostname)) return url.toString();
+  } catch {
+    // Falls through to the error below.
+  }
+  throw badResponse();
+}
+
 async function send(
   path,
   {

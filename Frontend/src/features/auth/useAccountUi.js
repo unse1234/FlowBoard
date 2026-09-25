@@ -1,11 +1,39 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildAccountMenuItems } from "../../components/auth/accountMenuItems.js";
-import { requestPasswordReset, resendVerification, resetPassword, verifyEmail } from "./authClient.js";
+import {
+  connectProvider,
+  listProviders,
+  requestPasswordReset,
+  resendVerification,
+  resetPassword,
+  startProviderSignIn,
+  verifyEmail,
+} from "./authClient.js";
 import { useAuth } from "./authContext.js";
 import { AUTH_MODES } from "./authForm.js";
 import { AUTH_LINK, addressWithoutAuthLink, readAuthLink } from "./authLinks.js";
 import { AUTH_STATUS } from "./authSession.js";
+import { addressWithoutProviderReturn, readProviderReturn } from "./providerReturn.js";
 import { dismissVerificationBanner, shouldShowVerificationBanner } from "./verificationBanner.js";
+
+let providerReturnRead = false;
+let providerReturnAnnounced = false;
+let providerReturnValue = null;
+
+/**
+ * What a provider sign-in came back with (`/?oauth=…`), read once per page
+ * load and cleared from the address at the same moment.
+ */
+function consumeProviderReturn() {
+  if (providerReturnRead) return providerReturnValue;
+  providerReturnRead = true;
+
+  providerReturnValue = readProviderReturn(window.location);
+  if (providerReturnValue) {
+    window.history.replaceState(window.history.state, "", addressWithoutProviderReturn(window.location));
+  }
+  return providerReturnValue;
+}
 
 /** Set once a verification link has been sent to the server, for this page load. */
 let verificationStarted = false;
@@ -48,12 +76,18 @@ export function useAccountUi({ toast }) {
   const { getAccessToken, reloadUser, signOut } = auth;
 
   const [pageLink] = useState(consumePageLink);
+  const [providerReturn] = useState(consumeProviderReturn);
+  // Signing in with a provider is offered only where the server has one.
+  const [providers, setProviders] = useState([]);
   const [authDialog, setAuthDialog] = useState(() => ({
     open: pageLink?.kind === AUTH_LINK.SIGN_IN,
     mode: AUTH_MODES.SIGN_IN,
     key: 0,
   }));
-  const [accountOpen, setAccountOpen] = useState(false);
+  // Back from connecting a provider or proving identity: straight to settings.
+  const [accountOpen, setAccountOpen] = useState(
+    () => providerReturn?.ok === true && (providerReturn.outcome === "linked" || providerReturn.outcome === "reauthenticated"),
+  );
   // A new key each time the account dialog opens, so its device list is fresh.
   const [accountKey, setAccountKey] = useState(0);
   const [reset, setReset] = useState(() => ({
@@ -166,6 +200,40 @@ export function useAccountUi({ toast }) {
     setBannerVersion((version) => version + 1);
   }, [auth.user]);
 
+  useEffect(() => {
+    if (auth.status === AUTH_STATUS.UNAVAILABLE) return undefined;
+    let cancelled = false;
+    listProviders().then(
+      (list) => {
+        if (!cancelled) setProviders(list);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.status]);
+
+  // Say what came of a provider sign-in, once.
+  useEffect(() => {
+    if (!providerReturn || providerReturnAnnounced) return;
+    providerReturnAnnounced = true;
+    toast({ id: "auth", ...providerReturn.message });
+  }, [providerReturn, toast]);
+
+  /** Leave for the provider; the browser comes back to `/?oauth=…`. */
+  const signInWithProvider = useCallback(async (provider) => {
+    window.location.assign(await startProviderSignIn({ provider }));
+  }, []);
+
+  /** From settings: connect a provider, or sign in with one again to prove it is you. */
+  const goToProvider = useCallback(
+    async (provider, intent) => {
+      window.location.assign(await connectProvider({ accessToken: await getAccessToken(), provider, intent }));
+    },
+    [getAccessToken],
+  );
+
   // A verification link needs nothing filled in, so it is used straight away.
   useEffect(() => {
     if (pageLink?.kind !== AUTH_LINK.VERIFY_EMAIL || verificationStarted) return;
@@ -230,6 +298,9 @@ export function useAccountUi({ toast }) {
     handleResetDone,
     requestNewResetLink,
     closeReset,
+    providers,
+    signInWithProvider,
+    goToProvider,
     deletion,
     openDeleteAccount,
     closeDeleteAccount,

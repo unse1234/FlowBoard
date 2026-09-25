@@ -1,8 +1,10 @@
 import { memo, useEffect, useId, useState } from "react";
 import { deleteAccount, getDeletionPreflight } from "../../features/auth/authClient.js";
+import { useIdentities } from "../../features/auth/useIdentities.js";
 import { deleteBoard, transferBoard } from "../../features/boards/boardsClient.js";
 import { Button, Dialog, Spinner } from "../ui/index.js";
 import { AuthField } from "./AuthField.jsx";
+import ProviderButtons from "./ProviderButtons.jsx";
 
 const CONFIRMATION = "DELETE";
 
@@ -14,7 +16,7 @@ const CONFIRMATION = "DELETE";
  * delete it. Only then does the form appear: a fresh proof of identity and
  * DELETE typed out. The server checks all of it again.
  */
-function DeleteAccountDialog({ open, user, getAccessToken, onClose, onDeleted }) {
+function DeleteAccountDialog({ open, user, getAccessToken, onClose, onDeleted, onProvider }) {
   const [readKey, setReadKey] = useState(0);
   const [preflight, setPreflight] = useState({ key: null, value: null, error: null });
   const key = open ? readKey : null;
@@ -60,6 +62,7 @@ function DeleteAccountDialog({ open, user, getAccessToken, onClose, onDeleted })
           getAccessToken={getAccessToken}
           onCancel={onClose}
           onDeleted={onDeleted}
+          onProvider={onProvider}
         />
       )}
     </Dialog>
@@ -158,7 +161,11 @@ function SharedBoardRow({ board, getAccessToken, onChanged }) {
   );
 }
 
-function ConfirmDeletion({ user, preflight, getAccessToken, onCancel, onDeleted }) {
+function ConfirmDeletion({ user, preflight, getAccessToken, onCancel, onDeleted, onProvider }) {
+  const connections = useIdentities({ getAccessToken, enabled: preflight.proof === "provider" });
+  const connected = connections.available.filter((provider) =>
+    connections.identities.some((identity) => identity.provider === provider.id),
+  );
   const id = useId();
   const [password, setPassword] = useState("");
   const [typed, setTyped] = useState("");
@@ -213,10 +220,15 @@ function ConfirmDeletion({ user, preflight, getAccessToken, onCancel, onDeleted 
           />
         </>
       ) : (
-        <p className="text-label text-text-muted">
-          Your account signs in through a connected account. Sign in with it again from the sign-in screen, then come back
-          here within 10 minutes.
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-label text-text-muted">
+            Your account signs in through a connected account. Confirm it's you with it, then come back here within 10
+            minutes. If you already did, go ahead.
+          </p>
+          {onProvider ? (
+            <ProviderButtons providers={connected} verb="Confirm with" onSelect={(provider) => onProvider(provider, "reauthenticate")} />
+          ) : null}
+        </div>
       )}
 
       <AuthField
