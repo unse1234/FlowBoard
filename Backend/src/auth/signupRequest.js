@@ -109,5 +109,7 @@ function containsCodePointIn(text, ranges) {
 }
 
 module.exports = {
+  parseDisplayName,
+  parsePassword,
   parseSignupRequest,
 };

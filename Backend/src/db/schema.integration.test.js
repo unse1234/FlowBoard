@@ -538,3 +538,59 @@ test("the refresh lookup uses the token hash index", { skip: SKIP }, async (t) =
   const plan = JSON.stringify(rows[0]["QUERY PLAN"]);
   assert.match(plan, /refresh_tokens_token_hash_key/);
 });
+
+// --- account_tokens (0006) -------------------------------------------------
+
+const insertAccountToken = (database, userId, overrides = {}) =>
+  database.query(
+    `INSERT INTO account_tokens (user_id, purpose, token_hash, email_normalized, expires_at)
+     VALUES ($1, $2, $3, $4, now() + interval '1 hour')
+     RETURNING *`,
+    [
+      userId,
+      overrides.purpose ?? "verify_email",
+      overrides.hash ?? tokenHash(),
+      overrides.emailNormalized ?? "ada@example.com",
+    ],
+  );
+
+test("an account holds at most one token per purpose", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  await insertAccountToken(database, userId, { purpose: "verify_email" });
+  await insertAccountToken(database, userId, { purpose: "reset_password" });
+
+  await assert.rejects(insertAccountToken(database, userId, { purpose: "verify_email" }), { code: "23505" });
+});
+
+test("an account token is a digest, for a known purpose", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+
+  await assert.rejects(
+    insertAccountToken(database, userId, { hash: Buffer.from(randomBytes(32).toString("base64url")) }),
+    { code: "23514", constraint: "account_tokens_token_hash_length_check" },
+  );
+  await assert.rejects(insertAccountToken(database, userId, { purpose: "change_email" }), {
+    code: "23514",
+    constraint: "account_tokens_purpose_check",
+  });
+});
+
+test("a token digest can belong to only one account token", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  const hash = tokenHash();
+  await insertAccountToken(database, userId, { purpose: "verify_email", hash });
+
+  await assert.rejects(insertAccountToken(database, userId, { purpose: "reset_password", hash }), {
+    code: "23505",
+    constraint: "account_tokens_token_hash_key",
+  });
+});
+
+test("deleting an account removes its tokens", { skip: SKIP }, async (t) => {
+  const { database, userId } = await databaseWithUser(t);
+  await insertAccountToken(database, userId);
+
+  await database.query("DELETE FROM users WHERE id = $1", [userId]);
+
+  assert.equal(await countRows(database, "account_tokens"), 0);
+});

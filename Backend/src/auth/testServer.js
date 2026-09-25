@@ -1,6 +1,7 @@
 const { randomBytes } = require("node:crypto");
 const { getServerConfig, loadLocalEnvFile } = require("../config/serverConfig");
 const { createDatabase } = require("../db/createDatabase");
+const { createMemoryTransport } = require("../email/memoryTransport");
 const { runMigrations } = require("../db/migrate");
 const { createApp } = require("../server");
 
@@ -40,6 +41,8 @@ const BASE_CONFIG = Object.freeze({
   ...DEFAULTS,
   port: 0,
   clientOrigin: ["http://localhost:5173"],
+  appUrl: "http://localhost:5173",
+  email: { resendApiKey: null, from: "FlowBoard <no-reply@flowboard.test>" },
   ai: { ...DEFAULTS.ai, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
   database: {
     ...DEFAULTS.database,
@@ -50,6 +53,7 @@ const BASE_CONFIG = Object.freeze({
   auth: {
     ...DEFAULTS.auth,
     rateLimitPerMinute: 0,
+    emailsPerAddressPerHour: 0,
     argon2: TEST_ARGON2,
     accessToken: { ...DEFAULTS.auth.accessToken, keys: TEST_SIGNING_KEYS },
   },
@@ -89,13 +93,22 @@ const VALID_SIGNUP = Object.freeze({
  * Start a server against a freshly migrated database.
  *
  * @param {import("node:test").TestContext} t
- * @param {{ rateLimitPerMinute?: number, sessionRateLimitPerMinute?: number, auth?: Object }} [options]
+ * @param {{ rateLimitPerMinute?: number, sessionRateLimitPerMinute?: number, auth?: Object,
+ *   emailTransport?: Object | null }} [options]
  *   Both limits default to off, so a test meets one only when it asks to.
  *   `auth` replaces whole sections of config.auth, such as `refreshToken`.
+ *   Email goes to an in-memory mailbox, `mailbox`; null turns email off.
  */
 async function startAuthServer(
   t,
-  { rateLimitPerMinute = 0, sessionRateLimitPerMinute = 0, auth = {}, fetchImpl } = {},
+  {
+    rateLimitPerMinute = 0,
+    sessionRateLimitPerMinute = 0,
+    auth = {},
+    fetchImpl,
+    emailTransport = createMemoryTransport(),
+    logger = SILENT_LOGGER,
+  } = {},
 ) {
   const config = {
     ...BASE_CONFIG,
@@ -107,18 +120,21 @@ async function startAuthServer(
   await database.query("CREATE SCHEMA public");
   await runMigrations({ database, logger: SILENT_LOGGER });
 
-  const { httpServer, io } = createApp(config, {
+  const app = createApp(config, {
     database,
     diagramService: { async generateDiagram() {} },
-    logger: SILENT_LOGGER,
+    logger,
     // Outbound calls (Turnstile) go here in tests, never to the network.
     fetchImpl,
+    emailTransport,
   });
+  const { httpServer, io, emailService, accountEvents } = app;
 
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   t.after(async () => {
     httpServer.closeAllConnections();
     await new Promise((resolve) => io.close(() => resolve()));
+    await emailService.drain();
     await database.close();
   });
 
@@ -144,6 +160,12 @@ async function startAuthServer(
     httpServer,
     io,
     config,
+    emailService,
+    accountEvents,
+    /** Every email sent, in memory; null when the test turned email off. */
+    mailbox: emailTransport,
+    /** Wait for emails sent in the background, then read `mailbox`. */
+    drainEmail: () => emailService.drain(),
     post,
     signup: (body) => post("/api/auth/signup", body),
     login: (body, headers) => post("/api/auth/login", body, headers),

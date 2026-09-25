@@ -134,6 +134,21 @@ const AUTH_ERRORS = Object.freeze({
     message: "Too many attempts. Wait a moment and try again.",
   },
 
+  // A verification or reset link that is unknown, expired, already used or
+  // replaced by a newer one. One answer for all of them: the person's next
+  // step is the same, and the difference would only help someone guessing.
+  TOKEN_INVALID: {
+    status: 400,
+    message: "This link has expired or has already been used. Ask for a new one.",
+  },
+
+  // The server has no email configured (E-19), so nothing can be sent. Said
+  // plainly rather than pretending a message went out.
+  EMAIL_UNAVAILABLE: {
+    status: 503,
+    message: "Email isn't available on FlowBoard right now, so we couldn't send that. Try again later.",
+  },
+
   INVALID_JSON: { status: 400, message: "The request body must be valid JSON." },
   PAYLOAD_TOO_LARGE: { status: 413, message: "That request is too large." },
 

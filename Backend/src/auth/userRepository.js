@@ -50,7 +50,7 @@ function createUserRepository({ database }) {
      */
     async findByNormalizedEmail(emailNormalized) {
       const { rows } = await database.query(
-        `SELECT id, email, display_name, password_hash, token_version,
+        `SELECT id, email, email_normalized, display_name, password_hash, token_version,
                 email_verified_at, status
          FROM users
          WHERE email_normalized = $1 AND deleted_at IS NULL`,
@@ -79,6 +79,50 @@ function createUserRepository({ database }) {
 
       return rowCount === 1;
     },
+
+    /**
+     * Record that the address was proven, if the account still has the
+     * address the link was sent to. Verifying twice keeps the first time.
+     *
+     * @returns {Promise<boolean>} whether the account matched
+     */
+    async markEmailVerified({ userId, emailNormalized }, runner = database) {
+      const { rowCount } = await runner.query(
+        `UPDATE users
+         SET email_verified_at = COALESCE(email_verified_at, now())
+         WHERE id = $1 AND email_normalized = $2 AND deleted_at IS NULL`,
+        [userId, emailNormalized],
+      );
+      return rowCount === 1;
+    },
+
+    /**
+     * Replace the password and move `token_version` on, which invalidates
+     * every access token issued before (ADR 0002). For a reset, and for a
+     * change or first password set from account settings.
+     *
+     * `verifiedEmail` names the address a reset link was delivered to: using
+     * the link proves the address, so an unverified one becomes verified. The
+     * update then also requires the account to still have that address.
+     *
+     * @returns {Promise<Object | null>} the updated user, or null if no account matched
+     */
+    async replacePassword({ userId, passwordHash, verifiedEmail = null }, runner = database) {
+      const { rows } = await runner.query(
+        `UPDATE users
+         SET password_hash = $2,
+             token_version = token_version + 1,
+             email_verified_at = CASE WHEN $3::text IS NULL THEN email_verified_at
+                                      ELSE COALESCE(email_verified_at, now()) END
+         WHERE id = $1
+           AND deleted_at IS NULL
+           AND ($3::text IS NULL OR email_normalized = $3)
+         RETURNING id, email, email_normalized, display_name, password_hash, token_version,
+                   email_verified_at, status`,
+        [userId, passwordHash, verifiedEmail],
+      );
+      return rows.length === 0 ? null : toUser(rows[0]);
+    },
   };
 }
 
@@ -87,8 +131,12 @@ function toUser(row) {
   return {
     id: row.id,
     email: row.email,
+    emailNormalized: row.email_normalized,
     displayName: row.display_name,
     passwordHash: row.password_hash,
+    // Whether the account can sign in with a password, for queries that
+    // deliberately do not select the hash itself.
+    hasPassword: row.has_password ?? (row.password_hash === undefined ? undefined : row.password_hash !== null),
     tokenVersion: row.token_version,
     emailVerifiedAt: row.email_verified_at,
     status: row.status,

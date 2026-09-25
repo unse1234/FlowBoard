@@ -7,6 +7,7 @@ const { createDiagramService } = require("./ai/diagramService");
 const { createGeminiProvider } = require("./ai/providers/geminiProvider");
 const { createRateLimiter } = require("./ai/rateLimiter");
 const { createAccessTokens } = require("./auth/accessTokens");
+const { createAccountEvents } = require("./auth/accountEvents");
 const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter");
 const { createTurnstileVerifier } = require("./auth/botCheck");
 const { createLoginThrottle } = require("./auth/loginThrottle");
@@ -14,6 +15,8 @@ const { createPasswordHasher } = require("./auth/passwordHasher");
 const { createRefreshCookie } = require("./auth/refreshTokens");
 const { getServerConfig, loadLocalEnvFile } = require("./config/serverConfig");
 const { createDatabase } = require("./db/createDatabase");
+const { createEmailService } = require("./email/emailService");
+const { createResendTransport } = require("./email/resendTransport");
 const { createPostgresRateLimiter } = require("./http/rateLimiter");
 const { createSecurityHeaders } = require("./http/securityHeaders");
 const { OperationStore } = require("./operations/operationStore");
@@ -24,11 +27,27 @@ const SHUTDOWN_GRACE_MS = 15_000;
 
 function createApp(
   config = getServerConfig(),
-  { diagramService, database = null, logger = console, fetchImpl = globalThis.fetch } = {},
+  {
+    diagramService,
+    database = null,
+    logger = console,
+    fetchImpl = globalThis.fetch,
+    // Tests pass an in-memory mailbox; otherwise Resend when it is configured.
+    emailTransport = config.email.resendApiKey
+      ? createResendTransport({ apiKey: config.email.resendApiKey, fetchImpl })
+      : null,
+  } = {},
 ) {
   const app = express();
   const httpServer = createServer(app);
   const operationStore = new OperationStore();
+  const accountEvents = createAccountEvents({ logger });
+  const emailService = createEmailService({
+    transport: emailTransport,
+    from: config.email.from,
+    appUrl: config.appUrl,
+    logger,
+  });
 
   // Express announces itself in every response otherwise, which tells an
   // attacker which framework to look up advisories for and helps nobody else.
@@ -113,6 +132,18 @@ function createApp(
           retentionDays: config.auth.sessionRetentionDays,
           every: config.auth.sessionPurgeEvery,
         },
+        emailService,
+        accountEvents,
+        addressLimiter:
+          config.auth.emailsPerAddressPerHour > 0
+            ? createPostgresRateLimiter({
+                database,
+                name: "address-email",
+                limit: config.auth.emailsPerAddressPerHour,
+                windowSeconds: 60 * 60,
+                logger,
+              })
+            : null,
         botCheck: config.auth.turnstileSecretKey
           ? createTurnstileVerifier({ secretKey: config.auth.turnstileSecretKey, fetchImpl, logger })
           : null,
@@ -174,6 +205,8 @@ function createApp(
     io,
     operationStore,
     database,
+    emailService,
+    accountEvents,
   };
 }
 
@@ -189,6 +222,7 @@ function createShutdownHandler({
   httpServer,
   io,
   database,
+  emailService = null,
   logger = console,
   graceMs = SHUTDOWN_GRACE_MS,
   exit = (code) => process.exit(code),
@@ -214,6 +248,9 @@ function createShutdownHandler({
       // mid-write when its database connection is taken away.
       await new Promise((resolve) => io.close(() => resolve()));
       await new Promise((resolve) => httpServer.close(() => resolve()));
+      // A reset link or a security notice already promised to someone is
+      // sent before the pool it needs goes away.
+      await emailService?.drain();
       await database?.close();
 
       logger.info?.("[shutdown] Drained cleanly.");
@@ -235,7 +272,7 @@ if (require.main === module) {
     ? createDatabase({ config: config.database })
     : null;
 
-  const { httpServer, io } = createApp(config, { database });
+  const { httpServer, io, emailService } = createApp(config, { database });
 
   httpServer.listen(config.port, () => {
     console.info(
@@ -256,9 +293,14 @@ if (require.main === module) {
         ? `Auth routes enabled at /api/auth (limit ${config.auth.rateLimitPerMinute}/min per client).`
         : "Auth routes disabled: they need DATABASE_URL.",
     );
+    console.info(
+      emailService.enabled
+        ? "Email enabled through Resend (verification, password reset, security notices)."
+        : "Email disabled: RESEND_API_KEY, MAIL_FROM and APP_URL are not all set. Nobody can verify an address or reset a password.",
+    );
   });
 
-  const shutdown = createShutdownHandler({ httpServer, io, database });
+  const shutdown = createShutdownHandler({ httpServer, io, database, emailService });
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 }

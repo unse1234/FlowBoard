@@ -191,7 +191,8 @@ function createSessionRepository({ database }) {
      */
     async findSessionUser({ userId, sessionId }) {
       const { rows } = await database.query(
-        `SELECT u.id, u.email, u.display_name, u.token_version, u.email_verified_at, u.status
+        `SELECT u.id, u.email, u.email_normalized, u.display_name, u.token_version, u.email_verified_at,
+                u.status, u.password_hash IS NOT NULL AS has_password
          FROM auth_sessions s
          JOIN users u ON u.id = s.user_id
          WHERE s.id = $1
@@ -261,6 +262,23 @@ function createSessionRepository({ database }) {
         [userId, keepSessionId, reason],
       );
       return rowCount;
+    },
+
+    /**
+     * End every live session of this user: a password reset, or an account
+     * being deleted.
+     *
+     * @returns {Promise<string[]>} the ids of the sessions ended
+     */
+    async revokeAllSessions({ userId, reason }, runner = database) {
+      const { rows } = await runner.query(
+        `UPDATE auth_sessions
+         SET revoked_at = now(), revoked_reason = $2
+         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+         RETURNING id`,
+        [userId, reason],
+      );
+      return rows.map((row) => row.id);
     },
 
     /**
