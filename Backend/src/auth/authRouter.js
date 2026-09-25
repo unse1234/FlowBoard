@@ -7,6 +7,7 @@ const { createAccountEmails } = require("./accountEmails");
 const { registerAccountDeletion } = require("./accountDeletion");
 const { registerAccountRoutes } = require("./accountRoutes");
 const { registerEmailRoutes } = require("./emailRoutes");
+const { registerOAuthRoutes } = require("./oauth/oauthRoutes");
 const { parseLoginRequest } = require("./loginRequest");
 const { generateRefreshToken, hashRefreshToken } = require("./refreshTokens");
 const { createRouteKit, logFailure, publicUser, readIpAddress, sendError } = require("./routeKit");
@@ -65,6 +66,8 @@ function createAuthRouter({
   emailService,
   addressLimiter = null,
   accountEvents,
+  oauthProviders = {},
+  appUrl = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -552,6 +555,20 @@ function createAuthRouter({
     signInLimiter,
     sessionLimiter,
     loginThrottle,
+    logger,
+  });
+
+  registerOAuthRoutes(router, {
+    kit,
+    database,
+    providers: oauthProviders,
+    appUrl,
+    refreshCookie,
+    cookieSecure: refreshCookie.name.startsWith("__Secure-"),
+    requireAuth,
+    emailService,
+    sessionLimiter,
+    signInLimiter,
     logger,
   });
 

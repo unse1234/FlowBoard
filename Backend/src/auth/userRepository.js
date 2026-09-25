@@ -26,13 +26,13 @@ function createUserRepository({ database }) {
      *
      * @returns {Promise<{ created: boolean, user: { id: string } | null }>}
      */
-    async createUser({ email, emailNormalized, displayName, passwordHash }) {
-      const { rows } = await database.query(
-        `INSERT INTO users (email, email_normalized, display_name, password_hash)
-         VALUES ($1, $2, $3, $4)
+    async createUser({ email, emailNormalized, displayName, passwordHash, emailVerified = false }, runner = database) {
+      const { rows } = await runner.query(
+        `INSERT INTO users (email, email_normalized, display_name, password_hash, email_verified_at)
+         VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN now() END)
          ON CONFLICT (email_normalized) WHERE deleted_at IS NULL DO NOTHING
          RETURNING id, created_at`,
-        [email, emailNormalized, displayName, passwordHash],
+        [email, emailNormalized, displayName, passwordHash, emailVerified],
       );
 
       if (rows.length === 0) return { created: false, user: null };

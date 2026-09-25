@@ -110,10 +110,12 @@ async function startAuthServer(
     emailTransport = createMemoryTransport(),
     logger = SILENT_LOGGER,
     boardsRateLimitPerMinute = 0,
+    oauth = { google: null, github: null, microsoft: null },
   } = {},
 ) {
   const config = {
     ...BASE_CONFIG,
+    oauth,
     boards: { rateLimitPerMinute: boardsRateLimitPerMinute },
     auth: { ...BASE_CONFIG.auth, rateLimitPerMinute, sessionRateLimitPerMinute, ...auth },
   };

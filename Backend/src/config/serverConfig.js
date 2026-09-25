@@ -170,6 +170,8 @@ function getServerConfig(env = process.env) {
     // point at. Null where neither is configured.
     appUrl: readAppUrl(env.APP_URL),
     email: readEmail(env),
+    // Server-side only: the client secrets are never sent anywhere but the provider.
+    oauth: readOAuth(env),
     boards: {
       rateLimitPerMinute: readNonNegativeInteger(
         env.BOARDS_RATE_LIMIT_PER_MINUTE,
@@ -478,6 +480,39 @@ function readEmail(env) {
   }
 
   return { resendApiKey, from: fromValue };
+}
+
+/**
+ * Google, GitHub and Microsoft credentials (spec Phase E, E-23). A provider
+ * is on when both its id and secret are set; one without the other stops
+ * startup, as does any provider without APP_URL, which its redirect address
+ * is built from.
+ */
+function readOAuth(env) {
+  const pair = (prefix) => {
+    const clientId = env[`${prefix}_CLIENT_ID`]?.trim() || null;
+    const clientSecret = env[`${prefix}_CLIENT_SECRET`]?.trim() || null;
+    if (!clientId && !clientSecret) return null;
+    if (!clientId || !clientSecret) {
+      throw new Error(`${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET must be set together.`);
+    }
+    return { clientId, clientSecret };
+  };
+
+  const google = pair("GOOGLE");
+  const github = pair("GITHUB");
+  const microsoftPair = pair("MICROSOFT");
+
+  const tenant = env.MICROSOFT_TENANT?.trim() || "common";
+  if (!/^[A-Za-z0-9.-]{1,64}$/.test(tenant)) {
+    throw new Error('MICROSOFT_TENANT must be "common", "organizations", "consumers", or a tenant id or domain.');
+  }
+  const microsoft = microsoftPair ? { ...microsoftPair, tenant } : null;
+
+  if ((google || github || microsoft) && !env.APP_URL?.trim()) {
+    throw new Error("Sign-in with a provider needs APP_URL, which its redirect address is built from.");
+  }
+  return { google, github, microsoft };
 }
 
 /**

@@ -161,6 +161,15 @@ const AUTH_ERRORS = Object.freeze({
     message: "You own boards other people use. Hand each one to someone on it, or delete it, first.",
   },
 
+  // Sign-in with a provider (Phase E).
+  PROVIDER_UNAVAILABLE: { status: 404, message: "That sign-in option isn't available." },
+  IDENTITY_NOT_FOUND: { status: 404, message: "That account isn't connected." },
+  // E-23: an account must always keep a way in.
+  LAST_SIGN_IN_METHOD: {
+    status: 409,
+    message: "This is the only way you can sign in. Set a password or connect another account first.",
+  },
+
   // Deleting an account needs the word typed, so a stray click cannot do it.
   DELETE_CONFIRMATION_REQUIRED: { status: 400, message: 'Type DELETE to confirm.' },
 

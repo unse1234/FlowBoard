@@ -11,6 +11,7 @@ const { createAccountEvents } = require("./auth/accountEvents");
 const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter");
 const { createBoardRouters, handleBoardRequestError } = require("./boards/boardRouter");
 const { createTurnstileVerifier } = require("./auth/botCheck");
+const { createProviders } = require("./auth/oauth/providers");
 const { createLoginThrottle } = require("./auth/loginThrottle");
 const { createPasswordHasher } = require("./auth/passwordHasher");
 const { createRefreshCookie } = require("./auth/refreshTokens");
@@ -147,6 +148,9 @@ function createApp(
         },
         emailService,
         accountEvents,
+        appUrl: config.appUrl,
+        // Google, GitHub and Microsoft, each only when its credentials are set.
+        oauthProviders: createProviders(config.oauth, { fetchImpl }),
         addressLimiter:
           config.auth.emailsPerAddressPerHour > 0
             ? createPostgresRateLimiter({

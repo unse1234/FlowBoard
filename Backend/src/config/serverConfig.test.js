@@ -383,3 +383,32 @@ test("realtime limits default sensibly, and recovery is always finite", () => {
   assert.equal(getServerConfig({ REALTIME_RECOVERY_SECONDS: "999999" }).realtime.recoverySeconds, 120);
   assert.equal(getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: "10" }).realtime.maxMessageBytes, 1_000_000);
 });
+
+test("a sign-in provider is on only with both its id and secret, and needs APP_URL", () => {
+  assert.deepEqual(getServerConfig({}).oauth, { google: null, github: null, microsoft: null });
+
+  const configured = getServerConfig({
+    APP_URL: "https://app.flowboard.app",
+    GOOGLE_CLIENT_ID: "g-id",
+    GOOGLE_CLIENT_SECRET: "g-secret",
+    MICROSOFT_CLIENT_ID: "m-id",
+    MICROSOFT_CLIENT_SECRET: "m-secret",
+    MICROSOFT_TENANT: "organizations",
+  }).oauth;
+  assert.deepEqual(configured, {
+    google: { clientId: "g-id", clientSecret: "g-secret" },
+    github: null,
+    microsoft: { clientId: "m-id", clientSecret: "m-secret", tenant: "organizations" },
+  });
+  assert.equal(
+    getServerConfig({ APP_URL: "https://a.app", MICROSOFT_CLIENT_ID: "m", MICROSOFT_CLIENT_SECRET: "s" }).oauth.microsoft.tenant,
+    "common",
+  );
+
+  assert.throws(() => getServerConfig({ APP_URL: "https://a.app", GITHUB_CLIENT_ID: "only-the-id" }), /GITHUB_CLIENT_SECRET/);
+  assert.throws(() => getServerConfig({ GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" }), /APP_URL/);
+  assert.throws(
+    () => getServerConfig({ APP_URL: "https://a.app", MICROSOFT_CLIENT_ID: "m", MICROSOFT_CLIENT_SECRET: "s", MICROSOFT_TENANT: "bad/tenant" }),
+    /MICROSOFT_TENANT/,
+  );
+});
