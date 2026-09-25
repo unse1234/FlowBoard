@@ -49,7 +49,15 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useShapeRegistry } from "./useShapeRegistry";
 import { useWhiteboardEvents } from "./useWhiteboardEvents";
 
-export function useWhiteboard() {
+/**
+ * @param {Object} [options]
+ * @param {{ ready: boolean, user: Object | null, getAccessToken: () => Promise<string | null>,
+ *   revalidate: () => Promise<string | null>, createBoard: () => Promise<{ id: string }> } | null} [options.account]
+ *   null where the server has no accounts. Otherwise sharing creates a board
+ *   on the server, the connection authenticates, and the server's role for
+ *   this account decides whether the board can be changed here (Phase D).
+ */
+export function useWhiteboard({ account = null } = {}) {
   const stageRef = useRef(null);
   const transformerRef = useRef(null);
   const laserClearTimeout = useRef(null);
@@ -115,12 +123,30 @@ export function useWhiteboard() {
     username: collaborationUsername,
     status: collaborationStatus,
     remotePresence,
-    publishLocalOperation,
+    publishLocalOperation: publishToRoom,
     publishPresence,
     needsDisplayName,
     suggestedDisplayName,
     setDisplayName,
-  } = useRealtimeCollaboration({ roomId: collaborationRoomId, setShapes });
+    mode: collaborationMode,
+    role: collaborationRole,
+    accessProblem,
+  } = useRealtimeCollaboration({ roomId: collaborationRoomId, setShapes, account });
+
+  // A viewer watches: nothing on this board can be changed from here. The
+  // server refuses a viewer's changes anyway (Phase D); this keeps the canvas
+  // from showing edits that would never reach anyone. Read through a ref by
+  // the guards below, which stay stable across renders.
+  const readOnly = collaborationRole === "viewer";
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+  }, [readOnly]);
+
+  const publishLocalOperation = useCallback(
+    (type, payload) => (readOnlyRef.current ? null : publishToRoom(type, payload)),
+    [publishToRoom],
+  );
 
   // Send the board's existing shapes into a newly created room.
   //
@@ -183,11 +209,11 @@ export function useWhiteboard() {
   });
 
   const {
-    setShapesWithHistory,
+    setShapesWithHistory: recordShapes,
     saveHistoryCheckpoint,
     discardLastCheckpoint,
-    undo,
-    redo,
+    undo: undoLocal,
+    redo: redoLocal,
     canUndo,
     canRedo,
   } = useHistory({
@@ -195,6 +221,20 @@ export function useWhiteboard() {
       setShapes,
       clearSelection,
     });
+
+  // Every local edit goes through one of these, so a viewer's canvas cannot change.
+  const setShapesWithHistory = useCallback(
+    (updater) => {
+      if (!readOnlyRef.current) recordShapes(updater);
+    },
+    [recordShapes],
+  );
+  const undo = useCallback(() => {
+    if (!readOnlyRef.current) undoLocal();
+  }, [undoLocal]);
+  const redo = useCallback(() => {
+    if (!readOnlyRef.current) redoLocal();
+  }, [redoLocal]);
 
   const updateShape = useCallback(
     (id, updater, operationType = OPERATION_TYPES.UPDATE_SHAPE) => {
@@ -467,11 +507,15 @@ export function useWhiteboard() {
    */
   const chooseTool = useCallback(
     (nextTool) => {
+      // A viewer only looks around.
+      if (readOnlyRef.current) return;
       setTool(nextTool);
       if (nextTool !== TOOLS.SELECT && nextTool !== TOOLS.PAN) clearSelection();
     },
     [clearSelection],
   );
+  // The hand for a viewer: no selecting, dragging, drawing or text editing.
+  const activeTool = readOnly ? TOOLS.PAN : tool;
 
   useKeyboardShortcuts({
     undo,
@@ -590,11 +634,17 @@ export function useWhiteboard() {
    */
   const startCollaboration = useCallback(async () => {
     if (collaborationRoomId) {
+      // With accounts the link opens the board only for people already on
+      // it; invitations are how others get in, so there is nothing to copy.
+      if (account) return { link: collaborationLink, copied: false };
       const copied = await copyCollaborationLink();
       return { link: collaborationLink, copied };
     }
 
-    const roomId = createCollaborationRoomId();
+    // With accounts the board is created on the server first, owned by this
+    // account and private until the owner invites someone (E-21). Its id is
+    // the room. Throws if it could not be created, for the caller to say so.
+    const roomId = account ? (await account.createBoard()).id : createCollaborationRoomId();
     const link = buildCollaborationLink(roomId);
 
     pendingCollaborationSeedRef.current = shapesRef.current.map((shape) =>
@@ -604,6 +654,8 @@ export function useWhiteboard() {
     setCollaborationLink(link);
     setCollaborationLinkCopied(false);
     window.history.replaceState(null, "", link);
+
+    if (account) return { link, copied: false };
 
     let copied = false;
 
@@ -619,12 +671,12 @@ export function useWhiteboard() {
     }
 
     return { link, copied };
-  }, [collaborationLink, collaborationRoomId, copyCollaborationLink]);
+  }, [account, collaborationLink, collaborationRoomId, copyCollaborationLink]);
 
   const events = useWhiteboardEvents({
     stageRef,
     laserClearTimeoutRef: laserClearTimeout,
-    tool,
+    tool: activeTool,
     setTool,
     toolLocked,
     activeStyle,
@@ -817,9 +869,18 @@ export function useWhiteboard() {
       needsDisplayName,
       suggestedDisplayName,
       setDisplayName,
+      // "account" where the server has accounts, "legacy" where it does not.
+      mode: collaborationMode,
+      role: collaborationRole,
+      readOnly,
+      accessProblem,
     }),
     [
+      accessProblem,
       boardId,
+      collaborationMode,
+      collaborationRole,
+      readOnly,
       collaborationLink,
       collaborationLinkCopied,
       collaborationRoomId,
@@ -847,9 +908,10 @@ export function useWhiteboard() {
     stageRef,
     transformerRef,
     registerShapeRef,
-    tool,
+    tool: activeTool,
     setTool: chooseTool,
-    isPanMode: isSpaceHeld || tool === TOOLS.PAN,
+    isPanMode: isSpaceHeld || activeTool === TOOLS.PAN,
+    readOnly,
     selectedShape,
     selectedShapes,
     selectedShapeIds,

@@ -139,7 +139,8 @@ export function buildBoardMenuItems({
       },
     ],
     [
-      {
+      // Absent where the board cannot be changed from here (a viewer).
+      onClearBoard && {
         id: "clear",
         label: "Clear canvas",
         icon: Trash2,

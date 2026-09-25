@@ -11,7 +11,9 @@ export class RealtimeManager {
   #user;
   #logger;
   #joined = false;
+  #role = null;
   #pendingOperations = new Map();
+  #accessHandlers = new Set();
   #operationHandlers = new Set();
   #presenceHandlers = new Set();
   #statusHandlers = new Set();
@@ -68,6 +70,37 @@ export class RealtimeManager {
   }
 
   /**
+   * Things the server decided about this client's access (a server with
+   * accounts only):
+   * - `{ type: "role", role }`: joined, or the role changed while joined
+   * - `{ type: "denied", code }`: the board refused the join
+   * - `{ type: "revoked", code }`: access was withdrawn while on the board
+   * - `{ type: "session-ended" }`: the server closed the connection because
+   *   the session behind it ended
+   * - `{ type: "refused", code }`: the handshake was refused (no or stale
+   *   token, session ended, too many attempts)
+   *
+   * @param {(event: { type: string, code?: string, role?: string }) => void} handler
+   * @returns {() => void}
+   */
+  onAccess(handler) {
+    this.#accessHandlers.add(handler);
+
+    return () => this.#accessHandlers.delete(handler);
+  }
+
+  /** The role the server granted on this board, or null before joining. */
+  getRole() {
+    return this.#role;
+  }
+
+  /** Connect again after the caller has dealt with a refusal, such as by refreshing the session. */
+  reconnect() {
+    this.#setStatus(CONNECTION_STATE.CONNECTING);
+    this.#socketService.connect();
+  }
+
+  /**
    * @param {(presence: unknown) => void} handler
    * @returns {() => void}
    */
@@ -112,6 +145,14 @@ export class RealtimeManager {
     this.#unsubscribers.push(
       this.#socketService.on(SOCKET_EVENTS.CONNECT, () => {
         this.#setStatus(CONNECTION_STATE.CONNECTED);
+        // A resumed connection is still in the board's room, and the server
+        // re-checked its access; it received what it missed. Only a new one
+        // joins, which also replays the board's history: a full re-sync.
+        if (this.#socketService.wasRecovered?.() && this.#role) {
+          this.#joined = true;
+          this.#flushPendingOperations();
+          return;
+        }
         this.#joinBoard().catch((error) => this.#handleError(error));
       }),
     );
@@ -125,7 +166,33 @@ export class RealtimeManager {
 
     this.#unsubscribers.push(
       this.#socketService.on(SOCKET_EVENTS.CONNECT_ERROR, (error) => {
+        const code = error?.data?.code;
+        if (typeof code === "string") this.#notifyAccess({ type: "refused", code });
         this.#handleError(error);
+      }),
+    );
+
+    this.#unsubscribers.push(
+      this.#socketService.on(SOCKET_EVENTS.SESSION_ENDED, () => {
+        this.#joined = false;
+        this.#notifyAccess({ type: "session-ended" });
+      }),
+    );
+
+    this.#unsubscribers.push(
+      this.#socketService.on(SOCKET_EVENTS.BOARD_ACCESS_REVOKED, (event) => {
+        if (event?.boardId !== this.#boardId) return;
+        this.#joined = false;
+        this.#role = null;
+        this.#notifyAccess({ type: "revoked", code: typeof event.code === "string" ? event.code : "BOARD_NOT_FOUND" });
+      }),
+    );
+
+    this.#unsubscribers.push(
+      this.#socketService.on(SOCKET_EVENTS.BOARD_ROLE_CHANGED, (event) => {
+        if (event?.boardId !== this.#boardId || typeof event.role !== "string") return;
+        this.#role = event.role;
+        this.#notifyAccess({ type: "role", role: event.role });
       }),
     );
 
@@ -156,10 +223,17 @@ export class RealtimeManager {
     );
 
     if (!isOkResponse(response)) {
+      const code = response && typeof response === "object" && typeof response.code === "string" ? response.code : null;
+      if (code) this.#notifyAccess({ type: "denied", code });
       throw new Error(getResponseError(response, "Unable to join board."));
     }
 
     this.#joined = true;
+    // A server with accounts says which role it granted; one without does not.
+    if (typeof response.role === "string") {
+      this.#role = response.role;
+      this.#notifyAccess({ type: "role", role: response.role });
+    }
     this.#logger.info?.(`Joined realtime board ${this.#boardId}.`);
     this.#flushPendingOperations();
   }
@@ -210,6 +284,10 @@ export class RealtimeManager {
 
   #setStatus(status) {
     this.#statusHandlers.forEach((handler) => handler(status));
+  }
+
+  #notifyAccess(event) {
+    this.#accessHandlers.forEach((handler) => handler(event));
   }
 }
 

@@ -352,6 +352,15 @@ export function createAuthSession({
     getAccessToken,
 
     /**
+     * Ask the server whether the session is still good, now, whatever the
+     * token's expiry says. For when something else said it ended, such as
+     * the realtime server closing a socket. Resolves with a fresh access
+     * token, or null (and signs out) if the session is over; rejects only if
+     * the server could not be reached.
+     */
+    revalidate: () => refresh(),
+
+    /**
      * Take a whole new session the server handed out mid-session: a password
      * change ends every session and gives this device a fresh one. Other tabs
      * share the cookie, so they are told to pick it up too.

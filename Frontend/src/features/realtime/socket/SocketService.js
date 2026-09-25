@@ -10,9 +10,14 @@ export class SocketService {
   /**
    * @param {Object} config
    * @param {string} config.url
-   * @param {Record<string, unknown>} [config.auth]
+   * @param {Record<string, unknown> | ((callback: (auth: Record<string, unknown>) => void) => void)} [config.auth]
+   *   an object, or a function asked on every connection attempt, so a
+   *   reconnect presents a fresh access token rather than the first one
+   * @param {Record<string, unknown>} [config.clientOptions]
+   *   extra socket.io-client options, for clients that are not a browser
+   *   (a Node script must send the Origin a browser sends by itself)
    */
-  constructor({ url, auth = {} }) {
+  constructor({ url, auth = {}, clientOptions = {} }) {
     this.#socket = io(url, {
       auth,
       autoConnect: false,
@@ -22,6 +27,7 @@ export class SocketService {
       reconnectionDelayMax: 5000,
       timeout: DEFAULT_TIMEOUT_MS,
       transports: ["websocket", "polling"],
+      ...clientOptions,
     });
   }
 
@@ -35,6 +41,15 @@ export class SocketService {
 
   isConnected() {
     return this.#socket.connected;
+  }
+
+  /**
+   * Whether the current connection resumed the previous one (Socket.IO
+   * connection-state recovery): same rooms, and the events missed while away
+   * already delivered. Otherwise the board must be joined, and synced, again.
+   */
+  wasRecovered() {
+    return this.#socket.recovered === true;
   }
 
   /**

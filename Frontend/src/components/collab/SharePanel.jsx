@@ -1,6 +1,7 @@
 import { memo, useId, useState } from "react";
 import { Check, Copy, Link2, Share2, Signal, Users } from "lucide-react";
 import BoardStatus from "../layout/BoardStatus.jsx";
+import BoardSharePanel from "./BoardSharePanel.jsx";
 import { AvatarStack, Badge, Button, cx } from "../ui/index.js";
 
 const ICON = { size: 15, strokeWidth: 1.75 };
@@ -19,6 +20,10 @@ const BENEFITS = [
  * confirms in place, who can do what (anyone with the link can edit — there
  * is no view-only link, and the panel says so), and live status. On touch
  * devices with a system share sheet, "Share via…" hands the link to it.
+ *
+ * Where the server has accounts, `accountShare` is given and sharing is about
+ * people and invitations instead (BoardSharePanel): a link grants nothing
+ * there.
  */
 function SharePanel({
   isShared,
@@ -30,12 +35,17 @@ function SharePanel({
   onCopyLink,
   showTitle = true,
   touch = false,
+  accountShare = null,
 }) {
   const linkId = useId();
   const [creating, setCreating] = useState(false);
   const buttonSize = touch ? "lg" : "md";
   const canNativeShare =
     touch && isShared && typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  if (accountShare) {
+    return <BoardSharePanel {...accountShare} status={status} touch={touch} showTitle={showTitle} />;
+  }
 
   const createLink = async () => {
     setCreating(true);

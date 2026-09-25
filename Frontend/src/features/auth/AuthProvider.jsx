@@ -42,6 +42,7 @@ export function AuthProvider({ children }) {
       getAccessToken: auth.getAccessToken,
       reloadUser: auth.reloadUser,
       adoptSession: auth.adoptSession,
+      revalidate: auth.revalidate,
       replaceUser: auth.replaceUser,
     }),
     [auth, snapshot],

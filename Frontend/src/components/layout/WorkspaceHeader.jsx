@@ -39,6 +39,7 @@ function WorkspaceHeader({
   menuItems,
   onCreateLink,
   onCopyLink,
+  accountShare = null,
 }) {
   const [openPanel, setOpenPanel] = useState(null);
   const peopleButtonRef = useRef(null);
@@ -153,6 +154,7 @@ function WorkspaceHeader({
           collaborators={collaborators}
           onCreateLink={createLink}
           onCopyLink={onCopyLink}
+          accountShare={accountShare}
         />
       </Popover>
 

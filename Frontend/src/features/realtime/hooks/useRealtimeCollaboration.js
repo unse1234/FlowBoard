@@ -61,7 +61,36 @@ function announcement(userId, color, cursor) {
 /** Delay before answering a newcomer, so several arrivals share one reply. */
 const NEWCOMER_REPLY_MS = 300;
 
-export function useRealtimeCollaboration({ roomId, setShapes }) {
+/** After a refusal that may clear by itself (too many attempts, a hiccup), try again this much later. */
+const RETRY_REFUSED_MS = 5000;
+
+/**
+ * Problems that stop this client using the board, for the page to explain
+ * (a server with accounts only):
+ * - SIGN_IN_REQUIRED: nobody is signed in, or the session ended
+ * - EMAIL_NOT_VERIFIED: collaboration needs a confirmed address (E-20)
+ * - BOARD_NOT_FOUND: not on this board, or it does not exist
+ * - REVOKED: was on the board, and access was withdrawn
+ */
+export const ACCESS_PROBLEMS = Object.freeze({
+  SIGN_IN_REQUIRED: "SIGN_IN_REQUIRED",
+  EMAIL_NOT_VERIFIED: "EMAIL_NOT_VERIFIED",
+  BOARD_NOT_FOUND: "BOARD_NOT_FOUND",
+  REVOKED: "REVOKED",
+});
+
+/**
+ * @param {Object} options
+ * @param {string | null} options.roomId
+ * @param {Function} options.setShapes
+ * @param {{ ready: boolean, user: { id: string, displayName: string, emailVerified: boolean } | null,
+ *   getAccessToken: () => Promise<string | null>, revalidate: () => Promise<string | null> } | null} [options.account]
+ *   null where the server has no accounts: the anonymous rooms of before,
+ *   with a name typed per room. Otherwise the signed-in account is who this
+ *   client is, the socket authenticates with its access token, and the
+ *   server decides the role (Phase D).
+ */
+export function useRealtimeCollaboration({ roomId, setShapes, account = null }) {
   const [status, setStatus] = useState(CONNECTION_STATE.IDLE);
   const [remotePresence, setRemotePresence] = useState({});
 
@@ -74,12 +103,26 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
   if (identity.roomId !== roomId) {
     setIdentity(readIdentity(roomId));
   }
-  const username = identity.roomId === roomId ? identity.username : null;
+  const accountMode = account !== null;
+  const accountUser = account?.user ?? null;
+  const username = accountMode
+    ? (accountUser?.displayName ?? null)
+    : identity.roomId === roomId
+      ? identity.username
+      : null;
 
   const [suggestedDisplayName] = useState(() => resolveLastDisplayName() ?? "");
 
-  const userId = useMemo(() => createClientId("user"), []);
+  const clientId = useMemo(() => createClientId("user"), []);
+  const userId = accountUser?.id ?? clientId;
   const userColor = useMemo(() => pickCollaboratorColor(userId), [userId]);
+  // What the server said about this client's access, for the manager it said it to.
+  const [access, setAccess] = useState({ manager: null, role: null, problem: null });
+  const getAccessToken = account?.getAccessToken;
+  const revalidate = account?.revalidate;
+  // Renaming changes nothing the connection depends on; a new account, or an
+  // address confirmed since a refused join, does.
+  const accountKey = accountMode && account.ready && accountUser ? `${accountUser.id}:${accountUser.emailVerified}` : null;
   const lastPresenceSentAt = useRef(0);
   const lastCursorRef = useRef(null);
   const knownPeersRef = useRef(new Set());
@@ -101,7 +144,8 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
   );
 
   const { realtimeManager, operationDispatcher } = useMemo(() => {
-    if (!roomId || !username) {
+    const connectable = accountMode ? Boolean(roomId && accountKey) : Boolean(roomId && username);
+    if (!connectable) {
       return {
         realtimeManager: null,
         operationDispatcher: null,
@@ -110,7 +154,16 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
 
     const socketService = new SocketService({
       url: getRealtimeUrl(),
-      auth: { userId },
+      // With accounts, asked on every connection attempt, so a reconnect
+      // presents a current token rather than an expired one.
+      auth: accountMode
+        ? (callback) => {
+            getAccessToken().then(
+              (token) => callback({ token: token ?? "" }),
+              () => callback({}),
+            );
+          }
+        : { userId },
     });
 
     const manager = new RealtimeManager({
@@ -135,7 +188,9 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
       realtimeManager: manager,
       operationDispatcher: dispatcher,
     };
-  }, [roomId, setShapes, userColor, userId, username]);
+    // `username` only matters without accounts; with them the server supplies it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, setShapes, userColor, userId, accountMode ? null : username, accountKey, getAccessToken]);
 
   useEffect(() => {
     if (!realtimeManager || !operationDispatcher) {
@@ -161,6 +216,33 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
     };
 
     const unsubscribeStatus = realtimeManager.onStatusChange(setStatus);
+
+    // Access decisions from a server with accounts. A refusal that a fresh
+    // session could fix is retried after checking the session; one that may
+    // clear by itself is retried later; the rest are for the page to explain.
+    let retryTimeoutId = null;
+    const retryLater = () => {
+      window.clearTimeout(retryTimeoutId);
+      retryTimeoutId = window.setTimeout(() => realtimeManager.reconnect(), RETRY_REFUSED_MS);
+    };
+    const setProblem = (problem) => setAccess({ manager: realtimeManager, role: null, problem });
+    const recheckSession = () => {
+      revalidate?.().then(
+        (token) => (token ? realtimeManager.reconnect() : setProblem(ACCESS_PROBLEMS.SIGN_IN_REQUIRED)),
+        retryLater,
+      );
+    };
+    const unsubscribeAccess = realtimeManager.onAccess((event) => {
+      if (event.type === "role") setAccess({ manager: realtimeManager, role: event.role, problem: null });
+      else if (event.type === "denied") {
+        setProblem(event.code === "EMAIL_NOT_VERIFIED" ? ACCESS_PROBLEMS.EMAIL_NOT_VERIFIED : ACCESS_PROBLEMS.BOARD_NOT_FOUND);
+      } else if (event.type === "revoked") setProblem(ACCESS_PROBLEMS.REVOKED);
+      else if (event.type === "session-ended") recheckSession();
+      else if (event.type === "refused") {
+        if (event.code === "AUTH_REQUIRED" || event.code === "SESSION_ENDED") recheckSession();
+        else retryLater();
+      }
+    });
     const unsubscribeOperations = realtimeManager.onOperation((operation) => {
       operationDispatcher.applyRemoteOperation(operation);
     });
@@ -207,13 +289,15 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
 
     return () => {
       window.clearTimeout(replyTimeoutId);
+      window.clearTimeout(retryTimeoutId);
       dispatcherRef.current = null;
+      unsubscribeAccess();
       unsubscribeStatus();
       unsubscribeOperations();
       unsubscribePresence();
       realtimeManager.disconnect();
     };
-  }, [operationDispatcher, realtimeManager, userColor, userId]);
+  }, [operationDispatcher, realtimeManager, revalidate, userColor, userId]);
 
   // Announce ourselves while connected, so peers list us even before — and
   // long after — we move the pointer.
@@ -289,14 +373,25 @@ export function useRealtimeCollaboration({ roomId, setShapes }) {
     [realtimeManager, userColor, userId],
   );
 
+  const managerAccess = access.manager === realtimeManager && realtimeManager !== null ? access : null;
+  const accessProblem =
+    accountMode && roomId && account.ready && !accountUser
+      ? ACCESS_PROBLEMS.SIGN_IN_REQUIRED
+      : (managerAccess?.problem ?? null);
+
   return {
     boardId: roomId,
     roomId,
     isEnabled: Boolean(roomId),
+    mode: accountMode ? "account" : "legacy",
+    // The server's grant on this board: owner, editor or viewer. Null before
+    // joining, and always null without accounts, where anyone may edit.
+    role: managerAccess?.role ?? null,
+    accessProblem,
     userId,
     username,
     userColor,
-    needsDisplayName: Boolean(roomId) && !username,
+    needsDisplayName: !accountMode && Boolean(roomId) && !username,
     suggestedDisplayName,
     setDisplayName,
     status: roomId ? status : CONNECTION_STATE.IDLE,

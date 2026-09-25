@@ -8,4 +8,8 @@ export const SOCKET_EVENTS = Object.freeze({
   BOARD_LEAVE: "board:leave",
   BOARD_EVENT: "board:event",
   PRESENCE_UPDATE: "presence:update",
+  // Sent by a server with accounts (Backend/src/realtime/socketEvents.js).
+  SESSION_ENDED: "session:ended",
+  BOARD_ACCESS_REVOKED: "board:access-revoked",
+  BOARD_ROLE_CHANGED: "board:role-changed",
 });

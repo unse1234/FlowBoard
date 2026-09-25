@@ -4,7 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getRealtimeUrl } from "../../realtime/config/realtimeConfig.js";
 import { VoiceManager } from "./VoiceManager.js";
 
-export function useVoice({ roomId, userId, username, signalingUrl } = {}) {
+/**
+ * @param {Object} [options]
+ * @param {string | null} [options.roomId]
+ * @param {string} [options.userId]
+ * @param {string} [options.username]
+ * @param {string} [options.signalingUrl]
+ * @param {((callback: (auth: Record<string, unknown>) => void) => void) | null} [options.auth]
+ *   the handshake credentials; with accounts, a function that supplies a
+ *   current access token (Phase D). Without, the anonymous `{ userId }`.
+ */
+export function useVoice({ roomId, userId, username, signalingUrl, auth = null } = {}) {
   const managerRef = useRef(null);
   const [participants, setParticipants] = useState([]);
   const [connectionState, setConnectionState] = useState("disconnected");
@@ -26,7 +36,7 @@ export function useVoice({ roomId, userId, username, signalingUrl } = {}) {
       userId,
       username,
       signalingUrl: resolvedSignalingUrl,
-      auth: { userId },
+      auth: auth ?? { userId },
     });
 
     managerRef.current = manager;
@@ -52,7 +62,7 @@ export function useVoice({ roomId, userId, username, signalingUrl } = {}) {
       manager.destroy();
       managerRef.current = null;
     };
-  }, [roomId, userId, username, resolvedSignalingUrl]);
+  }, [roomId, userId, username, resolvedSignalingUrl, auth]);
 
   const requestMicrophone = useCallback(async () => {
     const manager = managerRef.current;

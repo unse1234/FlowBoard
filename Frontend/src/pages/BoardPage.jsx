@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Palette, SlidersHorizontal } from "lucide-react";
+import { Eye, Palette, SlidersHorizontal } from "lucide-react";
 import Minimap from "../components/Minimap";
 import TextEditorOverlay from "../components/TextEditorOverlay";
 import Toolbar from "../components/Toolbar";
@@ -17,6 +17,8 @@ import WorkspaceHeader from "../components/layout/WorkspaceHeader";
 import { buildBoardMenuItems } from "../components/layout/boardMenuItems.js";
 import { buildCanvasMenuItems } from "../components/layout/canvasMenuItems.js";
 import ShortcutsDialog from "../components/panels/ShortcutsDialog";
+import BoardAccessDialog from "../components/collab/BoardAccessDialog.jsx";
+import InviteDialog from "../components/collab/InviteDialog.jsx";
 import JoinRoomDialog from "../components/collab/JoinRoomDialog";
 import SharePanel from "../components/collab/SharePanel";
 import VoicePill from "../components/collab/VoicePill";
@@ -25,7 +27,10 @@ import { ActionList, IconButton, Island, Menu, Sheet } from "../components/ui/in
 import { MAX_SCALE, MIN_SCALE } from "../constants/canvas.js";
 import { TOOLS } from "../constants/tools.js";
 import { getCanvasPalette } from "../design/canvasTokens.js";
+import { useAuth } from "../features/auth/authContext.js";
 import { useAccountUi } from "../features/auth/useAccountUi.js";
+import { useCollaborationAccount } from "../features/boards/useCollaborationAccount.js";
+import { useInviteLink } from "../features/boards/useInviteLink.js";
 import { useVoice } from "../features/communication/voice/useVoice.js";
 import {
   downloadBlob,
@@ -153,7 +158,11 @@ function useVoiceModel(voice) {
  *     the board menu
  */
 export default function BoardPage() {
-  const board = useWhiteboard();
+  // Accounts shape collaboration where the server has them: who is on a board
+  // is the server's to say, and the connection authenticates (Phases C, D).
+  const auth = useAuth();
+  const collaborationAccount = useCollaborationAccount(auth);
+  const board = useWhiteboard({ account: collaborationAccount });
   const {
     collaboration,
     collaborators,
@@ -186,11 +195,29 @@ export default function BoardPage() {
     cancelPointerInteraction,
   } = board;
 
+  const accountMode = collaboration.mode === "account";
+  const { getAccessToken } = auth;
+  // With accounts, voice authenticates like the board socket does.
+  const voiceAuth = useMemo(
+    () =>
+      accountMode
+        ? (callback) => {
+            getAccessToken().then(
+              (token) => callback({ token: token ?? "" }),
+              () => callback({}),
+            );
+          }
+        : null,
+    [accountMode, getAccessToken],
+  );
   const voice = useVoice({
-    // Voice waits for a display name, so peers never see a nameless participant.
-    roomId: collaboration.username ? collaboration.roomId : null,
+    // Voice waits for a display name, so peers never see a nameless
+    // participant; with accounts, for the server to admit this account to
+    // the board, which it checks again for voice.
+    roomId: (accountMode ? collaboration.role : collaboration.username) ? collaboration.roomId : null,
     userId: collaboration.userId,
     username: collaboration.username,
+    auth: voiceAuth,
   });
   const voiceModel = useVoiceModel(voice);
 
@@ -250,6 +277,19 @@ export default function BoardPage() {
   // ── Board actions with feedback ────────────────────────────────────────
   /** Create the room and copy its link; the join dialog follows for a name. */
   const handleCreateLink = useCallback(async () => {
+    // With accounts: the board is created on the server, private, and the
+    // share panel moves on to inviting people. Failures reach the panel.
+    if (accountMode) {
+      await startCollaboration();
+      toast({
+        id: "share",
+        tone: "success",
+        title: "Ready to share",
+        description: "Only you can open it until you invite someone.",
+      });
+      return;
+    }
+
     const { copied } = await startCollaboration();
 
     toast(
@@ -267,7 +307,7 @@ export default function BoardPage() {
             description: "Copy it from Share, or from your browser's address bar.",
           },
     );
-  }, [startCollaboration, toast]);
+  }, [accountMode, startCollaboration, toast]);
 
   /** Copy confirms in place on the button; only a failure needs a toast. */
   const handleCopyLink = useCallback(async () => {
@@ -322,6 +362,40 @@ export default function BoardPage() {
   // ── Account ────────────────────────────────────────────────────────────
   const accountUi = useAccountUi({ toast });
   const { accountItems } = accountUi;
+  const invitation = useInviteLink(auth);
+
+  /** Back to this browser's own board: the way out of any board it cannot use. */
+  const goToOwnBoard = useCallback(() => window.location.assign("/"), []);
+
+  // Sharing where the server has accounts: people and invitations (BoardSharePanel).
+  const accountShare = useMemo(
+    () =>
+      accountMode
+        ? {
+            authStatus: auth.status,
+            user: auth.user,
+            boardId: collaboration.roomId,
+            role: collaboration.role,
+            getAccessToken,
+            onStart: handleCreateLink,
+            onSignIn: accountUi.openSignIn,
+            onResendVerification: accountUi.resendLink,
+            onLeft: goToOwnBoard,
+          }
+        : null,
+    [
+      accountMode,
+      accountUi.openSignIn,
+      accountUi.resendLink,
+      auth.status,
+      auth.user,
+      collaboration.role,
+      collaboration.roomId,
+      getAccessToken,
+      goToOwnBoard,
+      handleCreateLink,
+    ],
+  );
 
   const menuItems = useMemo(
     () =>
@@ -337,7 +411,7 @@ export default function BoardPage() {
         onToggleMinimap: toggleMinimap,
         // Keyboard shortcuts only mean something where a keyboard is likely.
         onShowShortcuts: isTabletUp ? openShortcuts : undefined,
-        onClearBoard: handleClearBoard,
+        onClearBoard: collaboration.readOnly ? undefined : handleClearBoard,
         // Phones have no room beside the dock for the AI button.
         onGenerateDiagram: isTabletUp ? undefined : openAiSheet,
         // Touch has no keyboard or right-click; phones also have no view island.
@@ -357,6 +431,7 @@ export default function BoardPage() {
       clipboard.paste,
       fitToScreen,
       gridEnabled,
+      collaboration.readOnly,
       handleClearBoard,
       handleExport,
       hasShapes,
@@ -461,7 +536,13 @@ export default function BoardPage() {
     onUndo: undo,
   };
 
-  const toolbar = (
+  // A viewer gets no drawing tools: the board is theirs to watch (Phase D).
+  const toolbar = collaboration.readOnly ? (
+    <Island role="status" className="flex h-11 items-center gap-2 px-3 text-label text-text">
+      <Eye size={16} strokeWidth={1.75} aria-hidden="true" className="text-text-muted" />
+      View only
+    </Island>
+  ) : (
     <Toolbar
       variant={isDesktop ? "full" : isTabletUp ? "compact" : "touch"}
       touch={isCoarsePointer}
@@ -545,6 +626,7 @@ export default function BoardPage() {
             menuItems={menuItems}
             onCreateLink={handleCreateLink}
             onCopyLink={handleCopyLink}
+            accountShare={accountShare}
           />
 
           {/* ── Inspector — only when there is something to style ──── */}
@@ -593,13 +675,15 @@ export default function BoardPage() {
           <div className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2">
             {toolbar}
             {/* Beside the dock rather than inside it, so the dock stays centred. */}
-            <div className="absolute left-full top-0 ml-2">
-              <AiDiagramAssistant
-                presentation="popover"
-                touch={isCoarsePointer}
-                {...aiAssistantProps}
-              />
-            </div>
+            {collaboration.readOnly ? null : (
+              <div className="absolute left-full top-0 ml-2">
+                <AiDiagramAssistant
+                  presentation="popover"
+                  touch={isCoarsePointer}
+                  {...aiAssistantProps}
+                />
+              </div>
+            )}
           </div>
 
           {isCoarsePointer && hasSelection && !board.editingTextShape ? (
@@ -733,9 +817,13 @@ export default function BoardPage() {
             onClose={closeSheet}
             title="Share this board"
             description={
-              isShared
-                ? "Anyone with the link can join and edit."
-                : "Draw and talk with others in real time."
+              accountMode
+                ? isShared
+                  ? "Only the people listed here can open it."
+                  : "Work on this board with other people, live."
+                : isShared
+                  ? "Anyone with the link can join and edit."
+                  : "Draw and talk with others in real time."
             }
           >
             <SharePanel
@@ -748,6 +836,7 @@ export default function BoardPage() {
               collaborators={collaborators}
               onCreateLink={createLinkFromSheet}
               onCopyLink={handleCopyLink}
+              accountShare={accountShare}
             />
           </Sheet>
 
@@ -755,14 +844,16 @@ export default function BoardPage() {
             <ActionList items={menuItems} onAction={closeSheet} />
           </Sheet>
 
-          <AiDiagramAssistant
-            presentation="sheet"
-            touch
-            open={sheet === SHEETS.AI}
-            onOpen={openAiSheet}
-            onClose={closeSheet}
-            {...aiAssistantProps}
-          />
+          {collaboration.readOnly ? null : (
+            <AiDiagramAssistant
+              presentation="sheet"
+              touch
+              open={sheet === SHEETS.AI}
+              onOpen={openAiSheet}
+              onClose={closeSheet}
+              {...aiAssistantProps}
+            />
+          )}
         </>
       )}
 
@@ -778,6 +869,27 @@ export default function BoardPage() {
       />
 
       <AccountSurfaces ui={accountUi} />
+
+      {/* Behind the sign-in dialog, never on top of it: both lead to the same place. */}
+      <InviteDialog
+        open={invitation.active && !accountUi.authDialog.open}
+        invitation={invitation}
+        authStatus={auth.status}
+        user={auth.user}
+        onSignIn={accountUi.openSignIn}
+        onSignUp={accountUi.openSignUp}
+        onResendVerification={accountUi.resendLink}
+      />
+
+      {invitation.active ? null : (
+        <BoardAccessDialog
+          problem={accountUi.authDialog.open ? null : collaboration.accessProblem}
+          email={auth.user?.email}
+          onSignIn={accountUi.openSignIn}
+          onResend={accountUi.resendLink}
+          onLeave={goToOwnBoard}
+        />
+      )}
     </div>
   );
 }
