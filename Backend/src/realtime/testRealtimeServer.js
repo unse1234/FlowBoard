@@ -73,6 +73,8 @@ async function startRealtimeServer(t) {
         transports: ["websocket"],
         auth,
         forceNew: true,
+        // What a browser on the web app sends; the handshake refuses others.
+        extraHeaders: { origin: "http://localhost:5173" },
       });
       clients.push(socket);
 

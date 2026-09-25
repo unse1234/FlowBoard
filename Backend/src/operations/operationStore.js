@@ -17,6 +17,11 @@ class OperationStore {
     return Array.from(this.#getBoardOperations(boardId).values());
   }
 
+  /** Forget a board's history, once the board itself is gone. */
+  remove(boardId) {
+    this.#operationsByBoard.delete(boardId);
+  }
+
   #getBoardOperations(boardId) {
     if (!this.#operationsByBoard.has(boardId)) {
       this.#operationsByBoard.set(boardId, new Map());

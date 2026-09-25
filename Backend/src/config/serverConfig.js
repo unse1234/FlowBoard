@@ -143,6 +143,15 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
  */
 const DEFAULT_EMAILS_PER_ADDRESS_PER_HOUR = 5;
 
+/**
+ * Realtime (spec Phase D). Connection attempts per account per minute, the
+ * largest message a socket may send (an image on the board travels inline),
+ * and how long a dropped connection can be resumed without a full re-sync.
+ */
+const DEFAULT_REALTIME_CONNECT_RATE_LIMIT_PER_MINUTE = 30;
+const DEFAULT_REALTIME_MAX_MESSAGE_BYTES = 1_000_000;
+const DEFAULT_REALTIME_RECOVERY_SECONDS = 120;
+
 /** Board API requests per account per minute (spec Phase C); generous, since the web app makes them as people work. */
 const DEFAULT_BOARDS_RATE_LIMIT_PER_MINUTE = 120;
 
@@ -165,6 +174,25 @@ function getServerConfig(env = process.env) {
       rateLimitPerMinute: readNonNegativeInteger(
         env.BOARDS_RATE_LIMIT_PER_MINUTE,
         DEFAULT_BOARDS_RATE_LIMIT_PER_MINUTE,
+      ),
+    },
+    realtime: {
+      connectRateLimitPerMinute: readNonNegativeInteger(
+        env.REALTIME_CONNECT_RATE_LIMIT_PER_MINUTE,
+        DEFAULT_REALTIME_CONNECT_RATE_LIMIT_PER_MINUTE,
+      ),
+      maxMessageBytes: readIntegerInRange(
+        env.REALTIME_MAX_MESSAGE_BYTES,
+        DEFAULT_REALTIME_MAX_MESSAGE_BYTES,
+        16_384,
+        10_000_000,
+      ),
+      // Finite by design: recovery is an optimisation, never the source of truth.
+      recoverySeconds: readIntegerInRange(
+        env.REALTIME_RECOVERY_SECONDS,
+        DEFAULT_REALTIME_RECOVERY_SECONDS,
+        0,
+        600,
       ),
     },
     // Server-side only. Nothing here is ever sent to a client.

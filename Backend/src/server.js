@@ -21,7 +21,15 @@ const { createResendTransport } = require("./email/resendTransport");
 const { createPostgresRateLimiter } = require("./http/rateLimiter");
 const { createSecurityHeaders } = require("./http/securityHeaders");
 const { OperationStore } = require("./operations/operationStore");
+const { createBoardRepository } = require("./boards/boardRepository");
+const { createSessionRepository } = require("./auth/sessionRepository");
 const { registerBoardGateway } = require("./realtime/boardGateway");
+const { createBoardAuthorizer } = require("./realtime/boardAuthorizer");
+const { createOriginGate } = require("./realtime/originGate");
+const { connectRealtimeRevocation } = require("./realtime/realtimeRevocation");
+const { registerSecureBoardGateway } = require("./realtime/secureBoardGateway");
+const { registerSecureVoiceGateway } = require("./realtime/secureVoiceGateway");
+const { createSocketAuth } = require("./realtime/socketAuth");
 
 /** How long a shutdown may take before the process stops waiting and exits. */
 const SHUTDOWN_GRACE_MS = 15_000;
@@ -106,9 +114,11 @@ function createApp(
   // With a database but no signing key, createAccessTokens throws and the
   // server does not start. Serving sign-in pages that can never sign anyone
   // in, behind a readiness check that says all is well, would be worse.
-  if (database) {
-    const accessTokens = createAccessTokens({ config: config.auth.accessToken });
+  // With a database but no signing key this throws, and the server does not
+  // start (see below).
+  const accessTokens = database ? createAccessTokens({ config: config.auth.accessToken }) : null;
 
+  if (database) {
     app.use(
       "/api/auth",
       createAuthRouter({
@@ -217,11 +227,58 @@ function createApp(
       origin: config.clientOrigin,
       methods: ["GET", "POST"],
     },
+    // Refuses a handshake from any page not on CLIENT_ORIGIN, WebSocket
+    // included, which `cors` alone does not (Phase D).
+    allowRequest: createOriginGate(config.clientOrigin, { logger }),
+    maxHttpBufferSize: config.realtime.maxMessageBytes,
+    // A dropped connection can be resumed for a while, missed events and all.
+    // skipMiddlewares false: a resumed socket is authenticated again, and the
+    // gateway re-checks its board access, so recovery never bypasses either.
+    ...(database && config.realtime.recoverySeconds > 0
+      ? {
+          connectionStateRecovery: {
+            maxDisconnectionDuration: config.realtime.recoverySeconds * 1000,
+            skipMiddlewares: false,
+          },
+        }
+      : {}),
   });
 
-  registerBoardGateway(io, { operationStore });
-  const { registerVoiceGateway } = require("./realtime/voiceGateway");
-  registerVoiceGateway(io, {});
+  if (database) {
+    // Every connection authenticated, every board authorised against the
+    // database, identity never taken from a payload (Phase D, E-21).
+    const sessions = createSessionRepository({ database });
+    io.use(
+      createSocketAuth({
+        accessTokens,
+        sessions,
+        limiter:
+          config.realtime.connectRateLimitPerMinute > 0
+            ? createPostgresRateLimiter({
+                database,
+                name: "socket-connect",
+                limit: config.realtime.connectRateLimitPerMinute,
+                logger,
+              })
+            : null,
+        logger,
+      }),
+    );
+    const authorizer = createBoardAuthorizer({ sessions, boards: createBoardRepository({ database }) });
+    connectRealtimeRevocation({
+      accountEvents,
+      boardGateway: registerSecureBoardGateway(io, { operationStore, authorizer, logger }),
+      voiceGateway: registerSecureVoiceGateway(io, { authorizer, logger }),
+      logger,
+    });
+  } else {
+    // No database means no accounts at all: the anonymous rooms of before,
+    // kept so a server deployed without one still works (the "dark" deploy).
+    // Anyone with a room id can join. DEPLOYMENT.md: set DATABASE_URL.
+    registerBoardGateway(io, { operationStore });
+    const { registerVoiceGateway } = require("./realtime/voiceGateway");
+    registerVoiceGateway(io, {});
+  }
 
   return {
     app,

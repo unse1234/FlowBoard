@@ -54,7 +54,7 @@ function registerAccountRoutes(
       if (!user) throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "account gone" });
 
       logger.info?.("[auth] Display name changed.", { userId: user.id });
-      accountEvents.publish({ type: "account-changed", userId: user.id });
+      accountEvents.publish({ type: "account-changed", userId: user.id, displayName: user.displayName });
 
       response.set("Cache-Control", "no-store");
       response.json({ ok: true, user: publicUser(user) });

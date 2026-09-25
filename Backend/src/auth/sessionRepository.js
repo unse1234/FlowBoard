@@ -277,16 +277,17 @@ function createSessionRepository({ database }) {
      * End every live session of this user except one: "sign out everywhere
      * else".
      *
-     * @returns {Promise<number>} sessions ended
+     * @returns {Promise<string[]>} the ids of the sessions ended
      */
     async revokeOtherSessions({ userId, keepSessionId, reason }) {
-      const { rowCount } = await database.query(
+      const { rows } = await database.query(
         `UPDATE auth_sessions
          SET revoked_at = now(), revoked_reason = $3
-         WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL AND expires_at > now()`,
+         WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL AND expires_at > now()
+         RETURNING id`,
         [userId, keepSessionId, reason],
       );
-      return rowCount;
+      return rows.map((row) => row.id);
     },
 
     /**
@@ -342,7 +343,7 @@ function createSessionRepository({ database }) {
      * an ordinary sign-out.
      *
      * @param {{ tokenHash: Buffer, reason: string }} revocation
-     * @returns {Promise<{ revoked: boolean, sessionId: string | null }>}
+     * @returns {Promise<{ revoked: boolean, sessionId: string | null, userId: string | null }>}
      */
     async revokeSessionByToken({ tokenHash, reason }) {
       const { rows } = await database.query(
@@ -350,11 +351,11 @@ function createSessionRepository({ database }) {
          SET revoked_at = now(), revoked_reason = $2
          WHERE id = (SELECT session_id FROM refresh_tokens WHERE token_hash = $1)
            AND revoked_at IS NULL
-         RETURNING id`,
+         RETURNING id, user_id`,
         [tokenHash, reason],
       );
 
-      return { revoked: rows.length === 1, sessionId: rows[0]?.id ?? null };
+      return { revoked: rows.length === 1, sessionId: rows[0]?.id ?? null, userId: rows[0]?.user_id ?? null };
     },
   };
 }

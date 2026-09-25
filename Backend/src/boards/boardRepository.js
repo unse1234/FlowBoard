@@ -112,6 +112,11 @@ function createBoardRepository({ database }) {
       return rows[0] ? toBoard(rows[0]) : null;
     },
 
+    async boardExists(boardId) {
+      const { rows } = await database.query("SELECT 1 FROM boards WHERE id = $1", [boardId]);
+      return rows.length === 1;
+    },
+
     /** @returns {Promise<boolean>} whether a board was deleted */
     async deleteBoard(boardId, runner = database) {
       const { rowCount } = await runner.query("DELETE FROM boards WHERE id = $1", [boardId]);

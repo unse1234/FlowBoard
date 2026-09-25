@@ -336,6 +336,7 @@ function createAuthRouter({
           sessionId: result.sessionId,
           userId: result.userId,
         });
+        accountEvents.publish({ type: "sessions-ended", userId: result.userId, sessionIds: [result.sessionId] });
       }
 
       if (result.outcome === ROTATION.ACCOUNT_UNAVAILABLE) {
@@ -411,11 +412,15 @@ function createAuthRouter({
 
     try {
       if (presented) {
-        const { revoked, sessionId } = await sessions.revokeSessionByToken({
+        const { revoked, sessionId, userId } = await sessions.revokeSessionByToken({
           tokenHash: hashRefreshToken(presented),
           reason: "logout",
         });
-        if (revoked) logger.info?.("[auth] Signed out.", { sessionId });
+        if (revoked) {
+          logger.info?.("[auth] Signed out.", { sessionId });
+          // The live connection this session opened closes too (Phase D).
+          accountEvents.publish({ type: "sessions-ended", userId, sessionIds: [sessionId] });
+        }
       }
 
       response.json({ ok: true });
@@ -481,14 +486,15 @@ function createAuthRouter({
     try {
       await enforceLimit(sessionLimiter, request);
       const user = await requireLiveSession(request);
-      const revoked = await sessions.revokeOtherSessions({
+      const sessionIds = await sessions.revokeOtherSessions({
         userId: user.id,
         keepSessionId: request.user.sessionId,
         reason: "revoked_by_user",
       });
 
-      logger.info?.("[auth] Signed out other sessions.", { userId: user.id, revoked });
-      response.json({ ok: true, revoked });
+      logger.info?.("[auth] Signed out other sessions.", { userId: user.id, revoked: sessionIds.length });
+      accountEvents.publish({ type: "sessions-ended", userId: user.id, sessionIds });
+      response.json({ ok: true, revoked: sessionIds.length });
     } catch (error) {
       sendAuthenticatedRouteError(response, error);
     }
@@ -512,6 +518,7 @@ function createAuthRouter({
       if (!revoked) throw new AuthError("SESSION_NOT_FOUND", { detail: "not a live session of this user" });
 
       logger.info?.("[auth] Ended a session.", { userId: user.id, sessionId });
+      accountEvents.publish({ type: "sessions-ended", userId: user.id, sessionIds: [sessionId] });
       response.json({ ok: true });
     } catch (error) {
       sendAuthenticatedRouteError(response, error);

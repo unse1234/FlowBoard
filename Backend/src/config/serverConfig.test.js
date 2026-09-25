@@ -374,3 +374,12 @@ test("the board API allows 120 requests a minute per account, and zero turns it 
   assert.equal(getServerConfig({ BOARDS_RATE_LIMIT_PER_MINUTE: "0" }).boards.rateLimitPerMinute, 0);
   assert.equal(getServerConfig({ BOARDS_RATE_LIMIT_PER_MINUTE: "-3" }).boards.rateLimitPerMinute, 120);
 });
+
+test("realtime limits default sensibly, and recovery is always finite", () => {
+  const { realtime } = getServerConfig({});
+  assert.deepEqual(realtime, { connectRateLimitPerMinute: 30, maxMessageBytes: 1_000_000, recoverySeconds: 120 });
+
+  assert.equal(getServerConfig({ REALTIME_RECOVERY_SECONDS: "0" }).realtime.recoverySeconds, 0);
+  assert.equal(getServerConfig({ REALTIME_RECOVERY_SECONDS: "999999" }).realtime.recoverySeconds, 120);
+  assert.equal(getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: "10" }).realtime.maxMessageBytes, 1_000_000);
+});
