@@ -6,7 +6,7 @@
 
 ## Current task
 
-Step 1 · **Phases 1–4 and 7 complete; the owner's Phases B–E in progress** (account settings, boards and roles, socket security, social sign-in). Auth is deployed dark: it switches on when production has a database.
+Step 1 · **Phases 1–8 complete in code** (the owner's Phases A–E: email, account settings, boards and roles, authorised realtime, provider sign-in). Nothing is live in production until the owner configures the database, email and providers (`DEPLOYMENT.md`).
 
 ## Status
 
@@ -72,11 +72,11 @@ decided opacity for itself. Opacity is now set once, on the outermost node.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **516 pass, 0 fail, 0 skipped** |
-| Frontend | **300 pass, 0 fail** |
+| Backend | **611 pass, 0 fail, 0 skipped** |
+| Frontend | **328 pass, 0 fail** |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 516. The hashing tests run at deliberately cheap
+Backend tests grew from 47 to 611. The hashing tests run at deliberately cheap
 Argon2 parameters so the suite stays fast, with two tests pinning the real
 shipped defaults against OWASP's baseline.
 
@@ -112,22 +112,13 @@ requests with stale config. Use `taskkill //PID <pid> //F`, and check
 
 ## Next task
 
-Phases 2, 3 and 7 are complete, and the web app signs people in and manages
-their devices. The code is deployed and **dark**: production has no database,
-so the API mounts no auth routes and the web app hides accounts until it does.
+No code task is active. The owner's configuration comes first, in this order
+(`DEPLOYMENT.md`): the database, email, then the providers. Connecting the
+database **changes collaboration**: old room links stop working and sharing
+becomes invitations for signed-in, confirmed accounts (E-25, ADR 0008).
 
-1. **Owner:** provision Neon and set the variables (`DEPLOYMENT.md`), run the
-   deploy checks, and look at it in a browser. Then enforce the CSP
-   (`AUTH/SECURITY_REVIEW.md`).
-2. **Phase 4: email** (needs D-4, D-5): verification and password reset.
-   Completes E-12, and until it exists a forgotten password cannot be
-   recovered.
-3. **Phase 5: socket authentication** (needs D-6). `getAccessToken()` in
-   `authSession.js` is the seam.
-4. **Phase 6: account settings** (needs D-7): name, password change (ending
-   other sessions), deletion.
-5. F-14: give the AI endpoint the shared PostgreSQL limiter, once
-   `Backend/src/ai/` is in scope.
+After that, a browser pass over every flow, then F-24 before running more than
+one instance, and F-3 (store board content) as Step 2.
 
 ## Before starting the next chunk
 

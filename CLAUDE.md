@@ -16,13 +16,12 @@ following `docs/PRODUCTION_PLAN.md`.
 
 ## Current active step
 
-**Step 1 — Identity & Accounts.**
-
-FlowBoard today has **no authentication, no user accounts, and no database**.
-This is verified, not assumed — see `docs/AUTH/AUTH_STATUS.md`.
-
-Step 1 is currently **blocked on one decision**: which datastore to adopt.
-See `docs/AUTH/AUTH_DECISIONS.md` (D-1).
+**Step 1 — Identity & Accounts.** Built in code (Phases 1–8): accounts,
+sessions, email, boards with owner/editor/viewer roles, authenticated and
+authorised realtime, account settings and deletion, and sign-in with Google,
+GitHub and Microsoft. Production runs none of it until it has a database
+(`docs/DEPLOYMENT.md`); a server without one keeps anonymous rooms (E-25).
+State: `docs/AUTH/AUTH_STATUS.md`.
 
 ## Where things are written down
 
@@ -83,8 +82,8 @@ cd Backend  && npm install && npm run dev   # realtime + AI server, port 3001
 cd Frontend && npm install && npm run dev   # Vite dev server, port 5173
 
 cd Backend  && npm run migrate              # apply pending SQL migrations
-cd Backend  && npm test                     # 516 tests (needs a database)
-cd Frontend && npm run test:realtime        # 300 tests (node:test)
+cd Backend  && npm test                     # 611 tests (needs a database)
+cd Frontend && npm run test:realtime        # 328 tests (node:test)
 cd Frontend && npm run lint                 # ESLint (frontend only)
 ```
 

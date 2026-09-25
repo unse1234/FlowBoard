@@ -385,6 +385,22 @@ unused by this path, for a later "deactivate" feature if one is wanted.
 and every session to end immediately. A grace period keeps both alive.
 **Status:** Chosen by the project owner, 2026-09-25.
 
+## E-25 · A server without a database keeps anonymous rooms
+
+**Decision:** the authenticated realtime layer (ADR 0008) runs whenever a
+database is configured. Without one there are no accounts to check, and the
+server keeps the anonymous rooms of before (`boardGateway.js`,
+`voiceGateway.js`), now behind the origin allow-list.
+**Reason:** production has no database until the owner connects Neon, and the
+live whiteboard must keep working until then. Refusing every socket would take
+collaboration down rather than secure it.
+**Impact:** F-1, F-2 and F-7 remain open on a database-less server. Connecting
+the database closes them, and also changes behaviour: old `?roomId=room-…`
+links stop working, and collaborating needs a confirmed account.
+**Status:** Implementation choice, 2026-09-25, to keep the dark deploy safe.
+Reverse it by deleting the `else` branch in `server.js` once production has a
+database.
+
 ---
 
 # UNRESOLVED

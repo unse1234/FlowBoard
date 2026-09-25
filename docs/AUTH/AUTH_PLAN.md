@@ -130,22 +130,26 @@ components change only where the account entry points attach.
 The unverified-account policy itself (E-20) is enforced where collaboration
 happens: the board API and the socket gateway (Phases 5 and C).
 
-### Phase 5 — Socket authentication and authorisation
+### Phase 5 — Boards, roles and authorised realtime ✅ **COMPLETE** (2026-09-25, the owner's "Phases C and D")
 
-Requires Phase 2 and Phase 0b. Closes F-1, F-2, F-7.
+Closes F-1, F-2, F-7 and F-8 wherever the server has a database (E-25). ADR 0008.
 
-`io.use()` handshake validation; server-derived `userId` **overwriting** the
-client value; membership check on `board:join` before any replay; authorisation
-on `board:event`, `presence:update` and `voice:join`; frontend token handling
-that distinguishes auth failure from a network drop.
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| 5.1 | Boards and invitations | ✅ Migration 0008: `boards` (owner `ON DELETE RESTRICT`), `board_members` (owner never also a member, triggers both ways), `board_invites` (digest, role, expiry, uses, revocation). `boardAccess.js`: view/edit/manage per role, deny by default |
+| 5.2 | Board API | ✅ `/api/boards` (list, create, read, rename, delete, roles, remove or leave, hand over, invitations) and `/api/invites` (preview, accept; confirmed address required). Bearer-only, live-session check, per-account allowance, caps |
+| 5.3 | Authenticated realtime | ✅ Origin gate on the handshake, access token + live session in `io.use`, identity in `socket.data`, board join authorised before any history, edits need editor, server-stamped `userId`, sanitised presence, voice authorised per board with rebuilt signals |
+| 5.4 | Revocation and limits | ✅ Sign-outs, resets, password changes and deletion close sockets; access changes re-check every socket on the board at once; per-socket buckets by event kind; connection attempts limited per account; 2-minute recovery with `skipMiddlewares: false` and a board re-check |
+| 5.5 | Web app | ✅ Share panel about people and invitations, `/invite/<token>`, access dialogs, token-authenticated socket and voice, viewers read-only |
 
-**Changes existing product behaviour** — needs D-6 resolved first.
+### Phase 6 — Account management ✅ **COMPLETE** (2026-09-25, the owner's "Phase B")
 
-### Phase 6 — Account management
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| 6.1 | Name and password | ✅ `PATCH /api/auth/me`; `POST /api/auth/password`: change with the current password (backoff-counted), or set a first one after a recent provider sign-in (migration 0007); every session ends and this device gets a new one; guarded against a racing change |
+| 6.2 | Deletion | ✅ `GET`/`POST /api/auth/delete-account`: shared boards must be handed over or deleted first (E-22), then DELETE typed and a fresh proof; immediate removal of the account and everything hanging off it (E-24); sockets closed, notice sent |
 
-`PATCH /api/auth/me` (`GET` landed in 2.7); password change (revokes other sessions); email
-change (verify before effect); data export; deletion with soft delete, grace
-period and hard delete; the deleted-boards policy (D-7).
+Not built, and not asked for: changing the email address, and data export.
 
 ### Phase 7 — Auth hardening ✅ **COMPLETE** (2026-09-25)
 
@@ -163,15 +167,21 @@ client look alike.
 | 7.5 | Bot protection | ✅ Cloudflare Turnstile on signup (E-18), off until both keys are set. Verified after the form is valid (a typo keeps the token) and before the hash; fails closed if Cloudflare is unreachable; checks the widget's `action`. Tested against Cloudflare's real API with its test keys |
 | 7.6 | Security review | ✅ `docs/AUTH/SECURITY_REVIEW.md`. Fixed: IPv6 limits by /64, `x-real-ip` fallback for the client address, `qs` advisory (F-15), web app headers with a report-only CSP (F-6). Residual risks listed with their bounds |
 
-### Phase 8 — OAuth
+### Phase 8 — Sign-in with providers ✅ **COMPLETE in code** (2026-09-25, the owner's "Phase E")
 
-Provider abstraction; `oauth_accounts` migration; Google, GitHub, Microsoft;
-account linking and the email-collision policy (D-9).
+Google, GitHub and Microsoft (E-23, ADR 0009): `auth_identities` and
+`oauth_states` (migration 0009), PKCE for all three, OIDC ID tokens verified
+with `node:crypto`, browser-bound single-use state, no linking by email,
+explicit connect from settings, the last way in never removable, provider
+tokens never stored. **Not yet run against the real providers**: that needs
+the owner's app registrations (`DEPLOYMENT.md`).
 
-### Phase 9 — Two-factor authentication
+### Phase 9 — Two-factor authentication · *deferred by the owner, 2026-09-25*
 
 TOTP enrolment, login second step, hashed single-use recovery codes, disable
-flow behind re-authentication.
+flow behind re-authentication. Not in this phase. Nothing built so far stands
+in its way: a second factor slots in after the password (or provider) check in
+`authRouter.js` and `oauthRoutes.js`, before `startSession`.
 
 ### Phase 10 — SSO / SAML
 
@@ -182,23 +192,31 @@ for the defensible project scope.
 
 ## C. Production validation for Step 1
 
-- [ ] Signup, verify, login, refresh, logout, reset and delete work end to end
-      against a real database.
-- [ ] No endpoint reveals whether an email address is registered.
-- [ ] Refresh rotation detects reuse and revokes the family.
-- [ ] Every socket event is authorised; `userId` is server-derived everywhere.
-- [ ] Rate limiting and lockout are demonstrated by tests.
-- [ ] Sessions are listable and individually revocable.
-- [ ] A negative test exists for every authorisation boundary.
-- [ ] Both suites pass in CI; migrations run cleanly from empty.
-- [ ] No secret in frontend code, logs, or error responses.
-- [ ] `AUTH_STATUS.md`, `PROJECT_CONTEXT.md` and `ARCHITECTURE.md` Part A
+- [x] Signup, verify, login, refresh, logout, reset and delete work end to end
+      against a real database. *(Verified against the local and test databases;
+      production has none yet, so not yet there.)*
+- [x] No endpoint reveals whether an email address is registered. *(Signup,
+      login, forgot-password; the provider "account exists" answer goes only to
+      whoever controls a verified identity with that address.)*
+- [x] Refresh rotation detects reuse and revokes the family.
+- [x] Every socket event is authorised; `userId` is server-derived everywhere.
+      *(Where the server has a database: E-25.)*
+- [x] Rate limiting and lockout are demonstrated by tests.
+- [x] Sessions are listable and individually revocable.
+- [x] A negative test exists for every authorisation boundary.
+- [x] Both suites pass in CI; migrations run cleanly from empty.
+- [x] No secret in frontend code, logs, or error responses.
+- [x] `AUTH_STATUS.md`, `PROJECT_CONTEXT.md` and `ARCHITECTURE.md` Part A
       describe the built system.
+
+What is left for Step 1 in production is the owner's configuration: the
+database, email, and provider credentials (`../DEPLOYMENT.md`).
 
 ---
 
 ## D. Out of scope for Step 1
 
-Workspaces and teams (§2), board roles and permissions (§12), audit logs, SCIM,
-admin consoles, billing. Step 1 delivers **identity**; Step 12 decides what an
-identity may do.
+Workspaces and teams (§2), audit logs, SCIM, admin consoles, billing, SSO
+(Phase 10) and 2FA (Phase 9). Board roles (owner, editor, viewer) were pulled
+forward into Step 1 by the owner on 2026-09-25 (E-21); finer permissions stay
+with Step 12.

@@ -116,26 +116,18 @@ A database now exists, holding accounts and sessions only (§7). Boards are not 
 
 ## 5. Authentication state
 
-**Accounts and sessions exist; authorisation does not** (updated 2026-09-24).
+**Built in code; not running in production** (updated 2026-09-25).
 
-- **Accounts:** signup and login with Argon2id passwords (Step 1 Phase 1).
-- **Sessions:** 15-minute HS256 access tokens and a rotating HttpOnly refresh
-  cookie with reuse detection, logout and CSRF protection. `requireAuth`
-  authenticates HTTP routes (Phase 2).
-- **Web app:** sign in, create an account and sign out from the board menu, and
-  stay signed in across reloads (`Frontend/src/features/auth/`,
-  `Frontend/src/components/auth/`).
-- **Not yet:** the board and realtime layer ignore accounts, nothing is
-  authorised, and boards are not stored against anyone (Phase 5, Step 2).
-
-What the board uses instead, until Phase 5, is an **ephemeral display identity**:
-
-- `userId` — `user_<uuid>`, generated fresh on every page load in
-  `Frontend/src/features/realtime/hooks/useRealtimeCollaboration.js:81`. Never
-  persisted, never verified by the server.
-- `username` — a free-text display name the user types when joining a room,
-  stored per-room in `sessionStorage` (`flowboard:collab-user:<roomId>`).
-- `userColor` — derived deterministically from `userId`.
+- **Accounts:** email and password (Argon2id), or Google, GitHub or Microsoft.
+  Addresses are confirmed by email (Resend); passwords reset by email.
+- **Sessions:** 15-minute access tokens and a rotating HttpOnly refresh cookie
+  with reuse detection; devices listed and signed out individually.
+- **Settings:** name, password change or first password, connected accounts,
+  deletion (shared boards handed over or deleted first).
+- **Boards:** private by default; owner, editor and viewer roles; invitations
+  by single-use link; everything enforced on the server and the socket.
+- **Production:** no database yet, so none of this is on there, and the board
+  keeps its anonymous rooms (E-25). The owner's steps are in `DEPLOYMENT.md`.
 
 Full detail: `AUTH/AUTH_STATUS.md`.
 
@@ -162,6 +154,10 @@ Full detail: `AUTH/AUTH_STATUS.md`.
   received is retained and **replayed in full to each new joiner**. Nothing
   survives a restart. There is no snapshotting or compaction.
 - **Multi-instance:** not supported. No Redis adapter; room state is per-process.
+- **Security (with a database):** every connection authenticated, board joins
+  and edits authorised against the database, `userId` set by the server,
+  revocation immediate, per-socket limits, 2-minute recovery that re-checks
+  access (ADR 0008). Without a database: the anonymous rooms of before.
 - **Offline:** unsupported. `RealtimeManager` keeps unsent operations in an
   in-memory `Map` that is lost on reload. No IndexedDB queue.
 

@@ -122,6 +122,23 @@ has always had the same wait.
   (`ORIGIN_NOT_ALLOWED`). That is deliberate; add a preview origin only on
   purpose.
 
+## What changes when the database is connected
+
+Setting `DATABASE_URL` switches on everything Step 1 built, and **changes how
+collaboration works** (ADR 0008, E-25):
+
+- The realtime connection requires a signed-in account. A visitor who is not
+  signed in keeps their own local board, but cannot open a shared one.
+- Collaborating requires a **confirmed email address**, so email (below) must
+  be working too, or nobody can collaborate at all.
+- Old `?roomId=room-…` links stop working. Sharing is now "Start
+  collaborating" followed by invitations (`/invite/…` links, one person each,
+  7 days).
+- Viewers see the board and cursors, and cannot change anything.
+
+Nothing about a server *without* a database changes: the anonymous rooms keep
+working there, exactly as today.
+
 ## Email: Resend (E-19)
 
 1. Create a Resend account and **verify a domain you own** (Resend → Domains:
@@ -134,6 +151,31 @@ has always had the same wait.
    else means one of the three is missing.
 4. Sign up with an address you can read and follow the link. Then use "Forgot
    password?" and check the reset email arrives.
+
+## Sign-in with Google, GitHub and Microsoft (E-23, ADR 0009)
+
+Each provider is off until both its id and secret are set on Render. For each,
+the **redirect address** to register is:
+
+```
+https://flow-board-beige.vercel.app/api/auth/oauth/<provider>/callback
+```
+
+with `<provider>` one of `google`, `github`, `microsoft` (it is `APP_URL`
+followed by that path, so it follows `APP_URL` if the domain changes). The
+callback reaches Render through the existing `/api/auth` route on Vercel.
+
+| Provider | Where | Settings | Variables |
+| --- | --- | --- | --- |
+| Google | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application) | Authorised redirect URI as above. Consent screen: scopes `openid`, `email`, `profile` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| GitHub | Settings → Developer settings → OAuth Apps → New | Authorization callback URL as above. No extra permissions: FlowBoard asks for `read:user` and `user:email` | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
+| Microsoft | Entra admin center → App registrations → New | Supported accounts: any organisation and personal accounts. Web redirect URI as above. A client secret under Certificates & secrets. **Token configuration → optional claim `xms_edov` (ID token)**, or work accounts cannot sign up (they can still connect) | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, optionally `MICROSOFT_TENANT` (default `common`) |
+
+Provider tokens are never stored. The sign-in options appear in the web app on
+their own once configured. **Not yet tried against the real providers**; do one
+sign-in with each after setting it up.
+
+## Links in emails and invitations
 
 Links in emails open `/verify-email`, `/reset-password` and `/invite/…` on the
 web app. `Frontend/vercel.json` serves the app at exactly those paths (after

@@ -84,9 +84,10 @@ frontend tests.
               absent  → local mode;         boardId = localStorage board id
 ```
 
-`joinedExistingRoom` (true when the URL already carried `?roomId=`) is the
-**only ownership signal in the product**, and it drives nothing but a "Host"
-badge.
+Without accounts, `joinedExistingRoom` (true when the URL already carried
+`?roomId=`) drives nothing but a "Host" badge. With accounts, `?roomId=` is a
+board id from `/api/boards`, and the server says this account's role on it
+(`collaboration.role`); a viewer's canvas is read-only.
 
 ## A.3 Realtime
 
@@ -203,19 +204,28 @@ Generated diagrams enter the board as **ordinary shapes** through a normal
 
 ## A.6 Authentication and authorisation
 
-**Neither exists.**
+**With a database** (the Step 1 build; ADRs 0002, 0005, 0008, 0009):
 
-- No `io.use()` middleware. No HTTP auth middleware. Verified by search.
-- `board:join` accepts any `boardId` and any `user` object and immediately
-  replays the board's full history.
-- `board:event` checks only that `operation.boardId` matches the board this
-  socket joined. `operation.userId` is validated as a non-empty **string** and
-  otherwise trusted entirely.
-- The socket handshake carries `auth: { userId }`, but the server only ever uses
-  it as a display fallback (`boardGateway.js:88`, `:112`). It is never verified.
+- **Who:** 15-minute HS256 access tokens (bearer) and a rotating HttpOnly
+  refresh cookie on `/api/auth`, reached same-origin through Vercel. Sessions
+  are rows (`auth_sessions`); sensitive routes re-check them.
+- **Ways in:** password (Argon2id), and Google, GitHub or Microsoft
+  (`auth_identities`, keyed on the provider's stable id, never an email).
+- **What:** `Backend/src/boards/boardAccess.js` decides everything: owner
+  (manage), editor (edit), viewer (view), deny by default. Collaboration needs
+  a confirmed address.
+- **HTTP:** `/api/auth/*` (accounts, sessions, email, settings, providers,
+  deletion) and `/api/boards`, `/api/invites` (bearer-only, direct to Render).
+- **Realtime:** `allowRequest` checks the origin; `io.use` checks the token
+  and session; `secureBoardGateway` authorises joins and edits against the
+  database and stamps every operation with the socket's `userId`;
+  `secureVoiceGateway` authorises voice per board. `accountEvents` +
+  `realtimeRevocation` close ended sessions' sockets and re-check a board's
+  sockets when its access changes.
 
-The security boundary today is **knowledge of a room id** — a `room_<uuid>` in a
-URL — and nothing else.
+**Without a database** (production until Neon is connected, E-25): no account
+routes, and the anonymous gateways (`boardGateway.js`, `voiceGateway.js`),
+where knowing a room id is the whole boundary (F-1, F-2, F-7 open there).
 
 ## A.7 Storage
 
@@ -248,7 +258,8 @@ loaded with `process.loadEnvFile`; environment variables already set always win.
 ## A.9 Scaling boundaries (where this breaks today)
 
 1. **One process only.** Board state is in-process memory; a second instance
-   serves different state for the same room. No Redis adapter.
+   serves different state for the same room. No Redis adapter, and access
+   revocation reaches only this process's sockets (F-24).
 2. **Unbounded operation log.** Memory grows with total edits, forever, and join
    cost grows with it.
 3. **Restart loses everything.** No persistence, no snapshot, no recovery.

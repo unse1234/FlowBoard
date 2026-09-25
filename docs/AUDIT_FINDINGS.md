@@ -14,15 +14,15 @@ resolved by Step 1 rather than by a patch.
 
 | ID | Severity | Area | Finding |
 | --- | --- | --- | --- |
-| F-1 | CRITICAL | AuthZ | No authorisation on any socket event |
-| F-2 | CRITICAL | AuthN | `userId` is client-asserted and forgeable |
+| F-1 | ~~CRITICAL~~ | AuthZ | ~~No authorisation on any socket event~~ — **RESOLVED 2026-09-25 where the server has a database** (ADR 0008); still open without one (E-25) |
+| F-2 | ~~CRITICAL~~ | AuthN | ~~`userId` is client-asserted and forgeable~~ — **RESOLVED 2026-09-25 where the server has a database**; still open without one |
 | F-3 | CRITICAL | Durability | Server restart destroys every collaborative board |
 | F-4 | HIGH | Correctness | Undo diverges peers, and the comments claim otherwise |
 | F-5 | HIGH | Availability | Operation log grows without bound and is fully replayed |
 | F-6 | ~~HIGH~~ → **LOW** | Security | API headers added 2026-09-24; web app headers 2026-09-25, **CSP report-only until checked in a browser** |
-| F-7 | MEDIUM | Security | Voice signalling has no room-membership check |
-| F-8 | MEDIUM | Correctness | Board id sanitisation collapses distinct ids together |
-| F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded |
+| F-7 | ~~MEDIUM~~ | Security | ~~Voice signalling has no room-membership check~~ — **RESOLVED 2026-09-25 where the server has a database**; still open without one |
+| F-8 | MEDIUM | Correctness | Board id sanitisation collapses distinct ids together — **not reachable with a database**: board ids are validated UUIDs there |
+| F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded — **partly mitigated 2026-09-25**: explicit message-size cap and per-socket rate limits; shapes still loosely validated |
 | F-10 | ~~MEDIUM~~ | Testing | ~~The entire realtime server layer is untested~~ — **RESOLVED 2026-09-24** |
 | F-11 | MEDIUM | Correctness | Local cache and server replay can both seed a room |
 | F-12 | LOW | Maintainability | Voice event names are a third, unguarded contract copy |
@@ -37,10 +37,17 @@ resolved by Step 1 rather than by a patch.
 | F-21 | LOW | Correctness | The 254-character address limit counts UTF-16 units, not octets |
 | F-22 | ~~LOW~~ | UX | ~~`JoinRoomDialog`'s input zooms the page on iPhone~~ — **RESOLVED 2026-09-25** |
 | F-23 | ~~MEDIUM~~ | Security | ~~A `sslmode` in `DATABASE_URL` silently overrides `DATABASE_SSL`~~ — **RESOLVED 2026-09-25** |
+| F-24 | MEDIUM | Scaling | Realtime revocation reaches sockets in the same process only |
+| F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
 
 ---
 
 ## F-1 — CRITICAL — No authorisation on any socket event
+
+**RESOLVED 2026-09-25 where the server has a database** (Phase 5, ADR 0008):
+the handshake authenticates, joining is authorised against `board_members`,
+editing needs editor, and revocation is immediate. **Still true on a server
+without a database** (E-25), which is production until Neon is connected.
 
 **Evidence:** `Backend/src/realtime/boardGateway.js:6-104`,
 `Backend/src/realtime/voiceGateway.js:13-189`. No `io.use()` middleware exists
@@ -62,6 +69,11 @@ patchable in isolation — there is no identity to authorise against.
 ---
 
 ## F-2 — CRITICAL — `userId` is client-asserted and forgeable
+
+**RESOLVED 2026-09-25 where the server has a database**: identity comes from
+the verified access token (`realtime/socketAuth.js`), and every stored or
+relayed operation, presence update and voice signal carries the socket's
+`userId`, whatever the payload says. Still true without a database.
 
 **Evidence:** `Backend/src/operations/operationValidator.js:17-19` checks only
 that `operation.userId` is a non-empty string.
@@ -178,6 +190,10 @@ than HTML — so no concrete XSS vector was identified for a CSP to stop.
 ---
 
 ## F-7 — MEDIUM — Voice signalling has no room-membership check
+
+**RESOLVED 2026-09-25 where the server has a database**: `voice:join` is
+authorised like a board join, signals go only between sockets in the same
+voice room, and losing board access ends voice too. Still true without one.
 
 **Evidence:** `Backend/src/realtime/voiceGateway.js:14-52`. `voice:join` takes
 `roomId`, `userId` and `username` straight from the payload and joins the room.
@@ -681,3 +697,34 @@ Recorded so future sessions do not re-audit them.
 - **The operation contract has a real drift guard** —
   `operationContract.test.js` cross-imports the backend copy and fails on
   divergence. It runs only in the frontend suite.
+
+---
+
+## F-24 — MEDIUM — Realtime revocation reaches sockets in the same process only
+
+**Evidence:** `Backend/src/auth/accountEvents.js` is an in-process emitter;
+`Backend/src/realtime/realtimeRevocation.js` acts on `io` of this process.
+
+**Impact:** with two or more API instances, a sign-out, password change,
+removal or deletion handled by one instance does not reach sockets held by
+another until their 30-second re-check (board edits), their next join, or
+their reconnection. Presence and voice relays would continue meanwhile.
+
+**Bound today:** the realtime layer was already single-instance (its
+operation log is in memory, F-3), and production runs one instance.
+
+**Fix:** before scaling out, carry these events over a shared channel
+(the Socket.IO Redis adapter, or PostgreSQL LISTEN/NOTIFY) and use
+`io.fetchSockets()` across the cluster.
+
+---
+
+## F-25 — LOW — An email promised after a commit is lost if the process dies before sending it
+
+**Evidence:** `Backend/src/email/emailService.js` sends in the background after
+the request's transaction commits; there is no outbox table.
+
+**Impact:** a crash or deploy in that window loses one verification, reset or
+notice email. Every one of them can be asked for again (resend, forgot
+password); notices cannot. Shutdown drains pending sends first, so a normal
+deploy does not lose any. ADR 0007 records why no outbox yet.

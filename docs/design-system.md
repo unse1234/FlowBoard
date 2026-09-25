@@ -179,11 +179,18 @@ a static ring.
 | `Inspector` / `InspectorPanel` | all | Contextual style controls from a tested model; Duplicate/Delete; collapsible Arrange |
 | `SelectionBar` | phone, touch tablet | Duplicate, Delete, More (the context menu actions) |
 | `PeoplePanel` | popover / sheet | One row per person with voice status; invite call-out; voice section with every state |
-| `SharePanel` | popover / sheet | Create live link, or link + Copy, access, people, status, "Share via…" |
+| `SharePanel` | popover / sheet | Without accounts: create live link, or link + Copy, access, people, status, "Share via…". With accounts it renders `BoardSharePanel` |
+| `BoardSharePanel` | popover / sheet | Sharing with accounts: sign in / confirm email where they block, "Start collaborating", invitation links (Can edit / Can view, one use, 7 days), people with roles (owner changes or removes), open invitations to withdraw, leave, delete |
+| `InviteDialog` | all | An `/invite/…` link: sign in or create an account, confirm the address, then "Join board" |
+| `BoardAccessDialog` | all | Why a board cannot be opened (sign in, confirm email, no access, access removed) and "Go to my board" |
 | `VoiceButton` / `VoicePill` | header / phone | Join, connecting, mute with speaking ring, leave, reconnecting, error |
 | `JoinRoomDialog` | all | Display name before connecting; suggests the last name; dismiss joins as Guest |
 | `AuthDialog` | all | Sign in / create account in one dialog; visible labels; errors on blur or submit, never while typing; server errors on their field; password managers supported; 44px targets and 16px input text on touch (iOS zoom) |
-| `AccountDialog` | all | Name, email, Sign out, and "Where you're signed in": each device in plain words, last active, this one marked, sign out one or everywhere else. Future home of settings (Phase 6) |
+| `AccountDialog` | all | Name (edit in place), email with Confirmed / Not confirmed, password (change, or set with "Confirm with …"), connected accounts (connect, disconnect; never the last way in), "Where you're signed in", and "Delete account" |
+| `DeleteAccountDialog` | all | Shared boards first (hand over to someone on it, or delete for everyone), then password or provider proof and DELETE typed out |
+| `VerifyEmailBanner` | top centre | "Confirm your email to collaborate", Resend link, dismiss for this browser session |
+| `ResetPasswordDialog` | all | New password from a reset link; a dead link offers a new one |
+| `ProviderButtons` | dialogs | "Continue with / Confirm with" Google, GitHub, Microsoft, inline marks, only the providers configured |
 | Account menu section | all | Leads the board menu: Sign in, or the person's name (opens Account) and Sign out; empty while a session restores |
 | `ShortcutsDialog` | keyboard | Generated from the binding tables (press `?`) |
 | `EmptyCanvasHint` | all | Real single-key shortcuts, or touch guidance |

@@ -11,16 +11,17 @@ Last updated: 2026-09-24 (Phase 2 and its web UI complete)
 | | |
 | --- | --- |
 | **Step** | 1 — Identity & Accounts |
-| **Phase** | 1, 2, 3, 4 (email) and 7 **COMPLETE**; the web UI signs people in, confirms addresses, resets passwords and manages devices |
-| **Task** | None active. Owner steps before auth is live: `DEPLOYMENT.md`, `SECURITY_REVIEW.md` |
+| **Phase** | 1–8 **COMPLETE in code** (9 and 10 deferred): accounts, sessions, email, boards and roles, authorised realtime, account settings and deletion, hardening, provider sign-in |
+| **Task** | None active. Owner configuration before any of it is live: `DEPLOYMENT.md` |
 | **Blocker** | None. F-20 resolved; 0002 is applied to the dev database |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
 rotating opaque refresh cookie (ADR 0002), multi-instance from the first commit
 (ADR 0003).
 
-**There is still no authentication.** Phase 0 built the storage foundation
-underneath it, not identity itself.
+**Authentication and authorisation exist in code, and production runs none of
+it yet**: without a database the server mounts no account routes and keeps the
+anonymous rooms (E-25).
 
 ---
 
@@ -66,46 +67,34 @@ detection revokes a stolen session, logout ends it, CSRF is defended, and
 | 2 | ✅ **Complete** — sessions, access + refresh tokens, rotation, reuse detection, logout, CSRF, `requireAuth`, `GET /me` | — |
 | 3 | ✅ **Complete**: purge of dead sessions, session list, end one, end everywhere else | — |
 | 4 | ✅ **Complete** (spec Phase A): Resend, verification, resend, forgot and reset password, per-address cap | — |
-| 5 | Socket authentication and per-board authorisation (spec Phases C, D) | E-21 decided |
-| 6 | Account settings and deletion (spec Phase B) | E-22, E-24 decided |
-| 7 | Auth rate limiting, lockout, bot protection | Phase 1, D-8 |
-| 8 | OAuth (Google, GitHub, Microsoft) (spec Phase E) | E-23 decided |
-| 9 | TOTP + recovery codes | Phase 2 |
+| 5 | ✅ **Complete**: boards, roles, invitations, authenticated and authorised realtime, revocation (spec Phases C, D) | — |
+| 6 | ✅ **Complete**: name, password change and set, deletion with boards handled (spec Phase B) | — |
+| 7 | ✅ **Complete** | — |
+| 8 | ✅ **Complete in code**: Google, GitHub, Microsoft (spec Phase E). Untried against the real providers | Owner's app registrations |
+| 9 | TOTP + recovery codes | Deferred by the owner |
 | 10 | SSO / SAML | Phase 8 — deferred |
 
 ---
 
-## What the board still uses instead of identity
+## How the board uses identity
 
-**Accounts exist and the web app signs people in** (Phase 2 and its UI). The
-board and realtime layer do not use them yet: until Phase 5 it keeps the
-**ephemeral, client-asserted display identity** below, which no server
-verifies.
-
-| Thing | Value | Where | Lifetime |
-| --- | --- | --- | --- |
-| `userId` | `user_<uuid>` | `Frontend/src/features/realtime/hooks/useRealtimeCollaboration.js:81` | One page load |
-| `username` | Free text typed on join | `sessionStorage` `flowboard:collab-user:<roomId>` | Tab session |
-| Last name used | Convenience default | `localStorage` `flowboard:display-name` | Until cleared |
-| `userColor` | Hash of `userId` | `constants/presence.js` | Derived |
-
-`userId` is sent in the Socket.IO handshake as `auth: { userId }`
-(`SocketService.js:16`), but the server uses it **only** as a display fallback
-(`boardGateway.js:88`, `:112`) and never validates it.
-
-### Request flow as it exists
+**With a database** (ADR 0008): who someone is comes from their access token,
+checked against a live session, and what they may do from their role on the
+board, stored in `boards` / `board_members`.
 
 ```
 Browser
-  → ?roomId=<id> in the URL, or none (solo, localStorage board)
-  → JoinRoomDialog asks for a display name   ← the only "sign-in"-shaped step
-  → socket.connect(auth: { userId })         ← not verified
-  → emit board:join { boardId, user }        ← not authorised
-  → server: socket.join("board:<id>") and replays the entire operation history
+  → signed in (access token in memory, refresh cookie HttpOnly)
+  → socket.connect(auth: () => ({ token }))      ← verified, live session checked
+  → emit board:join { boardId }                  ← role read from the database
+  → server: socket.join("board:<id>"), replay history
+  → emit board:event { operation }               ← needs editor; userId replaced
+  ← board:access-revoked / board:role-changed / session:ended, when those happen
 ```
 
-There is **no** controller layer, no service layer, no database, and no token
-handling. The chain the audit was asked to trace stops at the socket handler.
+**Without a database** (production today, E-25): the anonymous rooms of
+before, where `userId` is `user_<uuid>` per page load and the name is typed
+per room. Nothing is verified there.
 
 ## Identity data model
 
@@ -182,8 +171,8 @@ registered or not.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **516 pass, 0 fail, 0 skipped** |
-| Frontend | **300 pass** |
+| Backend | **611 pass, 0 fail, 0 skipped** |
+| Frontend | **328 pass** |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
 run against PostgreSQL 18.6 and confirm, among other things, that the login
@@ -257,27 +246,29 @@ rather than assumed.
 | 2026-09-25 | **Phase 3 complete**: dead-session purge (migration 0005), session API with cross-account negative tests, devices in the account dialog. Verified with two simulated devices against a live server. Backend 448 → 463, frontend 276 → 283. |
 | 2026-09-25 | Owner decided D-4 to D-9 (recorded as E-19 to E-24) and asked for Phases A to E. |
 | 2026-09-25 | **Phase 4 complete (spec Phase A)**: email service with a Resend transport (ADR 0007), `account_tokens` (migration 0006), verify, resend, forgot and reset password, signup's two emails (E-12 complete), per-address cap. Auth router split so routes share `routeKit.js`. Web app: verification banner, email links, forgot and reset dialogs, `vercel.json` serves the link paths. Mutation-checked; two survivors found and closed. Verified end to end with the web client against a live server. Backend 463 → 516, frontend 283 → 300. |
+| 2026-09-25 | **Phase 6.1** (spec B, part 1): name, password change and first-password set (migration 0007). Mutation-checked, one survivor closed with a deterministic race test. |
+| 2026-09-25 | **Phase 5** (spec C, D): boards, roles, invitations (migration 0008, ADR 0008); authenticated sockets, per-board authorisation, server-stamped identity, revocation, limits, recovery; web app sharing, invitations, viewers read-only. 25 realtime mutants and the board mutants all killed; one lock survivor closed with a controlled-interleaving test. Verified end to end with the web client's own transport. |
+| 2026-09-25 | **Phase 6.2** (spec B, part 2): deletion with shared boards handed over or deleted first (E-22, E-24). |
+| 2026-09-25 | **Phase 8** (spec E): Google, GitHub, Microsoft (migration 0009, ADR 0009) against providers faked at the HTTP level; 28 mutants, two survivors closed. Web app: provider buttons, connected accounts, confirm-with-provider. Backend 516 → 611, frontend 300 → 328. |
 
 ---
 
 ## Next recommended task
 
-Phases 2, 3 and 7 are complete, and the web app signs people in and manages
-their devices. The code is deployed and **dark**: production has no database,
-so the API mounts no auth routes and the web app hides accounts until it does.
+Everything the owner asked for in Phases A to E is built and tested. None of
+it runs in production until the owner configures it (`../DEPLOYMENT.md`):
 
-1. **Owner:** provision Neon and set the variables (`../DEPLOYMENT.md`), run the
-   deploy checks, and look at it in a browser. Then enforce the CSP
-   (`SECURITY_REVIEW.md`).
-2. **Phase 4: email** (needs D-4, D-5): verification and password reset.
-   Completes E-12, and until it exists a forgotten password cannot be
-   recovered.
-3. **Phase 5: socket authentication** (needs D-6). `getAccessToken()` in
-   `authSession.js` is the seam.
-4. **Phase 6: account settings** (needs D-7): name, password change (ending
-   other sessions), deletion.
-5. F-14: give the AI endpoint the shared PostgreSQL limiter, once
-   `Backend/src/ai/` is in scope.
+1. **Database** (Neon) and the auth variables. This switches on accounts
+   *and* changes collaboration: sign-in required, invitations instead of links.
+2. **Email** (Resend, a verified domain). Without it nobody can confirm an
+   address, so nobody can collaborate.
+3. **Providers** (optional): app registrations for Google, GitHub and
+   Microsoft with the callback addresses listed there.
+4. Then a browser pass over sign-up, confirmation, sharing, invitations, a
+   viewer, removal, deletion and each provider, and enforce the CSP.
+
+Code follow-ups: F-24 (revocation across instances, before scaling out), F-3
+(board content is still not stored), F-14 (AI limits).
 
 ## Do not touch / protected areas
 
