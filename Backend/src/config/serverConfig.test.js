@@ -325,3 +325,46 @@ test("dead sessions are kept 30 days, and purged once per 200 session writes", (
   }
   assert.equal(getServerConfig({ AUTH_SESSION_PURGE_EVERY: "0" }).auth.sessionPurgeEvery, 200);
 });
+
+test("APP_URL is an origin, https unless local, and anything else stops startup", () => {
+  assert.equal(getServerConfig({}).appUrl, null);
+  assert.equal(getServerConfig({ APP_URL: " https://App.Example.com/ " }).appUrl, "https://app.example.com");
+  assert.equal(getServerConfig({ APP_URL: "http://localhost:5173" }).appUrl, "http://localhost:5173");
+  assert.equal(getServerConfig({ APP_URL: "http://127.0.0.1:5173/" }).appUrl, "http://127.0.0.1:5173");
+
+  for (const bad of [
+    "app.example.com",
+    "http://app.example.com",
+    "ftp://app.example.com",
+    "https://app.example.com/board",
+    "https://app.example.com/?x=1",
+    "https://app.example.com/#x",
+    "https://user:pass@app.example.com",
+  ]) {
+    assert.throws(() => getServerConfig({ APP_URL: bad }), /APP_URL/, bad);
+  }
+});
+
+test("email is off unless Resend is configured, and half a configuration stops startup", () => {
+  assert.deepEqual(getServerConfig({}).email, { resendApiKey: null, from: null });
+
+  const configured = getServerConfig({
+    RESEND_API_KEY: " re_key ",
+    MAIL_FROM: "FlowBoard <no-reply@flowboard.app>",
+    APP_URL: "https://app.flowboard.app",
+  });
+  assert.deepEqual(configured.email, { resendApiKey: "re_key", from: "FlowBoard <no-reply@flowboard.app>" });
+  assert.equal(getServerConfig({ MAIL_FROM: "no-reply@flowboard.app" }).email.from, "no-reply@flowboard.app");
+
+  assert.throws(() => getServerConfig({ RESEND_API_KEY: "re_key", APP_URL: "https://a.app" }), /MAIL_FROM/);
+  assert.throws(() => getServerConfig({ RESEND_API_KEY: "re_key", MAIL_FROM: "a@b.app" }), /APP_URL/);
+  for (const bad of ["FlowBoard", "FlowBoard <no-reply>", "a@b.app\r\nBcc: x@y.app", "<a@b.app>", "a b@c.app"]) {
+    assert.throws(() => getServerConfig({ MAIL_FROM: bad }), /MAIL_FROM/, JSON.stringify(bad));
+  }
+});
+
+test("five emails an hour may go to one address, and zero turns the cap off", () => {
+  assert.equal(getServerConfig({}).auth.emailsPerAddressPerHour, 5);
+  assert.equal(getServerConfig({ AUTH_EMAILS_PER_ADDRESS_PER_HOUR: "0" }).auth.emailsPerAddressPerHour, 0);
+  assert.equal(getServerConfig({ AUTH_EMAILS_PER_ADDRESS_PER_HOUR: "many" }).auth.emailsPerAddressPerHour, 5);
+});

@@ -135,6 +135,18 @@ const MIN_SIGNING_KEY_BYTES = 32;
 const SIGNING_KEY_ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+/**
+ * Emails one address may be sent per hour, across verification, reset and the
+ * "you already have an account" notice. Keyed on the address whether or not it
+ * is registered, so it caps mail to a victim without revealing who has an
+ * account.
+ */
+const DEFAULT_EMAILS_PER_ADDRESS_PER_HOUR = 5;
+
+/** "Name <address>" or a bare address, as Resend accepts it. */
+const MAIL_FROM_PATTERN = /^(?:[^<>\r\n]{1,120} <[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+>|[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)$/;
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 function getServerConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? DEFAULT_PORT),
@@ -142,6 +154,10 @@ function getServerConfig(env = process.env) {
       ? env.CLIENT_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean)
       : DEFAULT_CLIENT_ORIGINS
     ).map(normalizeOrigin),
+    // The web app's own origin, which links in emails and OAuth redirects
+    // point at. Null where neither is configured.
+    appUrl: readAppUrl(env.APP_URL),
+    email: readEmail(env),
     // Server-side only. Nothing here is ever sent to a client.
     ai: {
       geminiApiKey: env.GEMINI_API_KEY?.trim() || null,
@@ -198,6 +214,10 @@ function getServerConfig(env = process.env) {
         365,
       ),
       sessionPurgeEvery: readPositiveInteger(env.AUTH_SESSION_PURGE_EVERY, DEFAULT_SESSION_PURGE_EVERY),
+      emailsPerAddressPerHour: readNonNegativeInteger(
+        env.AUTH_EMAILS_PER_ADDRESS_PER_HOUR,
+        DEFAULT_EMAILS_PER_ADDRESS_PER_HOUR,
+      ),
       accessToken: {
         // Server-side only. Never logged, never returned, never defaulted.
         keys: readSigningKeys(env.AUTH_ACCESS_TOKEN_KEYS),
@@ -373,6 +393,54 @@ function readRefreshCookie(env) {
     sameSite,
     path: REFRESH_COOKIE_PATH,
   };
+}
+
+/**
+ * The web app's origin, e.g. `https://flow-board-beige.vercel.app`.
+ *
+ * An origin and nothing more: a path, query or credentials would end up in
+ * every link built from it. HTTPS unless the host is local, because a link to
+ * plain http would carry a token over the network in the clear. Anything else
+ * stops startup rather than sending broken links.
+ */
+function readAppUrl(value) {
+  if (value === undefined || value.trim() === "") return null;
+
+  let url;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error("APP_URL must be an absolute URL, such as https://app.example.com.");
+  }
+
+  const local = LOCAL_HOSTNAMES.has(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+    throw new Error("APP_URL must use https (plain http only for localhost).");
+  }
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("APP_URL must be an origin only: no path, query or credentials.");
+  }
+
+  return url.origin;
+}
+
+/**
+ * Resend's key and the sender (AUTH_DECISIONS.md E-19). Both unset means email
+ * is off. A key without a sender and an APP_URL for the links stops startup:
+ * email that is configured has to be able to work.
+ */
+function readEmail(env) {
+  const resendApiKey = env.RESEND_API_KEY?.trim() || null;
+  const fromValue = env.MAIL_FROM?.trim() || null;
+
+  if (fromValue && !MAIL_FROM_PATTERN.test(fromValue)) {
+    throw new Error('MAIL_FROM must be "Name <address@domain>" or a bare address.');
+  }
+  if (resendApiKey && (!fromValue || !env.APP_URL?.trim())) {
+    throw new Error("RESEND_API_KEY is set, so MAIL_FROM and APP_URL must be set too.");
+  }
+
+  return { resendApiKey, from: fromValue };
 }
 
 /**
