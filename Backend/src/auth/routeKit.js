@@ -45,28 +45,7 @@ function createRouteKit({ sessions, accessTokens, refreshCookie, sessionLifetime
     }
   }
 
-  /**
-   * The account behind the access token, checked against the database: its
-   * session still live, its token_version current, the account active.
-   *
-   * For the routes that must not outlive a sign-out. requireAuth alone trusts
-   * the signature, which stays valid for up to 15 minutes after one.
-   */
-  async function requireLiveSession(request) {
-    const user = await sessions.findSessionUser({
-      userId: request.user.id,
-      sessionId: request.user.sessionId,
-    });
-
-    if (!user) throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "session ended or account gone" });
-    if (user.tokenVersion !== request.user.tokenVersion) {
-      throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "stale token_version" });
-    }
-    if (user.status !== "active") {
-      throw new AuthError("ACCOUNT_UNAVAILABLE", { detail: `status ${user.status}` });
-    }
-    return user;
-  }
+  const requireLiveSession = createLiveSessionCheck({ sessions });
 
   /** The one error path for routes behind requireAuth. */
   function sendAuthenticatedRouteError(response, error) {
@@ -141,6 +120,35 @@ function createRouteKit({ sessions, accessTokens, refreshCookie, sessionLifetime
     sendRouteError,
     startSession,
     sendSession,
+  };
+}
+
+/**
+ * The account behind a verified access token, checked against the database:
+ * its session still live, its token_version current, the account active.
+ *
+ * For every route that must not outlive a sign-out, here and in the board
+ * API. requireAuth alone trusts the signature, which stays valid for up to 15
+ * minutes after one. One implementation, so no copy can forget a check.
+ *
+ * @param {{ sessions: ReturnType<typeof import("./sessionRepository").createSessionRepository> }} options
+ * @returns {(request: { user: { id: string, sessionId: string, tokenVersion: number } }) => Promise<Object>}
+ */
+function createLiveSessionCheck({ sessions }) {
+  return async function requireLiveSession(request) {
+    const user = await sessions.findSessionUser({
+      userId: request.user.id,
+      sessionId: request.user.sessionId,
+    });
+
+    if (!user) throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "session ended or account gone" });
+    if (user.tokenVersion !== request.user.tokenVersion) {
+      throw new AuthError("AUTHENTICATION_REQUIRED", { detail: "stale token_version" });
+    }
+    if (user.status !== "active") {
+      throw new AuthError("ACCOUNT_UNAVAILABLE", { detail: `status ${user.status}` });
+    }
+    return user;
   };
 }
 
@@ -220,6 +228,7 @@ function getClientKey(request) {
 }
 
 module.exports = {
+  createLiveSessionCheck,
   createRouteKit,
   getClientKey,
   logFailure,

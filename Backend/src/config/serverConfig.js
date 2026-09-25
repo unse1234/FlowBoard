@@ -143,6 +143,9 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
  */
 const DEFAULT_EMAILS_PER_ADDRESS_PER_HOUR = 5;
 
+/** Board API requests per account per minute (spec Phase C); generous, since the web app makes them as people work. */
+const DEFAULT_BOARDS_RATE_LIMIT_PER_MINUTE = 120;
+
 /** "Name <address>" or a bare address, as Resend accepts it. */
 const MAIL_FROM_PATTERN = /^(?:[^<>\r\n]{1,120} <[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+>|[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)$/;
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -158,6 +161,12 @@ function getServerConfig(env = process.env) {
     // point at. Null where neither is configured.
     appUrl: readAppUrl(env.APP_URL),
     email: readEmail(env),
+    boards: {
+      rateLimitPerMinute: readNonNegativeInteger(
+        env.BOARDS_RATE_LIMIT_PER_MINUTE,
+        DEFAULT_BOARDS_RATE_LIMIT_PER_MINUTE,
+      ),
+    },
     // Server-side only. Nothing here is ever sent to a client.
     ai: {
       geminiApiKey: env.GEMINI_API_KEY?.trim() || null,

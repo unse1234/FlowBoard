@@ -43,6 +43,7 @@ const BASE_CONFIG = Object.freeze({
   clientOrigin: ["http://localhost:5173"],
   appUrl: "http://localhost:5173",
   email: { resendApiKey: null, from: "FlowBoard <no-reply@flowboard.test>" },
+  boards: { rateLimitPerMinute: 0 },
   ai: { ...DEFAULTS.ai, geminiModel: "gemini-test", rateLimitPerMinute: 0 },
   database: {
     ...DEFAULTS.database,
@@ -108,10 +109,12 @@ async function startAuthServer(
     fetchImpl,
     emailTransport = createMemoryTransport(),
     logger = SILENT_LOGGER,
+    boardsRateLimitPerMinute = 0,
   } = {},
 ) {
   const config = {
     ...BASE_CONFIG,
+    boards: { rateLimitPerMinute: boardsRateLimitPerMinute },
     auth: { ...BASE_CONFIG.auth, rateLimitPerMinute, sessionRateLimitPerMinute, ...auth },
   };
   const database = createDatabase({ config: config.database, logger: SILENT_LOGGER });

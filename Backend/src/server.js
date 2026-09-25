@@ -9,6 +9,7 @@ const { createRateLimiter } = require("./ai/rateLimiter");
 const { createAccessTokens } = require("./auth/accessTokens");
 const { createAccountEvents } = require("./auth/accountEvents");
 const { createAuthRouter, handleAuthRequestError } = require("./auth/authRouter");
+const { createBoardRouters, handleBoardRequestError } = require("./boards/boardRouter");
 const { createTurnstileVerifier } = require("./auth/botCheck");
 const { createLoginThrottle } = require("./auth/loginThrottle");
 const { createPasswordHasher } = require("./auth/passwordHasher");
@@ -106,12 +107,14 @@ function createApp(
   // server does not start. Serving sign-in pages that can never sign anyone
   // in, behind a readiness check that says all is well, would be worse.
   if (database) {
+    const accessTokens = createAccessTokens({ config: config.auth.accessToken });
+
     app.use(
       "/api/auth",
       createAuthRouter({
         database,
         passwordHasher: createPasswordHasher({ config: config.auth.argon2, logger }),
-        accessTokens: createAccessTokens({ config: config.auth.accessToken }),
+        accessTokens,
         refreshCookie: createRefreshCookie(config.auth.cookie),
         sessionLifetimes: config.auth.refreshToken,
         // The same list CORS uses: the pages that may talk to this API.
@@ -168,6 +171,27 @@ function createApp(
       }),
       handleAuthRequestError,
     );
+
+    // Boards need accounts, so they exist exactly when auth does (spec
+    // Phase C). Bearer-only: the web app calls them directly, like /api/ai.
+    const { boardsRouter, invitesRouter } = createBoardRouters({
+      database,
+      accessTokens,
+      accountEvents,
+      appUrl: config.appUrl,
+      limiter:
+        config.boards.rateLimitPerMinute > 0
+          ? createPostgresRateLimiter({
+              database,
+              name: "boards",
+              limit: config.boards.rateLimitPerMinute,
+              logger,
+            })
+          : null,
+      logger,
+    });
+    app.use("/api/boards", boardsRouter, handleBoardRequestError);
+    app.use("/api/invites", invitesRouter, handleBoardRequestError);
   }
 
   // AI runs over plain HTTP, never the socket: a generation takes seconds and

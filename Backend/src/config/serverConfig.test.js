@@ -368,3 +368,9 @@ test("five emails an hour may go to one address, and zero turns the cap off", ()
   assert.equal(getServerConfig({ AUTH_EMAILS_PER_ADDRESS_PER_HOUR: "0" }).auth.emailsPerAddressPerHour, 0);
   assert.equal(getServerConfig({ AUTH_EMAILS_PER_ADDRESS_PER_HOUR: "many" }).auth.emailsPerAddressPerHour, 5);
 });
+
+test("the board API allows 120 requests a minute per account, and zero turns it off", () => {
+  assert.equal(getServerConfig({}).boards.rateLimitPerMinute, 120);
+  assert.equal(getServerConfig({ BOARDS_RATE_LIMIT_PER_MINUTE: "0" }).boards.rateLimitPerMinute, 0);
+  assert.equal(getServerConfig({ BOARDS_RATE_LIMIT_PER_MINUTE: "-3" }).boards.rateLimitPerMinute, 120);
+});
