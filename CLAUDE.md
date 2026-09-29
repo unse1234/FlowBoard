@@ -18,8 +18,8 @@ following `docs/PRODUCTION_PLAN.md`.
 
 **Step 2 — Durable boards** (since 2026-09-29): shared boards that survive a
 restart, snapshots and compaction instead of replaying every operation, and
-one undo model (F-3, F-5, F-4). It starts with a written plan; see
-`docs/current-task.md`.
+one undo model (F-3, F-5, F-4). Plan: `docs/BOARDS/BOARDS_PLAN.md`. State:
+`docs/BOARDS/BOARDS_STATUS.md`.
 
 **Step 1 — Identity & Accounts is complete in code, with its rollout paused.**
 Built (Phases 1–8): accounts, sessions, email, boards with owner/editor/viewer
@@ -35,6 +35,9 @@ rooms (E-25). What is left to close it: `docs/AUTH/AUTH_REMAINING.md`.
 | `docs/current-task.md` | The single active work item | Every chunk |
 | `docs/AUTH/AUTH_STATUS.md` | Step 1 live state | Every Step 1 chunk |
 | `docs/AUTH/AUTH_REMAINING.md` | What is left to close Step 1: rollout, browser pass, CSP | An item is done |
+| `docs/BOARDS/BOARDS_STATUS.md` | Step 2 live state | Every Step 2 chunk |
+| `docs/BOARDS/BOARDS_PLAN.md` | Step 2 phase-by-phase plan | Step 2 plan changes |
+| `docs/BOARDS/BOARDS_DECISIONS.md` | Step 2 decisions, incl. unresolved ones (D-11 to D-15) | A decision is made |
 | `docs/PROJECT_CONTEXT.md` | Verified current state of the whole project | Architecture changes |
 | `docs/ARCHITECTURE.md` | How the systems actually fit together | Architecture changes |
 | `docs/AUDIT_FINDINGS.md` | Defects and risks in what already exists | A finding is fixed or found |

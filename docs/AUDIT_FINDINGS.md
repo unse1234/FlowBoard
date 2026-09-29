@@ -40,6 +40,7 @@ resolved by Step 1 rather than by a patch.
 | F-24 | MEDIUM | Scaling | Realtime revocation reaches sockets in the same process only |
 | F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
 | F-26 | LOW | Dependencies | `npm audit` in `Frontend/` reports two high advisories in build-time packages (`nanoid`, `postcss`) |
+| F-27 | HIGH | Availability | An operation over the socket message cap loops the sender's connection, and its later edits never arrive |
 
 ---
 
@@ -746,3 +747,36 @@ FlowBoard's own source. Nothing reaches the deployed site.
 
 **Fix:** `npm audit fix` in `Frontend/`, as its own change with a build and
 both suites run, not folded into unrelated work (rule 3).
+
+---
+
+## F-27 — HIGH — An operation over the socket message cap loops the sender's connection
+
+**Found:** 2026-09-29, while planning Step 2.
+
+**Evidence:** the server drops any incoming message over `maxHttpBufferSize`
+(`REALTIME_MAX_MESSAGE_BYTES`, default 1 MB, and Socket.IO's own default on
+`main`) by closing the connection. The web app's `RealtimeManager` keeps every
+unacknowledged operation queued and resends the queue each time it connects.
+Nothing checks an operation's size before sending it, and
+`domain/images/imageAssets.js` puts the whole image file in the shape as a
+base64 data URL, with no size limit.
+
+**Reproduced** on this branch, with the web app's own `RealtimeManager` and
+`SocketService` against a real server with no database. One 1.5 MB
+`CREATE_SHAPE` was sent between two small ones. Over 12 seconds the sender
+reconnected 19 times. The peer received only the first small operation. The
+second, queued behind the large one, never reached the server. `main` has the
+same queue and the same cap, so production is very likely affected. That was
+not run against `main`.
+
+**Impact:** any image over about 750 KB (1 MB after base64), or a "Start
+collaborating" seed over 1 MB, puts the sender in a reconnect loop. The loop
+runs until the page is reloaded, and a reload discards the queue. Meanwhile
+none of the sender's later edits reach anyone. The sender still sees them, so
+the boards silently diverge. On a server without a database, every reconnect
+also joins again and receives the whole history (F-5).
+
+**Fix belongs to:** Step 2 Phase 0 (`BOARDS/BOARDS_PLAN.md`), with images per
+D-12. Operations are checked for size before sending, and oversized batches are
+split. An operation the server refuses is dropped rather than retried forever.

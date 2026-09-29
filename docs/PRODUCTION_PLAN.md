@@ -180,6 +180,9 @@ All of that is built and tested. On 2026-09-29 the owner paused its rollout
 
 ### Step 2 — Durable boards **(active)**
 
+Detailed plan: `BOARDS/BOARDS_PLAN.md`. Live state: `BOARDS/BOARDS_STATUS.md`.
+Decisions: `BOARDS/BOARDS_DECISIONS.md`.
+
 G-4, G-6. Boards become rows; the op log gains snapshots and compaction; undo
 semantics are settled. Unlocks §3 (board management) and §13 (version history).
 
