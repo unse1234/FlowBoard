@@ -120,8 +120,9 @@ see finding F-6.
 process — a killed-looking server can keep its port and answer with stale
 config. Use `taskkill //PID <pid> //F` and verify with `netstat -ano`.
 
-CI runs both suites, lint and the frontend build on every push and pull request
-(`.github/workflows/ci.yml`). It asserts a **minimum test count**, because an
+CI runs both suites, lint and the frontend build on every push to `main` and on
+every pull request (`.github/workflows/ci.yml`). **Pushing a feature branch
+runs nothing**; open a pull request to get CI on it. It asserts a **minimum test count**, because an
 unquoted glob once collected 13 of 194 frontend tests and still exited zero
 (finding F-18). Raise the minimum when you add tests.
 

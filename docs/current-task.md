@@ -18,8 +18,9 @@ operation log's schema.** It needs no decision. 0.3 (images) waits for D-12.
 the server. The fix, hotfix H.1 (`nestingGuard.js`), is built, tested and
 committed on `fix/f28-message-nesting`, branched from `main`, and merged into
 both feature branches. **It is not deployed.** Pushing to `main` deploys, and
-the permission check refused it: deploying it is the owner's step, not a
-session's.
+the permission check refused it, so it waits as pull request #1
+(https://github.com/unse1234/FlowBoard/pull/1). Merging it is the owner's
+step, not a session's.
 
 **Waiting on the owner:** D-11 (undo), D-12 (images), D-13 (how much history
 to keep), each with a recommendation in `BOARDS/BOARDS_DECISIONS.md`.

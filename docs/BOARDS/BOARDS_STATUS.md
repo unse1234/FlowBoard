@@ -13,7 +13,7 @@ Last updated: 2026-09-30 (F-28 hotfix built and merged in; not yet deployed)
 | **Step** | 2 — Durable boards |
 | **Phase** | 0 — Bounds. 0.1 and 0.2 done; 0.3 waits for D-12 |
 | **Next chunk** | 1.1 — the operation log's schema (migration 0010). Needs no decision. 0.3 (images) is skipped until D-12 is decided |
-| **Urgent, outside the branch** | F-28 hotfix (H.1) is built, tested and committed on `fix/f28-message-nesting`, branched from `main`, and merged into both feature branches. **Not deployed:** pushing to `main` deploys, and that is the owner's to do. Until then the live server can be crashed |
+| **Urgent, outside the branch** | F-28 hotfix (H.1) is built, tested and committed on `fix/f28-message-nesting`, branched from `main`, and merged into both feature branches. **Not deployed:** pull request #1 (`fix/f28-message-nesting` into `main`) is open, and merging it, which deploys, is the owner's step. Until then the live server can be crashed |
 | **Waiting on the owner** | D-11 (undo), D-12 (images), D-13 (history kept), in `BOARDS_DECISIONS.md`. They block 4.x, 0.3 and 2.5 respectively |
 | **Branch** | `feat/durable-boards`, from `feat/accounts-collaboration` (its `boards` tables), neither merged |
 
