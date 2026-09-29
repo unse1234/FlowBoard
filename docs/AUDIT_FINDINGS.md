@@ -41,6 +41,7 @@ resolved by Step 1 rather than by a patch.
 | F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
 | F-26 | LOW | Dependencies | `npm audit` in `Frontend/` reports two high advisories in build-time packages (`nanoid`, `postcss`) |
 | F-27 | HIGH | Availability | An operation over the socket message cap loops the sender's connection, and its later edits never arrive |
+| F-28 | ~~CRITICAL~~ | Availability | ~~One small, deeply nested message crashes the server process~~ — **RESOLVED 2026-09-30** (hotfix: `nestingGuard.js`) |
 
 ---
 
@@ -780,3 +781,36 @@ also joins again and receives the whole history (F-5).
 **Fix belongs to:** Step 2 Phase 0 (`BOARDS/BOARDS_PLAN.md`), with images per
 D-12. Operations are checked for size before sending, and oversized batches are
 split. An operation the server refuses is dropped rather than retried forever.
+
+---
+
+## F-28 — RESOLVED 2026-09-30 — One small, deeply nested message crashes the server
+
+**Found:** 2026-09-29, while setting Step 2's operation limits.
+
+**Was:** Socket.IO's encoder walks every outgoing packet recursively
+(`socket.io-parser`, `is-binary.js`). The gateways relay parts of what a
+client sends without bounding how deeply it nests. An uncaught
+`RangeError: Maximum call stack size exceeded` in the encoder stopped the
+process, and with it every shared board, which lives only in memory (F-3).
+There was no authentication to get past, and a script can set any `Origin`.
+
+**Reproduced** locally on `main`, each with one hand-written frame of 50,000
+nested arrays:
+
+| Way in | What relayed it |
+| --- | --- |
+| `board:event` | the operation, to the rest of the board |
+| `presence:update` | `presence`, to the rest of the board |
+| `voice:offer`, `voice:join` | the offer, and a claimed `userId`, to the room |
+| The handshake's `auth.userId` | presence, which falls back to it when a payload names no user |
+
+**Resolved** by `Backend/src/realtime/nestingGuard.js`, registered before
+either gateway. A connection middleware refuses a handshake whose `auth` nests
+more than 32 levels. A per-socket middleware refuses any event nesting deeper,
+before a handler sees it, and disconnects its sender. The web app's deepest
+message is 8 levels. Depth is measured without recursion.
+
+`nestingGuard.test.js` sends each attack as a raw frame and checks that
+nothing is stored or relayed and the server keeps serving. Without the guard,
+each of those tests fails with the same `RangeError`. Six mutants, all killed.

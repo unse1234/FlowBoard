@@ -91,7 +91,7 @@ cd Backend  && npm install && npm run dev   # realtime + AI server, port 3001
 cd Frontend && npm install && npm run dev   # Vite dev server, port 5173
 
 cd Backend  && npm run migrate              # apply pending SQL migrations
-cd Backend  && npm test                     # 611 tests (needs a database)
+cd Backend  && npm test                     # 617 tests (needs a database)
 cd Frontend && npm run test:realtime        # 328 tests (node:test)
 cd Frontend && npm run lint                 # ESLint (frontend only)
 ```

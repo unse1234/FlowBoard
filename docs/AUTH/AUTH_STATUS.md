@@ -168,7 +168,7 @@ registered or not.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **611 pass, 0 fail, 0 skipped** |
+| Backend | **617 pass, 0 fail, 0 skipped** |
 | Frontend | **328 pass** |
 
 The backend grew from 47 to 97 tests in Phase 0. The schema integration tests
@@ -248,6 +248,7 @@ rather than assumed.
 | 2026-09-25 | **Phase 6.2** (spec B, part 2): deletion with shared boards handed over or deleted first (E-22, E-24). |
 | 2026-09-25 | **Phase 8** (spec E): Google, GitHub, Microsoft (migration 0009, ADR 0009) against providers faked at the HTTP level; 28 mutants, two survivors closed. Web app: provider buttons, connected accounts, confirm-with-provider. Backend 516 → 611, frontend 300 → 328. |
 | 2026-09-29 | Owner paused Step 1 at rollout and moved the project to Step 2. What is left is recorded in `AUTH_REMAINING.md`. |
+| 2026-09-30 | F-28 hotfix (`nestingGuard.js`: deeply nested socket messages crashed the server) merged in from `fix/f28-message-nesting`, registered ahead of both gateway kinds. Backend 611 → 617. |
 
 ---
 
