@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 2. Update it every chunk.**
 
-Last updated: 2026-09-29 (chunk 0.1: operation limits)
+Last updated: 2026-09-30 (F-28 hotfix built and merged in; not yet deployed)
 
 ---
 
@@ -13,7 +13,7 @@ Last updated: 2026-09-29 (chunk 0.1: operation limits)
 | **Step** | 2 — Durable boards |
 | **Phase** | 0 — Bounds. 0.1 done |
 | **Next chunk** | 0.2 — no retry loops: the web app checks, splits and stops retrying. Needs no decision |
-| **Urgent, outside the branch** | F-28 hotfix for `main` (H.1): one message can crash the live server. Waiting on the owner's go-ahead to ship to `main` |
+| **Urgent, outside the branch** | F-28 hotfix (H.1) is built, tested and committed on `fix/f28-message-nesting`, branched from `main`, and merged into both feature branches. **Not deployed:** pushing to `main` deploys, and that is the owner's to do. Until then the live server can be crashed |
 | **Waiting on the owner** | D-11 (undo), D-12 (images), D-13 (history kept), in `BOARDS_DECISIONS.md`. They block 4.x, 0.3 and 2.5 respectively |
 | **Branch** | `feat/durable-boards`, from `feat/accounts-collaboration` (its `boards` tables), neither merged |
 
@@ -76,7 +76,7 @@ Join
 
 | Suite | Result |
 | --- | --- |
-| Backend | **622 pass, 0 skipped** (611 at Step 1) |
+| Backend | **627 pass, 0 skipped** (611 at Step 1; 0.1 added 11, H.1 added 6 and superseded 1) |
 | Frontend | **331 pass** (328 at Step 1); lint and build clean |
 
 ## Measurements (2026-09-29, the app's own shape code, this machine)
@@ -103,7 +103,7 @@ Join
 | F-4 | Undo diverges peers; comments claim otherwise | Phase 4, after D-11 |
 | F-9 | Operation size and shape unbounded | Phase 0, for what is stored |
 | F-27 | An oversized operation loops the connection | Phase 0: server half in 0.1, client half 0.2 |
-| F-28 | One nested message crashes the server | Operations closed in 0.1; presence and voice, and production, in hotfix H.1 |
+| F-28 | One nested message crashes the server | Resolved in code by hotfix H.1 (every event and the handshake) and 0.1 (operations); production waits for `fix/f28-message-nesting` on `main` |
 | F-29 | Validators disagree on space-only ids | Recorded; not scheduled |
 | F-24 | Revocation reaches one process only | Not Step 2 (Step 3) |
 
@@ -123,3 +123,4 @@ Join
 | --- | --- |
 | 2026-09-29 | Step 2 started. Code read and two runtime checks run; plan, decisions and status written; F-27 recorded. |
 | 2026-09-29 | Chunk 0.1: operation limits in both contract copies, measured first. F-28 (crash by nesting) found, reproduced and closed for operations; F-29 recorded. Backend 611 → 622, frontend 328 → 331. |
+| 2026-09-30 | Hotfix H.1: `nestingGuard.js` on `fix/f28-message-nesting` (from `main`), refusing any event or handshake nested past 32 levels. Four ways in reproduced on `main` and each test proven to fail without the guard; 6 mutants killed. Merged into `feat/accounts-collaboration` and here. 0.1's raw-frame test removed: the guard now stops that frame first. The push to `main` was refused by the permission check (production deploy), so it waits for the owner. Backend 622 → 627. |

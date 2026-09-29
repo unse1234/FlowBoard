@@ -426,29 +426,3 @@ test("an operation over the limits is refused, and nothing is stored or relayed"
   assert.equal(seen.received.length, 0);
   assert.equal(server.operationStore.list("board-1").length, 0);
 });
-
-test("F-28: an operation nested deeply enough to overflow the encoder is refused, and the server keeps running", async (t) => {
-  const server = await startRealtimeServer(t);
-  const author = await server.client();
-  const peer = await server.client();
-  await join(author, "board-1");
-  await join(peer, "board-1");
-  const seen = record(peer, SOCKET_EVENTS.BOARD_EVENT);
-
-  // Written as a raw frame: socket.io-client cannot encode this, and before the
-  // depth limit the server's relay could not either, which crashed the process.
-  const levels = 50_000;
-  const operation = JSON.stringify(buildOperation({ payload: { shape: { id: "s1", x: "DEEP" } } })).replace(
-    '"DEEP"',
-    "[".repeat(levels) + "0" + "]".repeat(levels),
-  );
-  author.io.engine.send(`2["${SOCKET_EVENTS.BOARD_EVENT}",{"operation":${operation}}]`);
-
-  await settle();
-  assert.equal(server.operationStore.list("board-1").length, 0);
-  assert.equal(seen.received.length, 0);
-
-  // The same connection, and the board, still work.
-  assert.equal((await publish(author, buildOperation())).ok, true);
-  await seen.waitFor(1);
-});

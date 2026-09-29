@@ -41,7 +41,7 @@ resolved by Step 1 rather than by a patch.
 | F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
 | F-26 | LOW | Dependencies | `npm audit` in `Frontend/` reports two high advisories in build-time packages (`nanoid`, `postcss`) |
 | F-27 | HIGH | Availability | An operation over the socket message cap loops the sender's connection, and its later edits never arrive — server half done 2026-09-29 (chunk 0.1); the client half is chunk 0.2 |
-| F-28 | CRITICAL | Availability | One small, deeply nested message crashes the server process — **closed for operations 2026-09-29** (chunk 0.1, not deployed); presence and voice on the database-less server, and production, still open |
+| F-28 | ~~CRITICAL~~ | Availability | ~~One small, deeply nested message crashes the server process~~ — **RESOLVED 2026-09-30** by the hotfix `nestingGuard.js`; **production is fixed once `fix/f28-message-nesting` reaches `main`**. Operations are also bounded by the contract (chunk 0.1) |
 | F-29 | LOW | Correctness | The two operation validators disagree on ids made only of spaces |
 
 ---
@@ -804,46 +804,46 @@ web app checks, splits and stops retrying (chunk 0.2).
 
 ---
 
-## F-28 — CRITICAL — One small, deeply nested message crashes the server
+## F-28 — RESOLVED 2026-09-30 — One small, deeply nested message crashes the server
 
 **Found:** 2026-09-29, while setting Step 2's operation limits.
 
-**Evidence:** Socket.IO's encoder walks every outgoing packet recursively
-(`socket.io-parser`, `is-binary.js`). The database-less gateways
-(`boardGateway.js`, `voiceGateway.js`) relay what clients send without
-bounding how deeply it nests. An operation's payload was checked for structure
-only, and a presence update's `presence` is not checked at all. Voice relays
-`offer`, `answer` and `candidate` as sent.
+**Was:** Socket.IO's encoder walks every outgoing packet recursively
+(`socket.io-parser`, `is-binary.js`). The gateways relay parts of what a
+client sends without bounding how deeply it nests. An uncaught
+`RangeError: Maximum call stack size exceeded` in the encoder stopped the
+process, and with it every shared board, which lives only in memory (F-3).
+There was no authentication to get past, and a script can set any `Origin`.
 
-**Reproduced** locally on this branch, against the server without a database,
-which is what production runs. A hand-written 39 KB frame holding 20,000
-levels of nested arrays was sent as a `board:event`, and separately as a
-`presence:update`. Each time the process died with an uncaught
-`RangeError: Maximum call stack size exceeded` in `is-binary.js`. The origin
-check does not stop it, because a script sets its own `Origin` header. `main`
-has the same gateways (it stores, then relays; it relays presence as sent) and
-the same Socket.IO version. It was not run against `main` or production. The
-voice path was not tried.
+**Reproduced** locally on `main`, each with one hand-written frame of 50,000
+nested arrays:
 
-**Impact:** anyone who can reach the API can stop it with one message, as
-often as they like. Each restart also deletes every shared board, which lives
-only in memory (F-3). On a server with a database, the authenticated gateway
-runs its board handlers in a promise chain that catches the error, and it
-rebuilds presence and voice messages from known fields, so it should not crash.
-From reading the code, not from a run: an operation stored before its relay
-failed would cut short every later joiner's replay.
+| Way in | What relayed it |
+| --- | --- |
+| `board:event` | the operation, to the rest of the board |
+| `presence:update` | `presence`, to the rest of the board |
+| `voice:offer`, `voice:join` | the offer, and a claimed `userId`, to the room |
+| The handshake's `auth.userId` | presence, which falls back to it when a payload names no user |
 
-**Closed for operations 2026-09-29** (chunk 0.1, on `feat/durable-boards`,
-not deployed). Both validators refuse an operation nested more than 16 levels
-deep, measuring the depth without recursion before anything serialises it.
-`boardGateway.test.js` sends the attack frame raw and checks the server
-survives. With the check disabled, that test fails with the same `RangeError`.
+**Resolved** by `Backend/src/realtime/nestingGuard.js`, registered before
+either gateway. A connection middleware refuses a handshake whose `auth` nests
+more than 32 levels. A per-socket middleware refuses any event nesting deeper,
+before a handler sees it, and disconnects its sender. The web app's deepest
+message is 8 levels. Depth is measured without recursion.
 
-**Still open:** presence and voice on the database-less gateways, and
-production. **Fix:** check every incoming packet with `socket.use`, and refuse
-anything nesting past a limit before any handler sees it. Ship that to `main`
-on its own, as a hotfix, because this branch sits on unmerged Step 1 work.
-`BOARDS/BOARDS_PLAN.md` H.1.
+`nestingGuard.test.js` sends each attack as a raw frame and checks that
+nothing is stored or relayed and the server keeps serving. Without the guard,
+each of those tests fails with the same `RangeError`. Six mutants, all killed.
+
+**Also bounded by the contract** (chunk 0.1): both operation validators refuse
+an operation nested more than 16 levels, measured without recursion, so an
+operation stored or folded later can never be one the encoder cannot relay.
+The guard stops a hostile frame first; the validators' own check is
+unit-tested at 200,000 levels.
+
+**Deployed:** not yet. The hotfix is committed on `fix/f28-message-nesting`,
+branched from `main`, and merged into both feature branches. Production is
+fixed once that branch is pushed to `main`.
 
 ---
 

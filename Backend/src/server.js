@@ -26,6 +26,7 @@ const { createBoardRepository } = require("./boards/boardRepository");
 const { createSessionRepository } = require("./auth/sessionRepository");
 const { registerBoardGateway } = require("./realtime/boardGateway");
 const { createBoardAuthorizer } = require("./realtime/boardAuthorizer");
+const { registerNestingGuard } = require("./realtime/nestingGuard");
 const { createOriginGate } = require("./realtime/originGate");
 const { connectRealtimeRevocation } = require("./realtime/realtimeRevocation");
 const { registerSecureBoardGateway } = require("./realtime/secureBoardGateway");
@@ -247,6 +248,10 @@ function createApp(
         }
       : {}),
   });
+
+  // Before any gateway, either kind: nothing a client sends reaches a handler
+  // until it is known to be shallow enough to relay (F-28).
+  registerNestingGuard(io, { logger });
 
   if (database) {
     // Every connection authenticated, every board authorised against the

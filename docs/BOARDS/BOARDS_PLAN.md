@@ -79,7 +79,7 @@ Closes F-27. Closes F-9 for everything Step 2 stores.
 | 0.2 | No retry loops | The web app checks an operation's size before sending it. It splits a batch that is too big (`CREATE_SHAPES`, `UPDATE_SHAPES`, `DELETE_SHAPES`) into several that fit, which also covers seeding a new shared board. It drops, rather than retries forever, an operation the server refused as invalid, and tells the user. Transient failures still retry. Verified with the real `RealtimeManager` against a real server, repeating the F-27 reproduction |
 | 0.3 | Images within bounds | As D-12 decides. Recommended: shrink and re-encode on insert, to fit under the per-operation limit |
 
-### Hotfix track — for `main`, on the owner's go-ahead
+### Hotfix track — for `main`
 
 F-28 is live in production, and this branch cannot reach production until
 the Step 1 branch it sits on is merged. So its fix ships separately, on a
@@ -87,7 +87,7 @@ branch from `main`.
 
 | # | Chunk | Delivers |
 | --- | --- | --- |
-| H.1 | Bound every incoming message | A per-socket `socket.use` check refuses any packet that nests past a limit, before any handler sees it. It covers board, presence and voice events, on both gateways. It also brings 0.1's depth check to `main`. Test: the raw-frame attack on each event, the server survives, and normal traffic still flows |
+| H.1 | Bound every incoming message | ✅ Built 2026-09-30 on `fix/f28-message-nesting`; **deploys when the owner pushes it to `main`**. `nestingGuard.js`: a connection middleware refuses a handshake whose `auth` nests past 32 levels, and a per-socket `socket.use` check refuses any event that does, before any handler sees it, and drops the sender. Covers board, presence and voice events and the handshake, on every gateway. Each raw-frame attack is tested, and each test fails without the guard |
 
 ### Phase 1 — The durable operation log
 

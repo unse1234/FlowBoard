@@ -14,10 +14,11 @@
 decision.
 
 **Urgent, outside the branch: F-28.** One small, deeply nested message crashes
-the server. Production runs the vulnerable database-less gateway. 0.1 closes it
-for operations on this branch only, which cannot deploy until Step 1 merges.
-The fix for `main` is hotfix H.1 (`BOARDS/BOARDS_PLAN.md`), waiting on the
-owner's go-ahead to ship to `main`.
+the server. The fix, hotfix H.1 (`nestingGuard.js`), is built, tested and
+committed on `fix/f28-message-nesting`, branched from `main`, and merged into
+both feature branches. **It is not deployed.** Pushing to `main` deploys, and
+the permission check refused it: deploying it is the owner's step, not a
+session's.
 
 **Waiting on the owner:** D-11 (undo), D-12 (images), D-13 (how much history
 to keep), each with a recommendation in `BOARDS/BOARDS_DECISIONS.md`.
@@ -80,7 +81,7 @@ reproduction (`AUDIT_FINDINGS.md`).
 
 | Suite | Result |
 | --- | --- |
-| Backend | **622 pass, 0 fail, 0 skipped** |
+| Backend | **627 pass, 0 fail, 0 skipped** |
 | Frontend | **331 pass, 0 fail** |
 | Frontend lint | Clean |
 
