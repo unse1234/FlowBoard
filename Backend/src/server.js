@@ -18,6 +18,7 @@ const { createPostgresRateLimiter } = require("./http/rateLimiter");
 const { createSecurityHeaders } = require("./http/securityHeaders");
 const { OperationStore } = require("./operations/operationStore");
 const { registerBoardGateway } = require("./realtime/boardGateway");
+const { registerNestingGuard } = require("./realtime/nestingGuard");
 
 /** How long a shutdown may take before the process stops waiting and exits. */
 const SHUTDOWN_GRACE_MS = 15_000;
@@ -164,6 +165,9 @@ function createApp(
     },
   });
 
+  // Before any gateway: nothing a client sends reaches a handler until it is
+  // known to be shallow enough to relay (F-28).
+  registerNestingGuard(io, { logger });
   registerBoardGateway(io, { operationStore });
   const { registerVoiceGateway } = require("./realtime/voiceGateway");
   registerVoiceGateway(io, {});
