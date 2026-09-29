@@ -22,7 +22,7 @@ resolved by Step 1 rather than by a patch.
 | F-6 | ~~HIGH~~ → **LOW** | Security | API headers added 2026-09-24; web app headers 2026-09-25, **CSP report-only until checked in a browser** |
 | F-7 | ~~MEDIUM~~ | Security | ~~Voice signalling has no room-membership check~~ — **RESOLVED 2026-09-25 where the server has a database**; still open without one |
 | F-8 | MEDIUM | Correctness | Board id sanitisation collapses distinct ids together — **not reachable with a database**: board ids are validated UUIDs there |
-| F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded — **partly mitigated 2026-09-25**: explicit message-size cap and per-socket rate limits; shapes still loosely validated |
+| F-9 | MEDIUM | Security | Operation payload size and shape are effectively unbounded — **partly mitigated 2026-09-25**: explicit message-size cap and per-socket rate limits; **size, nesting, batch and id limits per operation 2026-09-29** (Step 2 chunk 0.1, not deployed); shape fields still loosely validated |
 | F-10 | ~~MEDIUM~~ | Testing | ~~The entire realtime server layer is untested~~ — **RESOLVED 2026-09-24** |
 | F-11 | MEDIUM | Correctness | Local cache and server replay can both seed a room |
 | F-12 | LOW | Maintainability | Voice event names are a third, unguarded contract copy |
@@ -40,7 +40,9 @@ resolved by Step 1 rather than by a patch.
 | F-24 | MEDIUM | Scaling | Realtime revocation reaches sockets in the same process only |
 | F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
 | F-26 | LOW | Dependencies | `npm audit` in `Frontend/` reports two high advisories in build-time packages (`nanoid`, `postcss`) |
-| F-27 | HIGH | Availability | An operation over the socket message cap loops the sender's connection, and its later edits never arrive |
+| F-27 | HIGH | Availability | An operation over the socket message cap loops the sender's connection, and its later edits never arrive — server half done 2026-09-29 (chunk 0.1); the client half is chunk 0.2 |
+| F-28 | CRITICAL | Availability | One small, deeply nested message crashes the server process — **closed for operations 2026-09-29** (chunk 0.1, not deployed); presence and voice on the database-less server, and production, still open |
+| F-29 | LOW | Correctness | The two operation validators disagree on ids made only of spaces |
 
 ---
 
@@ -256,6 +258,15 @@ reach peers' renderers.
 
 Contrast: the AI endpoint validates its board context thoroughly
 (`Backend/src/ai/diagramRequest.js`) — the realtime path does not.
+
+**Partly fixed 2026-09-29** (Step 2 chunk 0.1, on `feat/durable-boards`, not
+deployed). Both validators now bound each operation: at most 900,000 bytes as
+UTF-8 JSON, 16 levels of nesting, 1,000 entries in any batch, and ids of at
+most 128 characters. `OPERATION_LIMITS` in both contract copies holds these,
+and the contract test proves both copies draw each limit in the same place.
+**Still open:** shape fields are not checked for type or range, so a
+coordinate of `1e308` still reaches peers' renderers. That needs a schema per
+shape type, which no chunk has yet.
 
 ---
 
@@ -771,7 +782,10 @@ same queue and the same cap, so production is very likely affected. That was
 not run against `main`.
 
 **Impact:** any image over about 750 KB (1 MB after base64), or a "Start
-collaborating" seed over 1 MB, puts the sender in a reconnect loop. The loop
+collaborating" seed over 1 MB, puts the sender in a reconnect loop. A seed is
+every shape on the board in one operation. A mixed board, measured with the
+app's own shape code, averages 3.1 KB a shape, so starting to share **any board
+of more than about 300 shapes** loops, images or not. The loop
 runs until the page is reloaded, and a reload discards the queue. Meanwhile
 none of the sender's later edits reach anyone. The sender still sees them, so
 the boards silently diverge. On a server without a database, every reconnect
@@ -780,3 +794,69 @@ also joins again and receives the whole history (F-5).
 **Fix belongs to:** Step 2 Phase 0 (`BOARDS/BOARDS_PLAN.md`), with images per
 D-12. Operations are checked for size before sending, and oversized batches are
 split. An operation the server refuses is dropped rather than retried forever.
+
+**Server half done 2026-09-29** (chunk 0.1, not deployed): the contract caps
+an operation at 900,000 bytes, and `REALTIME_MAX_MESSAGE_BYTES` can no longer
+be set below that plus 16 KiB of framing. So anything the validator accepts
+fits in a message, and an operation between the two limits is refused with a
+reason instead of dropping the connection. The loop itself ends only when the
+web app checks, splits and stops retrying (chunk 0.2).
+
+---
+
+## F-28 — CRITICAL — One small, deeply nested message crashes the server
+
+**Found:** 2026-09-29, while setting Step 2's operation limits.
+
+**Evidence:** Socket.IO's encoder walks every outgoing packet recursively
+(`socket.io-parser`, `is-binary.js`). The database-less gateways
+(`boardGateway.js`, `voiceGateway.js`) relay what clients send without
+bounding how deeply it nests. An operation's payload was checked for structure
+only, and a presence update's `presence` is not checked at all. Voice relays
+`offer`, `answer` and `candidate` as sent.
+
+**Reproduced** locally on this branch, against the server without a database,
+which is what production runs. A hand-written 39 KB frame holding 20,000
+levels of nested arrays was sent as a `board:event`, and separately as a
+`presence:update`. Each time the process died with an uncaught
+`RangeError: Maximum call stack size exceeded` in `is-binary.js`. The origin
+check does not stop it, because a script sets its own `Origin` header. `main`
+has the same gateways (it stores, then relays; it relays presence as sent) and
+the same Socket.IO version. It was not run against `main` or production. The
+voice path was not tried.
+
+**Impact:** anyone who can reach the API can stop it with one message, as
+often as they like. Each restart also deletes every shared board, which lives
+only in memory (F-3). On a server with a database, the authenticated gateway
+runs its board handlers in a promise chain that catches the error, and it
+rebuilds presence and voice messages from known fields, so it should not crash.
+From reading the code, not from a run: an operation stored before its relay
+failed would cut short every later joiner's replay.
+
+**Closed for operations 2026-09-29** (chunk 0.1, on `feat/durable-boards`,
+not deployed). Both validators refuse an operation nested more than 16 levels
+deep, measuring the depth without recursion before anything serialises it.
+`boardGateway.test.js` sends the attack frame raw and checks the server
+survives. With the check disabled, that test fails with the same `RangeError`.
+
+**Still open:** presence and voice on the database-less gateways, and
+production. **Fix:** check every incoming packet with `socket.use`, and refuse
+anything nesting past a limit before any handler sees it. Ship that to `main`
+on its own, as a hotfix, because this branch sits on unmerged Step 1 work.
+`BOARDS/BOARDS_PLAN.md` H.1.
+
+---
+
+## F-29 — LOW — The two operation validators disagree on ids made only of spaces
+
+**Evidence:** the backend's `isShapeId` and envelope checks trim
+(`isNonEmptyString`), so `"  "` is not an id. The frontend's `normalizeShapeId`
+and envelope checks do not trim, so it is. None of the contract test's cases
+contains such an id.
+
+**Impact:** none in practice. The web app never makes such ids, and the server
+refuses them before a peer sees them. But the contract promises that both
+copies reach the same verdict, and here they do not.
+
+**Fix:** make the frontend trim as the backend does, and add the case to the
+contract test. Found during chunk 0.1 and left alone (rule 3).

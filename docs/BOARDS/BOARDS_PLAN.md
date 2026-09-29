@@ -75,9 +75,19 @@ Closes F-27. Closes F-9 for everything Step 2 stores.
 
 | # | Chunk | Delivers |
 | --- | --- | --- |
-| 0.1 | Size limits in the contract | Both validators check quantity and magnitude: serialised size per operation, entries per batch, string length per field, a shape count and byte size per board. The limits are set from measured real boards, not guessed. Refusals use the socket envelope with a reason. Both copies change, and the contract test covers the limits |
+| 0.1 | Size limits in the contract | ✅ 2026-09-29. `OPERATION_LIMITS` in both copies, from measured boards: 900,000 bytes as UTF-8 JSON, 16 levels of nesting, 1,000 entries per batch, 128-character ids, 64 unset keys. The depth is measured without recursion, before anything serialises the operation, which closes F-28 for operations. The authenticated gateway checks the operation as it will store it, with the server's `userId`. `REALTIME_MAX_MESSAGE_BYTES` can no longer be set below the largest operation plus framing. Limits per *board* (shape count, bytes) need the server to know the board, so they move to 2.2 |
 | 0.2 | No retry loops | The web app checks an operation's size before sending it. It splits a batch that is too big (`CREATE_SHAPES`, `UPDATE_SHAPES`, `DELETE_SHAPES`) into several that fit, which also covers seeding a new shared board. It drops, rather than retries forever, an operation the server refused as invalid, and tells the user. Transient failures still retry. Verified with the real `RealtimeManager` against a real server, repeating the F-27 reproduction |
 | 0.3 | Images within bounds | As D-12 decides. Recommended: shrink and re-encode on insert, to fit under the per-operation limit |
+
+### Hotfix track — for `main`, on the owner's go-ahead
+
+F-28 is live in production, and this branch cannot reach production until
+the Step 1 branch it sits on is merged. So its fix ships separately, on a
+branch from `main`.
+
+| # | Chunk | Delivers |
+| --- | --- | --- |
+| H.1 | Bound every incoming message | A per-socket `socket.use` check refuses any packet that nests past a limit, before any handler sees it. It covers board, presence and voice events, on both gateways. It also brings 0.1's depth check to `main`. Test: the raw-frame attack on each event, the server survives, and normal traffic still flows |
 
 ### Phase 1 — The durable operation log
 
@@ -96,7 +106,7 @@ Closes F-5.
 | # | Chunk | Delivers |
 | --- | --- | --- |
 | 2.1 | The applier on the server | As D-14 decides. Recommended: an exact copy of the applier's 7 files in the backend, and a test that fails unless they are byte for byte the frontend's |
-| 2.2 | Snapshots | Migration 0011: `board_snapshots` (board, `seq`, shapes `jsonb`, byte size, time). `snapshotBoard`: latest snapshot plus tail, folded, written at the head. Property test: folding snapshot *k* plus its tail equals folding every operation from the start |
+| 2.2 | Snapshots | Migration 0011: `board_snapshots` (board, `seq`, shapes `jsonb`, byte size, time). `snapshotBoard`: latest snapshot plus tail, folded, written at the head. Property test: folding snapshot *k* plus its tail equals folding every operation from the start. Limits per board (shape count, bytes), now that the server knows the board. Before the server folds, the applier's deletes and reorders stop costing batch × board: measured 0.1, 1,000 deletes on 10,000 shapes took 30 ms and 1,000 reorders 240 ms, on the event loop |
 | 2.3 | When to snapshot | After *N* operations or *B* bytes since the last snapshot, whichever comes first, with thresholds set from measurement. It runs after the acknowledgement, off the socket's ordered queue, and only once per board at a time across instances (a transaction-scoped advisory lock) |
 | 2.4 | Join sends snapshot plus tail | A joiner receives the latest snapshot as one message the client can tell apart from an edit (a new server event), then the tail with `seq`. It never receives the whole history (rule 37). Join bytes before and after recorded |
 | 2.5 | Compaction and retention | As D-13 decides. Old operations and snapshots are pruned opportunistically once every so many writes, like the dead-session purge (`authRouter.js`), because there is no job runner (§24). Tests: after compaction, a join yields the same board |
@@ -118,7 +128,7 @@ Closes F-4. Blocked by D-11.
 | # | Chunk | Delivers |
 | --- | --- | --- |
 | 4.1 | History of changes, not boards | Each undo step records the shapes it touched, before and after, instead of a copy of the whole board. The inverse is computed as ordinary operations in a pure `domain/` module (rule 39). This also stops keeping 50 copies of every image in memory |
-| 4.2 | Undo and redo are edits | Undo and redo publish their inverse through the same path as any edit, and apply locally through `applyOperationPayload`. When someone else changed the same thing since, D-11's rule decides. Convergence tests: A undoes while B edits other shapes, B's edits survive, and both boards end identical |
+| 4.2 | Undo and redo are edits | Undo and redo publish their inverse through the same path as any edit, and apply locally through `applyOperationPayload`. An inverse obeys the same limits, so a large one is split like any batch (0.2). When someone else changed the same thing since, D-11's rule decides. Convergence tests: A undoes while B edits other shapes, B's edits survive, and both boards end identical |
 | 4.3 | The contract says what is true | Both copies' comments describe the real undo. `UNDO` and `REDO` stay reserved and never sent (rule 6). The contract test runs |
 
 ### Phase 5 — Proof and records

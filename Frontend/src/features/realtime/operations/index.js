@@ -1,6 +1,7 @@
 export { createBoardOperation } from "./createBoardOperation.js";
 export { applyOperationPayload, OperationApplier } from "./operationApplier.js";
 export {
+  OPERATION_LIMITS,
   OPERATION_TYPES,
   ORDERING_OPERATION_TYPES,
   SINGLE_PATCH_OPERATION_TYPES,

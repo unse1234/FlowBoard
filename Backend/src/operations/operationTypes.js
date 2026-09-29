@@ -53,9 +53,37 @@ const SINGLE_PATCH_OPERATION_TYPES = new Set([
   OPERATION_TYPES.CHANGE_STYLE,
 ]);
 
+/**
+ * How large one operation may be (rule 10; findings F-9, F-27, F-28).
+ *
+ * Set from what the web app sends, measured 2026-09-29: the largest AI diagram
+ * is 56 KB, a ten-second pen stroke 34 KB, and nothing nests deeper than 6.
+ * Larger batches are split by the sender rather than refused.
+ */
+const OPERATION_LIMITS = Object.freeze({
+  // UTF-8 JSON, envelope included. Under the socket's 1 MB message cap
+  // (REALTIME_MAX_MESSAGE_BYTES), so a large operation is refused with a
+  // reason instead of dropping the connection.
+  maxOperationBytes: 900_000,
+  // Shapes, patches, ids or placements in one operation. Deleting or
+  // reordering k shapes on a board of n costs k × n: 1,000 on 10,000 took
+  // 30 ms, 5,000 took 600 ms.
+  maxBatchEntries: 1_000,
+  // Counting the operation itself as 1. Checked before anything serialises
+  // the operation: Socket.IO's encoder recurses, and 20,000 levels of nested
+  // arrays crash the process (F-28).
+  maxDepth: 16,
+  // Board, user, operation, shape and group ids, and keys to unset. The app's
+  // are at most 42 characters.
+  maxIdLength: 128,
+  // Keys one UPDATE_SHAPES entry may remove.
+  maxUnsetKeys: 64,
+});
+
 module.exports = {
   OPERATION_TYPES,
   SUPPORTED_OPERATION_TYPES,
   ORDERING_OPERATION_TYPES,
   SINGLE_PATCH_OPERATION_TYPES,
+  OPERATION_LIMITS,
 };

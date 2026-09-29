@@ -9,9 +9,15 @@
 **Step 2 — Durable boards** (`PRODUCTION_PLAN.md` §3: G-4, G-6). Started
 2026-09-29.
 
-**Plan written** (2026-09-29): `BOARDS/BOARDS_PLAN.md`, `BOARDS/BOARDS_DECISIONS.md`,
-`BOARDS/BOARDS_STATUS.md`. **Next chunk: 0.1, size limits in the operation
-contract.** It needs no decision.
+**Chunk 0.1 done** (2026-09-29): operation limits in both contract copies, on
+`feat/durable-boards`. **Next chunk: 0.2, no retry loops.** It needs no
+decision.
+
+**Urgent, outside the branch: F-28.** One small, deeply nested message crashes
+the server. Production runs the vulnerable database-less gateway. 0.1 closes it
+for operations on this branch only, which cannot deploy until Step 1 merges.
+The fix for `main` is hotfix H.1 (`BOARDS/BOARDS_PLAN.md`), waiting on the
+owner's go-ahead to ship to `main`.
 
 **Waiting on the owner:** D-11 (undo), D-12 (images), D-13 (how much history
 to keep), each with a recommendation in `BOARDS/BOARDS_DECISIONS.md`.
@@ -35,6 +41,7 @@ listed in **`AUTH/AUTH_REMAINING.md`**. The chunk-by-chunk record is in
 | F-4 | HIGH — undo restores a local snapshot and publishes nothing, so it silently diverges peers; the contract comments claim otherwise |
 | F-11 | MEDIUM — the local cache and the server replay can both seed a room |
 | F-27 | HIGH — an operation over the 1 MB message cap loops the sender's connection (found while planning) |
+| F-28 | CRITICAL — one deeply nested message crashes the server (found in 0.1; closed there for operations) |
 | F-9 | MEDIUM — operation size and shape are unbounded |
 
 Step 2 ends when a shared board survives a restart, a joiner receives a
@@ -53,14 +60,16 @@ model that the code and comments agree on. Full exit list:
 | 4 | Undo your own changes, as ordinary edits | F-4 |
 | 5 | End-to-end restart proof, measurements, ADR 0010 | — |
 
-## Next chunk: 0.1 — size limits in the operation contract
+## Next chunk: 0.2 — no retry loops
 
-Both validators (backend and frontend copies) check quantity and magnitude,
-not just structure: serialised size per operation, entries per batch, string
-length per field, shape count and bytes per board. Set the numbers from
-measured real boards (rule 42), under the 1 MB message cap. Refuse with a
-reason in the socket envelope. Change both copies together and run the
-frontend suite, which holds the contract test.
+The web app checks each operation against `OPERATION_LIMITS` before sending
+(the same `validateOperation` the server runs). A batch that is too big
+(`CREATE_SHAPES`, `UPDATE_SHAPES`, `DELETE_SHAPES`) is split into several that
+fit, which also covers seeding a shared board of more than about 300 shapes.
+An operation the server refuses as invalid is dropped rather than retried on
+every reconnect, and the user is told. Transient failures still retry. Prove
+it with the real `RealtimeManager` against a real server, repeating the F-27
+reproduction (`AUDIT_FINDINGS.md`).
 
 **Where it builds:** `boards` and board membership exist only on
 `feat/accounts-collaboration`, which is not merged (`AUTH/AUTH_REMAINING.md`
@@ -71,8 +80,8 @@ frontend suite, which holds the contract test.
 
 | Suite | Result |
 | --- | --- |
-| Backend | **611 pass, 0 fail, 0 skipped** |
-| Frontend | **328 pass, 0 fail** |
+| Backend | **622 pass, 0 fail, 0 skipped** |
+| Frontend | **331 pass, 0 fail** |
 | Frontend lint | Clean |
 
 **The backend suite requires a database**, and runs with

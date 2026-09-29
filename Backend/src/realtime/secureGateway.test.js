@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { io: connect } = require("socket.io-client");
 const { BASE_CONFIG, SKIP, TRUSTED_ORIGIN, readSetCookie, startAuthServer } = require("../auth/testServer");
+const { OPERATION_LIMITS } = require("../operations/operationTypes");
 const { SOCKET_EVENTS } = require("./socketEvents");
 const { buildOperation, once, record, settle } = require("./testRealtimeServer");
 
@@ -221,6 +222,64 @@ test("a change for a board the socket has not joined is refused", { skip: SKIP }
 
   assert.equal((await send(socket, boardId)).code, "NOT_JOINED");
   assert.equal((await ask(socket, SOCKET_EVENTS.BOARD_EVENT, { operation: { boardId } })).code, "INVALID_PAYLOAD");
+});
+
+/** An operation claiming `userId` whose serialised size is exactly the limit. */
+function operationAtLimit(boardId, userId) {
+  const operation = buildOperation({ boardId, userId, payload: { shape: { id: "s1", text: "" } } });
+  const missing = OPERATION_LIMITS.maxOperationBytes - Buffer.byteLength(JSON.stringify(operation), "utf8");
+  operation.payload.shape.text = "x".repeat(missing);
+  return operation;
+}
+
+test("a change over the limits is refused before it is stored or relayed", { skip: SKIP }, async (t) => {
+  const server = await startAuthServer(t);
+  const ada = await account(server, "Ada");
+  const grace = await account(server, "Grace");
+  const boardId = await boardWith(server, ada, [[grace, "editor"]]);
+  const owner = await connected(t, server, ada);
+  const editor = await connected(t, server, grace);
+  await join(owner, boardId);
+  await join(editor, boardId);
+  const seen = record(owner, SOCKET_EVENTS.BOARD_EVENT);
+
+  let deep = 0;
+  for (let level = 0; level < OPERATION_LIMITS.maxDepth; level += 1) deep = [deep];
+  const ids = Array.from({ length: OPERATION_LIMITS.maxBatchEntries + 1 }, (_, i) => `s${i}`);
+  const refused = [
+    await send(editor, boardId, { payload: { shape: { id: "s1", text: "x".repeat(OPERATION_LIMITS.maxOperationBytes) } } }),
+    await send(editor, boardId, { payload: { shape: { id: "s1", x: deep } } }),
+    await send(editor, boardId, { type: "DELETE_SHAPES", payload: { shapeIds: ids } }),
+  ];
+
+  assert.deepEqual(
+    refused.map((ack) => ack.code),
+    ["INVALID_PAYLOAD", "INVALID_PAYLOAD", "INVALID_PAYLOAD"],
+  );
+  await settle();
+  assert.equal(seen.received.length, 0);
+  const late = await connected(t, server, ada);
+  assert.equal((await join(late, boardId)).replayedOperationCount, 0);
+});
+
+test("the limits apply to a change as the server stores it, whatever userId the client claims", { skip: SKIP }, async (t) => {
+  const server = await startAuthServer(t);
+  const ada = await account(server, "Ada");
+  const boardId = await boardWith(server, ada);
+  const socket = await connected(t, server, ada);
+  await join(socket, boardId);
+
+  // At the limit as sent and as stored: accepted.
+  const exact = await ask(socket, SOCKET_EVENTS.BOARD_EVENT, { operation: operationAtLimit(boardId, ada.id) });
+  assert.equal(exact.ok, true);
+
+  // At the limit only because it claims a one-character userId. With Ada's
+  // stamped on, it is over, and a peer checking it would refuse it.
+  const squeezed = await ask(socket, SOCKET_EVENTS.BOARD_EVENT, { operation: operationAtLimit(boardId, "u") });
+  assert.equal(squeezed.code, "INVALID_PAYLOAD");
+  assert.match(squeezed.reason, /bytes; the limit is/);
+  const late = await connected(t, server, ada);
+  assert.equal((await join(late, boardId)).replayedOperationCount, 1);
 });
 
 test("a flood of changes is cut off by the socket's allowance", { skip: SKIP }, async (t) => {

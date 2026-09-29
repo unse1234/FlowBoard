@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { getServerConfig } = require("./serverConfig");
+const { OPERATION_LIMITS } = require("../operations/operationTypes");
 
 test("reads AI settings from the environment with safe defaults", () => {
   assert.deepEqual(getServerConfig({}).ai, {
@@ -382,6 +383,19 @@ test("realtime limits default sensibly, and recovery is always finite", () => {
   assert.equal(getServerConfig({ REALTIME_RECOVERY_SECONDS: "0" }).realtime.recoverySeconds, 0);
   assert.equal(getServerConfig({ REALTIME_RECOVERY_SECONDS: "999999" }).realtime.recoverySeconds, 120);
   assert.equal(getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: "10" }).realtime.maxMessageBytes, 1_000_000);
+});
+
+test("the socket message cap always carries the largest operation, with room for framing", () => {
+  const largest = OPERATION_LIMITS.maxOperationBytes;
+
+  // Below it, an operation the validator accepts would drop the connection instead (F-27).
+  assert.equal(getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: String(largest) }).realtime.maxMessageBytes, 1_000_000);
+  assert.equal(getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: "16384" }).realtime.maxMessageBytes, 1_000_000);
+  assert.equal(
+    getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: String(largest + 16_384) }).realtime.maxMessageBytes,
+    largest + 16_384,
+  );
+  assert.equal(getServerConfig({ REALTIME_MAX_MESSAGE_BYTES: "2000000" }).realtime.maxMessageBytes, 2_000_000);
 });
 
 test("a sign-in provider is on only with both its id and secret, and needs APP_URL", () => {

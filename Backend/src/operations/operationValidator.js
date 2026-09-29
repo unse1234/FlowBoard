@@ -1,14 +1,22 @@
 const {
+  OPERATION_LIMITS,
   OPERATION_TYPES,
   ORDERING_OPERATION_TYPES,
   SINGLE_PATCH_OPERATION_TYPES,
   SUPPORTED_OPERATION_TYPES,
 } = require("./operationTypes");
 
+/** Payload fields that hold a batch, each capped at maxBatchEntries. */
+const BATCH_FIELDS = ["shapes", "patches", "placements", "shapeIds"];
+
 function validateOperation(operation) {
   if (!operation || typeof operation !== "object") {
     return { valid: false, reason: "Operation must be an object." };
   }
+
+  // Before anything walks the payload's lists or serialises it.
+  const bounds = checkBounds(operation);
+  if (!bounds.valid) return bounds;
 
   if (!isNonEmptyString(operation.boardId)) {
     return { valid: false, reason: "Operation requires boardId." };
@@ -20,6 +28,15 @@ function validateOperation(operation) {
 
   if (!isNonEmptyString(operation.operationId)) {
     return { valid: false, reason: "Operation requires operationId." };
+  }
+
+  for (const field of ["boardId", "userId", "operationId"]) {
+    if (operation[field].length > OPERATION_LIMITS.maxIdLength) {
+      return {
+        valid: false,
+        reason: `Operation ${field} is longer than ${OPERATION_LIMITS.maxIdLength} characters.`,
+      };
+    }
   }
 
   if (!Number.isFinite(operation.timestamp)) {
@@ -40,6 +57,16 @@ function validateOperation(operation) {
 function validatePayload(operation) {
   const payload = operation.payload;
   const type = operation.type;
+
+  // Whatever the type: a list the applier walks is bounded wherever it appears.
+  for (const field of BATCH_FIELDS) {
+    if (Array.isArray(payload[field]) && payload[field].length > OPERATION_LIMITS.maxBatchEntries) {
+      return {
+        valid: false,
+        reason: `${type} may carry at most ${OPERATION_LIMITS.maxBatchEntries} ${field}.`,
+      };
+    }
+  }
 
   if (type === OPERATION_TYPES.CREATE_SHAPE) {
     if (!payload.shape || typeof payload.shape !== "object") {
@@ -85,8 +112,7 @@ function validatePayload(operation) {
     if (!everyPatchIsValid) {
       return {
         valid: false,
-        reason:
-          "UPDATE_SHAPES requires every entry to have shapeId and patch, and any unset to list keys other than id.",
+        reason: `UPDATE_SHAPES requires every entry to have shapeId and patch, and any unset to list at most ${OPERATION_LIMITS.maxUnsetKeys} keys other than id.`,
       };
     }
 
@@ -165,6 +191,47 @@ function validatePayload(operation) {
   return { valid: true };
 }
 
+/**
+ * The operation's nesting and serialised size, against OPERATION_LIMITS.
+ *
+ * Nesting is measured first, without recursion: serialising a deeply nested
+ * value is itself what exhausts the stack (F-28).
+ */
+function checkBounds(operation) {
+  if (nestsDeeperThan(operation, OPERATION_LIMITS.maxDepth)) {
+    return {
+      valid: false,
+      reason: `Operation nests more than ${OPERATION_LIMITS.maxDepth} levels deep.`,
+    };
+  }
+
+  const bytes = Buffer.byteLength(JSON.stringify(operation), "utf8");
+  if (bytes > OPERATION_LIMITS.maxOperationBytes) {
+    return {
+      valid: false,
+      reason: `Operation is ${bytes} bytes; the limit is ${OPERATION_LIMITS.maxOperationBytes}.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/** Whether an object nests more than `limit` levels, counting itself as 1. */
+function nestsDeeperThan(value, limit) {
+  const pending = [[value, 1]];
+
+  while (pending.length > 0) {
+    const [node, depth] = pending.pop();
+    if (depth > limit) return true;
+
+    for (const child of Object.values(node)) {
+      if (child !== null && typeof child === "object") pending.push([child, depth + 1]);
+    }
+  }
+
+  return false;
+}
+
 function hasShapeIdList(value) {
   return Array.isArray(value) && value.length > 0 && value.every(isShapeId);
 }
@@ -173,14 +240,19 @@ function hasShapeIdList(value) {
 function isUnsetList(value) {
   return (
     value === undefined ||
-    (Array.isArray(value) && value.every((key) => isNonEmptyString(key) && key !== "id"))
+    (Array.isArray(value) &&
+      value.length <= OPERATION_LIMITS.maxUnsetKeys &&
+      value.every(
+        (key) => isNonEmptyString(key) && key.length <= OPERATION_LIMITS.maxIdLength && key !== "id",
+      ))
   );
 }
 
 function isShapeId(value) {
   if (value === null || value === undefined || value === "") return false;
 
-  return isNonEmptyString(String(value));
+  const id = String(value);
+  return isNonEmptyString(id) && id.length <= OPERATION_LIMITS.maxIdLength;
 }
 
 function isNonEmptyString(value) {

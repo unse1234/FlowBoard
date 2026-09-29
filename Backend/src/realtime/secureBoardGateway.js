@@ -172,20 +172,23 @@ function registerSecureBoardGateway(
       inOrder(async (payload, reply) => {
         if (!buckets.mutation.take()) return reply(refusal("RATE_LIMITED"));
 
+        // Who made it is the server's to say (F-2). Stamped before the check,
+        // so the check covers exactly what is stored and relayed: a peer
+        // validating it against the same limits reaches the same verdict.
         const operation = payload?.operation;
-        const validation = validateOperation(operation);
+        const trusted =
+          operation && typeof operation === "object" ? { ...operation, userId: socket.data.userId } : operation;
+        const validation = validateOperation(trusted);
         if (!validation.valid) return reply(refusal("INVALID_PAYLOAD", validation.reason));
 
         const boardId = socket.data.boardId;
-        if (!boardId || operation.boardId !== boardId) return reply(refusal("NOT_JOINED"));
+        if (!boardId || trusted.boardId !== boardId) return reply(refusal("NOT_JOINED"));
 
         if (now() - socket.data.checkedAt >= recheckMs && !(await reauthorize(socket))) {
           return reply(refusal("BOARD_NOT_FOUND"));
         }
         if (!roleAllows(socket.data.role, BOARD_ACTIONS.EDIT)) return reply(refusal("EDIT_FORBIDDEN"));
 
-        // Who made it is the server's to say (F-2).
-        const trusted = { ...operation, userId: socket.data.userId };
         const result = operationStore.add(trusted);
         reply({ ok: true, duplicate: result.duplicate, operationId: trusted.operationId });
         if (result.duplicate) return undefined;

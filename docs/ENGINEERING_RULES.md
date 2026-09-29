@@ -37,9 +37,11 @@ worth keeping or a trap worth avoiding.
 
 9. **Validate at the boundary, in one place.** `validateOperation` for sockets,
    `parseDiagramRequest` for the AI endpoint. Callers should not re-check.
-10. **Validate shape *and* size.** The existing operation validator checks
-    structure but not quantity or magnitude (finding F-9). New validators check
-    both: array lengths, string lengths, numeric ranges.
+10. **Validate shape *and* size.** The operation validator checks each
+    operation's size, nesting, batch length and ids (`OPERATION_LIMITS`), but
+    not the type or range of shape fields (finding F-9). New validators check
+    both: array lengths, string lengths, numeric ranges, and nesting depth
+    measured without recursion (F-28).
 11. **Allow-list, do not sanitise-and-accept.** `parseDiagramRequest` keeps only
     known fields — copy that. Rewriting bad input is how F-8 happened: reject a
     malformed identifier instead of mangling it into a valid one.

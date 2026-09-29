@@ -1,4 +1,5 @@
 const path = require("node:path");
+const { OPERATION_LIMITS } = require("../operations/operationTypes");
 
 const DEFAULT_PORT = 3001;
 const DEFAULT_CLIENT_ORIGINS = ["http://localhost:5173", "https://flow-board-beige.vercel.app/"];
@@ -150,6 +151,10 @@ const DEFAULT_EMAILS_PER_ADDRESS_PER_HOUR = 5;
  */
 const DEFAULT_REALTIME_CONNECT_RATE_LIMIT_PER_MINUTE = 30;
 const DEFAULT_REALTIME_MAX_MESSAGE_BYTES = 1_000_000;
+// The smallest cap still carries the largest operation, with room for
+// Socket.IO's framing. Below it, an operation small enough to pass validation
+// would drop the connection instead (F-27).
+const MIN_REALTIME_MAX_MESSAGE_BYTES = OPERATION_LIMITS.maxOperationBytes + 16_384;
 const DEFAULT_REALTIME_RECOVERY_SECONDS = 120;
 
 /** Board API requests per account per minute (spec Phase C); generous, since the web app makes them as people work. */
@@ -186,7 +191,7 @@ function getServerConfig(env = process.env) {
       maxMessageBytes: readIntegerInRange(
         env.REALTIME_MAX_MESSAGE_BYTES,
         DEFAULT_REALTIME_MAX_MESSAGE_BYTES,
-        16_384,
+        MIN_REALTIME_MAX_MESSAGE_BYTES,
         10_000_000,
       ),
       // Finite by design: recovery is an optimisation, never the source of truth.

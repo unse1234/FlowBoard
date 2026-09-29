@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 2. Update it every chunk.**
 
-Last updated: 2026-09-29 (plan written; no code yet)
+Last updated: 2026-09-29 (chunk 0.1: operation limits)
 
 ---
 
@@ -11,10 +11,11 @@ Last updated: 2026-09-29 (plan written; no code yet)
 | | |
 | --- | --- |
 | **Step** | 2 — Durable boards |
-| **Phase** | Planned (`BOARDS_PLAN.md`). No chunk built |
-| **Next chunk** | 0.1 — size limits in the operation contract. Needs no decision |
+| **Phase** | 0 — Bounds. 0.1 done |
+| **Next chunk** | 0.2 — no retry loops: the web app checks, splits and stops retrying. Needs no decision |
+| **Urgent, outside the branch** | F-28 hotfix for `main` (H.1): one message can crash the live server. Waiting on the owner's go-ahead to ship to `main` |
 | **Waiting on the owner** | D-11 (undo), D-12 (images), D-13 (history kept), in `BOARDS_DECISIONS.md`. They block 4.x, 0.3 and 2.5 respectively |
-| **Branch** | Builds on `feat/accounts-collaboration` (its `boards` tables), which is not merged |
+| **Branch** | `feat/durable-boards`, from `feat/accounts-collaboration` (its `boards` tables), neither merged |
 
 ---
 
@@ -69,13 +70,28 @@ Join
 | Chunk | Delivers |
 | --- | --- |
 | Plan | `BOARDS_PLAN.md`, `BOARDS_DECISIONS.md`, this file; F-27 recorded |
+| 0.1 | `OPERATION_LIMITS` in both contract copies, set from measurements (below): 900,000 bytes, 16 levels, 1,000 entries per batch, 128-character ids, 64 unset keys. Depth measured without recursion before anything serialises (F-28 closed for operations). The authenticated gateway checks the operation with the server's `userId` on it, as stored. The message cap can no longer undercut the largest operation. 24 mutants, all killed; the raw-frame F-28 test fails on its own with the depth check off |
 
 ## Tests
 
 | Suite | Result |
 | --- | --- |
-| Backend | 611 pass, 0 skipped (Step 1 baseline) |
-| Frontend | 328 pass (Step 1 baseline) |
+| Backend | **622 pass, 0 skipped** (611 at Step 1) |
+| Frontend | **331 pass** (328 at Step 1); lint and build clean |
+
+## Measurements (2026-09-29, the app's own shape code, this machine)
+
+| What | Result |
+| --- | --- |
+| One shape, serialised | Box or arrow 0.4 KB; text or note (200 chars) 0.6 KB; pen stroke 7 KB (2 s), 33 KB (10 s) |
+| Largest AI diagram | 120 shapes, 56 KB as one `CREATE_SHAPES` |
+| A mixed 1,000-shape board as one seed | 3.0 MB, 3.1 KB a shape: over the 1 MB message cap past about 300 shapes (F-27) |
+| Deepest operation the app sends | 5 levels, 6 for a whole-shape patch |
+| Longest id | 42 characters |
+| Applying k deletes to n shapes | n = 10,000: k = 500 took 8 ms, 1,000 took 32 ms, 5,000 took 686 ms |
+| Applying k reorders (`REORDER_SHAPES`) | n = 10,000: k = 500 took 120 ms, 1,000 took 243 ms, 5,000 took 1,190 ms |
+| Updates, groups, creates | Under 3 ms at any k up to 5,000 |
+| Validation of one operation | 0.1 ms for a refused deep one; 2-4 ms for a 950 KB one |
 
 ## Known issues shaping Step 2
 
@@ -86,7 +102,9 @@ Join
 | F-11 | Local cache and replay both seed a room | Phase 3 |
 | F-4 | Undo diverges peers; comments claim otherwise | Phase 4, after D-11 |
 | F-9 | Operation size and shape unbounded | Phase 0, for what is stored |
-| F-27 | An oversized operation loops the connection | Phase 0 |
+| F-27 | An oversized operation loops the connection | Phase 0: server half in 0.1, client half 0.2 |
+| F-28 | One nested message crashes the server | Operations closed in 0.1; presence and voice, and production, in hotfix H.1 |
+| F-29 | Validators disagree on space-only ids | Recorded; not scheduled |
 | F-24 | Revocation reaches one process only | Not Step 2 (Step 3) |
 
 ## Do not touch
@@ -104,3 +122,4 @@ Join
 | Date | Change |
 | --- | --- |
 | 2026-09-29 | Step 2 started. Code read and two runtime checks run; plan, decisions and status written; F-27 recorded. |
+| 2026-09-29 | Chunk 0.1: operation limits in both contract copies, measured first. F-28 (crash by nesting) found, reproduced and closed for operations; F-29 recorded. Backend 611 → 622, frontend 328 → 331. |

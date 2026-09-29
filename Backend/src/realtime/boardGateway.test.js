@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { OPERATION_LIMITS } = require("../operations/operationTypes");
 const { SOCKET_EVENTS } = require("./socketEvents");
 const {
   buildOperation,
@@ -395,4 +396,59 @@ test("F-5: the operation log is never trimmed, so replay grows without bound", a
   // is no snapshot and no compaction, so this number only ever rises.
   assert.equal(ack.replayedOperationCount, 50);
   assert.equal(server.operationStore.list("busy-board").length, 50);
+});
+
+test("an operation over the limits is refused, and nothing is stored or relayed", async (t) => {
+  const server = await startRealtimeServer(t);
+  const author = await server.client();
+  const peer = await server.client();
+  await join(author, "board-1");
+  await join(peer, "board-1");
+  const seen = record(peer, SOCKET_EVENTS.BOARD_EVENT);
+
+  let deep = 0;
+  for (let level = 0; level < OPERATION_LIMITS.maxDepth; level += 1) deep = [deep];
+  const ids = Array.from({ length: OPERATION_LIMITS.maxBatchEntries + 1 }, (_, i) => `s${i}`);
+  const cases = [
+    // Under the 1 MB message cap, so it reaches the check rather than dropping the connection.
+    [buildOperation({ payload: { shape: { id: "s1", text: "x".repeat(OPERATION_LIMITS.maxOperationBytes) } } }), /bytes; the limit is/],
+    [buildOperation({ payload: { shape: { id: "s1", x: deep } } }), /nests more than/],
+    [buildOperation({ type: "DELETE_SHAPES", payload: { shapeIds: ids } }), /at most 1000 shapeIds/],
+  ];
+
+  for (const [operation, expected] of cases) {
+    const ack = await publish(author, operation);
+    assert.equal(ack.ok, false);
+    assert.match(ack.error, expected);
+  }
+
+  await settle();
+  assert.equal(seen.received.length, 0);
+  assert.equal(server.operationStore.list("board-1").length, 0);
+});
+
+test("F-28: an operation nested deeply enough to overflow the encoder is refused, and the server keeps running", async (t) => {
+  const server = await startRealtimeServer(t);
+  const author = await server.client();
+  const peer = await server.client();
+  await join(author, "board-1");
+  await join(peer, "board-1");
+  const seen = record(peer, SOCKET_EVENTS.BOARD_EVENT);
+
+  // Written as a raw frame: socket.io-client cannot encode this, and before the
+  // depth limit the server's relay could not either, which crashed the process.
+  const levels = 50_000;
+  const operation = JSON.stringify(buildOperation({ payload: { shape: { id: "s1", x: "DEEP" } } })).replace(
+    '"DEEP"',
+    "[".repeat(levels) + "0" + "]".repeat(levels),
+  );
+  author.io.engine.send(`2["${SOCKET_EVENTS.BOARD_EVENT}",{"operation":${operation}}]`);
+
+  await settle();
+  assert.equal(server.operationStore.list("board-1").length, 0);
+  assert.equal(seen.received.length, 0);
+
+  // The same connection, and the board, still work.
+  assert.equal((await publish(author, buildOperation())).ok, true);
+  await seen.waitFor(1);
 });

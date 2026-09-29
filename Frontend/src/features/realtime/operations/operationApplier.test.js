@@ -4,6 +4,7 @@ import {
   applyOperationPayload,
   createBoardOperation,
   OperationApplier,
+  OPERATION_LIMITS,
   OPERATION_TYPES,
 } from "./index.js";
 
@@ -311,4 +312,23 @@ test("applyOperationPayload applies an edit without an envelope or de-duplicatio
     payload: { shapes: [] },
   });
   assert.equal(invalid.status, "invalid");
+});
+
+test("a remote operation over the limits is not applied, and not marked processed", () => {
+  const applier = new OperationApplier();
+  const shapes = [{ id: "shape_1", type: "rect" }];
+  const operation = createBoardOperation({
+    boardId,
+    userId,
+    type: OPERATION_TYPES.DELETE_SHAPES,
+    operationId: "op_too_many",
+    payload: { shapeIds: Array.from({ length: OPERATION_LIMITS.maxBatchEntries + 1 }, () => "shape_1") },
+  });
+
+  const result = applier.apply(shapes, operation);
+
+  assert.equal(result.status, "invalid");
+  assert.match(result.reason, /at most 1000/);
+  assert.equal(result.shapes, shapes);
+  assert.equal(applier.hasProcessed("op_too_many"), false);
 });
