@@ -2,7 +2,7 @@
 
 **The operational file. Read this first for Step 1. Update it every chunk.**
 
-Last updated: 2026-09-24 (Phase 2 and its web UI complete)
+Last updated: 2026-09-29 (code complete; rollout paused, the project moved to Step 2)
 
 ---
 
@@ -10,10 +10,10 @@ Last updated: 2026-09-24 (Phase 2 and its web UI complete)
 
 | | |
 | --- | --- |
-| **Step** | 1 — Identity & Accounts |
+| **Step** | 1 — Identity & Accounts. **Paused at rollout**: the owner moved the project to Step 2 on 2026-09-29 |
 | **Phase** | 1–8 **COMPLETE in code** (9 and 10 deferred): accounts, sessions, email, boards and roles, authorised realtime, account settings and deletion, hardening, provider sign-in |
-| **Task** | None active. Owner configuration before any of it is live: `DEPLOYMENT.md` |
-| **Blocker** | None. F-20 resolved; 0002 is applied to the dev database |
+| **Task** | None active. What is left to close Step 1: **`AUTH_REMAINING.md`** |
+| **Blocker** | Rollout needs the owner: Neon, a domain for Resend, optionally the providers |
 
 Stack settled: PostgreSQL + `pg` + SQL migrations (ADR 0001), JWT access +
 rotating opaque refresh cookie (ADR 0002), multi-instance from the first commit
@@ -51,11 +51,8 @@ anonymous rooms (E-25).
 
 ## In progress
 
-**Phase 2 is complete.** Sign-in issues a 15-minute access token and a
-rotating refresh cookie. Refresh keeps a session alive across reloads, reuse
-detection revokes a stolen session, logout ends it, CSRF is defended, and
-`requireAuth` authenticates HTTP routes with no I/O. **Next: the auth UI**
-(owner's sequencing, 2026-09-24). Its deployment prerequisite is E-15.
+Nothing. Step 1's code is finished; its rollout, the browser pass and closing
+the step are listed in `AUTH_REMAINING.md`.
 
 ## Not started
 
@@ -250,25 +247,19 @@ rather than assumed.
 | 2026-09-25 | **Phase 5** (spec C, D): boards, roles, invitations (migration 0008, ADR 0008); authenticated sockets, per-board authorisation, server-stamped identity, revocation, limits, recovery; web app sharing, invitations, viewers read-only. 25 realtime mutants and the board mutants all killed; one lock survivor closed with a controlled-interleaving test. Verified end to end with the web client's own transport. |
 | 2026-09-25 | **Phase 6.2** (spec B, part 2): deletion with shared boards handed over or deleted first (E-22, E-24). |
 | 2026-09-25 | **Phase 8** (spec E): Google, GitHub, Microsoft (migration 0009, ADR 0009) against providers faked at the HTTP level; 28 mutants, two survivors closed. Web app: provider buttons, connected accounts, confirm-with-provider. Backend 516 → 611, frontend 300 → 328. |
+| 2026-09-29 | Owner paused Step 1 at rollout and moved the project to Step 2. What is left is recorded in `AUTH_REMAINING.md`. |
 
 ---
 
 ## Next recommended task
 
-Everything the owner asked for in Phases A to E is built and tested. None of
-it runs in production until the owner configures it (`../DEPLOYMENT.md`):
+**Step 1 is paused; the active work is Step 2** (`../current-task.md`).
+Everything the owner asked for in Phases A to E is built and tested, and none
+of it runs in production. The checklist to finish it (merge, database, email,
+providers, a browser pass, the CSP) is **`AUTH_REMAINING.md`**.
 
-1. **Database** (Neon) and the auth variables. This switches on accounts
-   *and* changes collaboration: sign-in required, invitations instead of links.
-2. **Email** (Resend, a verified domain). Without it nobody can confirm an
-   address, so nobody can collaborate.
-3. **Providers** (optional): app registrations for Google, GitHub and
-   Microsoft with the callback addresses listed there.
-4. Then a browser pass over sign-up, confirmation, sharing, invitations, a
-   viewer, removal, deletion and each provider, and enforce the CSP.
-
-Code follow-ups: F-24 (revocation across instances, before scaling out), F-3
-(board content is still not stored), F-14 (AI limits).
+Code follow-ups that do not block closing Step 1: F-24 (revocation across
+instances, before scaling out), F-14 (AI limits).
 
 ## Do not touch / protected areas
 
@@ -283,7 +274,3 @@ break passing tests.
 | Canvas, drawing, export, theme, shortcuts | Entirely unrelated |
 | Both `operationTypes.js` copies | Only with a deliberate contract change, in both, with the contract test run |
 | `voiceGateway.js` | Only in Phase 5, and only after Phase 0b covers it |
-
-**Uncommitted work is present in the tree** (operation contract, renderers,
-`styleUtils`, `textMetrics` and related tests). It is unrelated to Step 1.
-Do not fold it into an auth chunk, and do not revert it.

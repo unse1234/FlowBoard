@@ -13,7 +13,7 @@ production-safe) · **MISSING** · **UNKNOWN**
 
 | # | Section | Status | One-line evidence |
 | --- | --- | --- | --- |
-| 1 | Identity & Accounts | **MISSING** | No auth code exists — see `AUTH/AUTH_STATUS.md` |
+| 1 | Identity & Accounts | **PARTIAL** | Built and tested in code (Step 1, phases 1–8); not live, production has no database — `AUTH/AUTH_REMAINING.md` |
 | 2 | Workspaces & Teams | **MISSING** | No workspace concept anywhere |
 | 3 | Board Management | **MISSING** | No dashboard, no board list; one board per URL |
 | 4 | Canvas Engine | **PARTIAL** | Pan/zoom/select/group/align/order/snap/grid/minimap built; no rotate, lock, frames, rulers, context menus |
@@ -166,15 +166,19 @@ scorecard above covers the rest.
 Sequenced by the dependencies found in the audit, not by checklist order. Each
 step is delivered in small chunks; `current-task.md` names the active one.
 
-### Step 1 — Identity & Accounts **(active)**
+### Step 1 — Identity & Accounts **(code complete; rollout paused)**
 
-Detailed plan: `AUTH/AUTH_PLAN.md`. Live state: `AUTH/AUTH_STATUS.md`.
+Detailed plan: `AUTH/AUTH_PLAN.md`. Live state: `AUTH/AUTH_STATUS.md`. What
+is left to close it: `AUTH/AUTH_REMAINING.md`.
 
 Covers G-2, G-5, G-11, G-10, G-1, G-3. Ends when a user can sign up, verify,
 sign in, manage sessions and delete their account, and when the socket layer
 authenticates and authorises against that identity.
 
-### Step 2 — Durable boards
+All of that is built and tested. On 2026-09-29 the owner paused its rollout
+(database, email, providers, a browser pass) and moved the project to Step 2.
+
+### Step 2 — Durable boards **(active)**
 
 G-4, G-6. Boards become rows; the op log gains snapshots and compaction; undo
 semantics are settled. Unlocks §3 (board management) and §13 (version history).

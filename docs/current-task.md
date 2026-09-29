@@ -6,67 +6,49 @@
 
 ## Current task
 
-Step 1 · **Phases 1–8 complete in code** (the owner's Phases A–E: email, account settings, boards and roles, authorised realtime, provider sign-in). Nothing is live in production until the owner configures the database, email and providers (`DEPLOYMENT.md`).
+**Step 2 — Durable boards** (`PRODUCTION_PLAN.md` §3: G-4, G-6). Started
+2026-09-29.
+
+**First chunk: the Step 2 plan.** Read-only investigation, then a written plan.
+No code changes in this chunk.
 
 ## Status
 
-**Phase 2 and the auth UI complete: persistent, revocable sign-in, in the web app** — 2026-09-24.
+**Step 1 is complete in code and paused at rollout** (owner, 2026-09-29).
+Accounts, sessions, email, boards with roles, authorised realtime, account
+settings and deletion, and provider sign-in are built and tested. None of it
+runs in production, which has no database. What is left to close Step 1 —
+merge, Neon, Resend on a domain, providers, a browser pass, the CSP — is
+listed in **`AUTH/AUTH_REMAINING.md`**. The chunk-by-chunk record is in
+`AUTH/AUTH_STATUS.md`.
 
-The project owner chose to finish Phase 2 before building the auth UI, so the
-UI can keep people signed in across a refresh rather than hold sign-in state in
-memory.
+## What Step 2 has to fix
 
-- 2.1: `auth_sessions` and `refresh_tokens`, verified on PostgreSQL 18.6.
-- 2.2: HS256 access tokens, signed and verified with `node:crypto`.
-- 2.3: login creates a session, sets the refresh cookie and returns an
-  access token.
-- 2.4: **`POST /api/auth/refresh` rotates the cookie and returns a fresh
-  access token.** A replayed token revokes the session.
-- 2.5: `POST /api/auth/logout` ends this device's session.
-- 2.6: CSRF — every state-changing `/api/auth` request needs a trusted `Origin`.
-- 2.7: `requireAuth` for HTTP routes, and `GET /api/auth/me`.
-- UI-1 to UI-3: sign-in and create-account dialog, account dialog and
-  board-menu entries on every layout, with a session controller that
-  restores on reload and keeps tabs in step.
+| Finding | Problem |
+| --- | --- |
+| F-3 | CRITICAL — board content lives only in `operationStore.js`, an in-memory `Map`. Every restart loses every shared board |
+| F-5 | HIGH — the operation log never shrinks, and a joiner is sent every operation ever made |
+| F-4 | HIGH — undo restores a local snapshot and publishes nothing, so it silently diverges peers; the contract comments claim otherwise |
+| F-11 | MEDIUM — the local cache and the server replay can both seed a room |
 
-Backend suite: **380 passing, 0 skipped.**
+Step 2 ends when a shared board survives a restart, a joiner receives a
+snapshot and a short tail rather than the whole history, and undo has one
+model that the code and comments agree on.
 
-**Deployment prerequisite (E-15):** the web app and API must be same-site in
-production. Where the backend runs is unknown.
+## The first chunk: write the Step 2 plan
 
-**F-20 resolved.** Migration checksums no longer change with the checkout's
-line endings, and 0002 is applied to the development database.
+1. Read `operationStore.js`, `boardGateway.js`, `Backend/migrations/0008_create_boards.sql`,
+   ADR 0008, and the frontend's `localStorage` persistence and `useHistory.js`.
+2. Record what exists: how operations are shaped, applied, stored and replayed,
+   where a board's state is computed, and what `boards` already holds.
+3. Write `docs/BOARDS/BOARDS_PLAN.md` (phases and chunks) and
+   `docs/BOARDS/BOARDS_STATUS.md`, following the shape of the `AUTH/` files.
+4. Raise the decisions that are the owner's, notably the undo model (F-4), in a
+   `docs/BOARDS/BOARDS_DECISIONS.md`.
 
-## What was built
-
-| Chunk | Delivers | Files |
-| --- | --- | --- |
-| 0.1 | Pooled connection, timeouts, transaction helper, slow-query reporting, readiness probe, graceful shutdown | `Backend/src/db/createDatabase.js`, `Backend/src/server.js`, `Backend/src/config/serverConfig.js` |
-| 0.2 | Forward-only migration runner with advisory lock, checksum drift detection, per-migration transactions, `npm run migrate` | `Backend/src/db/migrate.js` |
-| 0.3 | `users` table: UUID ids, soft delete, `token_version`, case-insensitive unique email | `Backend/migrations/0001_create_users.sql` |
-| 0.4 | Schema integration suite, skipped unless `TEST_DATABASE_URL` is set | `Backend/src/db/schema.integration.test.js` |
-| 1.1 | Argon2id hashing: PHC-stored parameters, `needsRehash` for transparent cost upgrades, input cap, non-throwing verification, timing-equalised unknown-user path | `Backend/src/auth/passwordHasher.js` |
-| 1.2 | Email validation and normalisation: NFC then lowercase, byte-counted RFC limits, rejects header injection and invisible characters, and an integration test proving the app and PostgreSQL agree on `lower()` | `Backend/src/auth/emailAddress.js` |
-| 1.3 | Auth error envelope mirroring `aiErrors.js`; `toResponseBody` makes leaking `detail` impossible; tests police the enumeration rule rather than commenting it | `Backend/src/auth/authErrors.js` |
-| 1.4 | `POST /api/auth/signup` — uniform response whether or not the address is taken (E-12), always hashes before inserting, `ON CONFLICT DO NOTHING` so a race cannot leak, per-IP rate limit | `Backend/src/auth/authRouter.js`, `signupRequest.js`, `userRepository.js` |
-| 1.5 | `POST /api/auth/login` — one answer for an unknown address, a wrong password and a no-password account, each doing equal work; account status checked only after the password verifies; stale hashes upgraded transparently | `Backend/src/auth/authRouter.js`, `loginRequest.js` |
-| 2.1 | `auth_sessions` (one row per sign-in: the token family, with absolute expiry and reasoned revocation) and `refresh_tokens` (SHA-256 digest, idle expiry, `consumed_at` for reuse detection). Two tables so revocation cannot race rotation — E-13 | `Backend/migrations/0002_create_auth_sessions_and_refresh_tokens.sql`, `Backend/src/db/schema.integration.test.js` |
-| 2.2 | HS256 access tokens via `node:crypto` (ADR 0005): strict verifier, `kid` keyring, `AUTH_ACCESS_TOKEN_KEYS`; no JWT dependency | `Backend/src/auth/accessTokens.js`, `Backend/src/config/serverConfig.js` |
-| 2.3 | Login creates a session and refresh token, sets the `HttpOnly`/`Secure`/`Strict` cookie on `/api/auth`, returns an access token; credentialed CORS on `/api/auth` only | `Backend/src/auth/sessionRepository.js`, `refreshTokens.js`, `authRouter.js`, `Backend/src/server.js` |
-| 2.4 | `POST /api/auth/refresh`: rotation under a session lock, reuse detection revoking the session, 20 s grace for racing tabs, uniform `SESSION_INVALID` | `Backend/src/auth/sessionRepository.js`, `authRouter.js` |
-| 2.5 | `POST /api/auth/logout`: ends this device's session, never relabels a theft, always `{ ok: true }` | `Backend/src/auth/sessionRepository.js`, `authRouter.js` |
-| 2.6 | CSRF: trusted-`Origin` check on the auth router, before routes and the rate limiter | `Backend/src/http/originCheck.js`, `authRouter.js` |
-| 2.7 | `requireAuth` (bearer only, no I/O, frozen `request.user`) and `GET /api/auth/me` with database re-checks | `Backend/src/auth/authenticate.js`, `authRouter.js` |
-| UI-1 | API client and form rules sharing the server's codes, limits and wording; contract test | `Frontend/src/features/auth/authClient.js`, `authForm.js` |
-| UI-2 | Session controller: restore, refresh ahead of expiry, Web Locks, cross-tab sync, generation guard | `Frontend/src/features/auth/authSession.js` |
-| UI-3 | `AuthDialog`, `AccountDialog`, account section of the board menu, `AuthProvider` | `Frontend/src/components/auth/`, `features/auth/AuthProvider.jsx`, `pages/BoardPage.jsx`, `main.jsx` |
-
-## Recently fixed
-
-Four rendering bugs, recorded as F-19: the erase preview was invisible on clean
-lines and text, images ignored opacity, sketchy shapes composited opacity twice,
-and fill rendered at 18% in the default style. All had one cause — each renderer
-decided opacity for itself. Opacity is now set once, on the outermost node.
+**Where it builds:** `boards` and board membership exist only on
+`feat/accounts-collaboration`, which is not merged (`AUTH/AUTH_REMAINING.md`
+§1). Step 2 builds on that branch, or on `main` once it is merged.
 
 ## Tests
 
@@ -76,11 +58,7 @@ decided opacity for itself. Opacity is now set once, on the outermost node.
 | Frontend | **328 pass, 0 fail** |
 | Frontend lint | Clean |
 
-Backend tests grew from 47 to 611. The hashing tests run at deliberately cheap
-Argon2 parameters so the suite stays fast, with two tests pinning the real
-shipped defaults against OWASP's baseline.
-
-**The backend suite now requires a database**, and runs with
+**The backend suite requires a database**, and runs with
 `--test-concurrency=1`. Several files reset the schema of one shared database,
 so running files in parallel makes them drop it under each other — which
 appeared as a handful of failures that moved between runs. Do not remove the
@@ -110,21 +88,9 @@ node process — a killed-looking server can still hold its port and answer
 requests with stale config. Use `taskkill //PID <pid> //F`, and check
 `netstat -ano | grep :<port>` before trusting a smoke test.
 
-## Next task
-
-No code task is active. The owner's configuration comes first, in this order
-(`DEPLOYMENT.md`): the database, email, then the providers. Connecting the
-database **changes collaboration**: old room links stop working and sharing
-becomes invitations for signed-in, confirmed accounts (E-25, ADR 0008).
-
-After that, a browser pass over every flow, then F-24 before running more than
-one instance, and F-3 (store board content) as Step 2.
-
 ## Before starting the next chunk
 
-1. Read `CLAUDE.md`, then `AUTH/AUTH_STATUS.md`.
+1. Read `CLAUDE.md`, then `PRODUCTION_PLAN.md` §2 (G-4, G-6) and §3.
 2. Check `AUDIT_FINDINGS.md` for anything touching the files you will modify.
-3. Confirm the "Do not touch" list in `AUTH_STATUS.md`.
-4. **Uncommitted pre-audit work is in the tree** (operation contract, renderers,
-   `styleUtils`, `textMetrics` and related tests). It is unrelated to Step 1 —
-   do not fold it into your chunk, and do not revert it.
+3. Step 1's code is finished: change it only where Step 2 genuinely needs to,
+   and keep its tests passing.

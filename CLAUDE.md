@@ -16,12 +16,17 @@ following `docs/PRODUCTION_PLAN.md`.
 
 ## Current active step
 
-**Step 1 — Identity & Accounts.** Built in code (Phases 1–8): accounts,
-sessions, email, boards with owner/editor/viewer roles, authenticated and
-authorised realtime, account settings and deletion, and sign-in with Google,
-GitHub and Microsoft. Production runs none of it until it has a database
-(`docs/DEPLOYMENT.md`); a server without one keeps anonymous rooms (E-25).
-State: `docs/AUTH/AUTH_STATUS.md`.
+**Step 2 — Durable boards** (since 2026-09-29): shared boards that survive a
+restart, snapshots and compaction instead of replaying every operation, and
+one undo model (F-3, F-5, F-4). It starts with a written plan; see
+`docs/current-task.md`.
+
+**Step 1 — Identity & Accounts is complete in code, with its rollout paused.**
+Built (Phases 1–8): accounts, sessions, email, boards with owner/editor/viewer
+roles, authenticated and authorised realtime, account settings and deletion,
+and sign-in with Google, GitHub and Microsoft. Production runs none of it until
+it has a database (`docs/DEPLOYMENT.md`); a server without one keeps anonymous
+rooms (E-25). What is left to close it: `docs/AUTH/AUTH_REMAINING.md`.
 
 ## Where things are written down
 
@@ -29,6 +34,7 @@ State: `docs/AUTH/AUTH_STATUS.md`.
 | --- | --- | --- |
 | `docs/current-task.md` | The single active work item | Every chunk |
 | `docs/AUTH/AUTH_STATUS.md` | Step 1 live state | Every Step 1 chunk |
+| `docs/AUTH/AUTH_REMAINING.md` | What is left to close Step 1: rollout, browser pass, CSP | An item is done |
 | `docs/PROJECT_CONTEXT.md` | Verified current state of the whole project | Architecture changes |
 | `docs/ARCHITECTURE.md` | How the systems actually fit together | Architecture changes |
 | `docs/AUDIT_FINDINGS.md` | Defects and risks in what already exists | A finding is fixed or found |
