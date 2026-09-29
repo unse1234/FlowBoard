@@ -63,6 +63,12 @@ line endings, and 0002 is applied to the development database.
 
 ## Recently fixed
 
+**F-28, hotfix 2026-09-30:** one small message of deeply nested arrays crashed
+the server, through a board edit, a presence update, voice signalling or the
+handshake. `Backend/src/realtime/nestingGuard.js` now refuses anything nesting
+more than 32 levels before a handler sees it. The active work is on the Step 2
+branch (`feat/durable-boards`), whose `current-task.md` is the live one.
+
 Four rendering bugs, recorded as F-19: the erase preview was invisible on clean
 lines and text, images ignored opacity, sketchy shapes composited opacity twice,
 and fill rendered at 18% in the default style. All had one cause — each renderer
