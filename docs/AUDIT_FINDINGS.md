@@ -40,7 +40,7 @@ resolved by Step 1 rather than by a patch.
 | F-24 | MEDIUM | Scaling | Realtime revocation reaches sockets in the same process only |
 | F-25 | LOW | Durability | An email promised after a commit is lost if the process dies before sending it |
 | F-26 | LOW | Dependencies | `npm audit` in `Frontend/` reports two high advisories in build-time packages (`nanoid`, `postcss`) |
-| F-27 | HIGH | Availability | An operation over the socket message cap loops the sender's connection, and its later edits never arrive — server half done 2026-09-29 (chunk 0.1); the client half is chunk 0.2 |
+| F-27 | ~~HIGH~~ | Availability | ~~An operation over the socket message cap loops the sender's connection, and its later edits never arrive~~ — **RESOLVED 2026-09-30** in code (Step 2 chunks 0.1, 0.2; not deployed). An image over the limit stays local until chunk 0.3 |
 | F-28 | ~~CRITICAL~~ | Availability | ~~One small, deeply nested message crashes the server process~~ — **RESOLVED 2026-09-30** by the hotfix `nestingGuard.js`; **production is fixed once `fix/f28-message-nesting` reaches `main`**. Operations are also bounded by the contract (chunk 0.1) |
 | F-29 | LOW | Correctness | The two operation validators disagree on ids made only of spaces |
 
@@ -801,6 +801,18 @@ be set below that plus 16 KiB of framing. So anything the validator accepts
 fits in a message, and an operation between the two limits is refused with a
 reason instead of dropping the connection. The loop itself ends only when the
 web app checks, splits and stops retrying (chunk 0.2).
+
+**Resolved in code 2026-09-30** (chunk 0.2, on `feat/durable-boards`, not
+deployed). The web app packs an edit that does not fit into pieces that do
+(`splitOperation.js`), and refuses and reports whatever cannot fit, instead of
+sending it. The manager never resends an operation awaiting its answer. It
+drops what the server refuses for good, and retries anything else after a
+pause that backs off. The reproduction above, rerun with the same client code
+against a real server, had no reconnect at all. A 3 MB seed went as 4
+operations and all 1,000 shapes arrived. The 1.5 MB image was refused locally
+with a toast, and the edit behind it arrived. **Left:** an image too large for
+one operation still cannot be shared. Chunk 0.3 shrinks images on insert, as
+D-12 decides.
 
 ---
 

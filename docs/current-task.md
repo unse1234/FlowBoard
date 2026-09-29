@@ -9,9 +9,10 @@
 **Step 2 — Durable boards** (`PRODUCTION_PLAN.md` §3: G-4, G-6). Started
 2026-09-29.
 
-**Chunk 0.1 done** (2026-09-29): operation limits in both contract copies, on
-`feat/durable-boards`. **Next chunk: 0.2, no retry loops.** It needs no
-decision.
+**Chunks 0.1 and 0.2 done** (2026-09-29, 2026-09-30), on `feat/durable-boards`:
+operation limits in both contract copies, and a web app that splits, stops
+resending and reports what cannot be shared (F-27). **Next chunk: 1.1, the
+operation log's schema.** It needs no decision. 0.3 (images) waits for D-12.
 
 **Urgent, outside the branch: F-28.** One small, deeply nested message crashes
 the server. The fix, hotfix H.1 (`nestingGuard.js`), is built, tested and
@@ -61,16 +62,15 @@ model that the code and comments agree on. Full exit list:
 | 4 | Undo your own changes, as ordinary edits | F-4 |
 | 5 | End-to-end restart proof, measurements, ADR 0010 | — |
 
-## Next chunk: 0.2 — no retry loops
+## Next chunk: 1.1 — the operation log's schema
 
-The web app checks each operation against `OPERATION_LIMITS` before sending
-(the same `validateOperation` the server runs). A batch that is too big
-(`CREATE_SHAPES`, `UPDATE_SHAPES`, `DELETE_SHAPES`) is split into several that
-fit, which also covers seeding a shared board of more than about 300 shapes.
-An operation the server refuses as invalid is dropped rather than retried on
-every reconnect, and the user is told. Transient failures still retry. Prove
-it with the real `RealtimeManager` against a real server, repeating the F-27
-reproduction (`AUDIT_FINDINGS.md`).
+Migration 0010: `board_operations` (board, sequence number, operation id,
+author, type, payload `jsonb`, time), primary key `(board_id, seq)`, unique
+`(board_id, operation_id)`, cascading from `boards`, and a per-board head
+sequence on `boards`. Decide in the chunk what the author column does when an
+account is deleted (probably `ON DELETE SET NULL`, keeping the edit and losing
+the name). Integration tests against PostgreSQL, and an EXPLAIN check that the
+tail read (`seq > n` for one board) uses the primary key.
 
 **Where it builds:** `boards` and board membership exist only on
 `feat/accounts-collaboration`, which is not merged (`AUTH/AUTH_REMAINING.md`
@@ -82,7 +82,7 @@ reproduction (`AUDIT_FINDINGS.md`).
 | Suite | Result |
 | --- | --- |
 | Backend | **627 pass, 0 fail, 0 skipped** |
-| Frontend | **331 pass, 0 fail** |
+| Frontend | **347 pass, 0 fail** |
 | Frontend lint | Clean |
 
 **The backend suite requires a database**, and runs with

@@ -11,8 +11,8 @@ Last updated: 2026-09-30 (F-28 hotfix built and merged in; not yet deployed)
 | | |
 | --- | --- |
 | **Step** | 2 — Durable boards |
-| **Phase** | 0 — Bounds. 0.1 done |
-| **Next chunk** | 0.2 — no retry loops: the web app checks, splits and stops retrying. Needs no decision |
+| **Phase** | 0 — Bounds. 0.1 and 0.2 done; 0.3 waits for D-12 |
+| **Next chunk** | 1.1 — the operation log's schema (migration 0010). Needs no decision. 0.3 (images) is skipped until D-12 is decided |
 | **Urgent, outside the branch** | F-28 hotfix (H.1) is built, tested and committed on `fix/f28-message-nesting`, branched from `main`, and merged into both feature branches. **Not deployed:** pushing to `main` deploys, and that is the owner's to do. Until then the live server can be crashed |
 | **Waiting on the owner** | D-11 (undo), D-12 (images), D-13 (history kept), in `BOARDS_DECISIONS.md`. They block 4.x, 0.3 and 2.5 respectively |
 | **Branch** | `feat/durable-boards`, from `feat/accounts-collaboration` (its `boards` tables), neither merged |
@@ -71,13 +71,14 @@ Join
 | --- | --- |
 | Plan | `BOARDS_PLAN.md`, `BOARDS_DECISIONS.md`, this file; F-27 recorded |
 | 0.1 | `OPERATION_LIMITS` in both contract copies, set from measurements (below): 900,000 bytes, 16 levels, 1,000 entries per batch, 128-character ids, 64 unset keys. Depth measured without recursion before anything serialises (F-28 closed for operations). The authenticated gateway checks the operation with the server's `userId` on it, as stored. The message cap can no longer undercut the largest operation. 24 mutants, all killed; the raw-frame F-28 test fails on its own with the depth check off |
+| 0.2 | `splitOperation` (edits packed into pieces that fit, or refused and reported), a manager that never resends what is in flight, drops permanent refusals and backs off on the rest, and a toast when a change stays local. F-27 rerun with the web app's own code against a real server: no reconnects, the 3 MB seed arrived whole in 4 operations, the image was refused locally, the edit behind it arrived. 18 mutants, all killed (one survivor found and its test tightened) |
 
 ## Tests
 
 | Suite | Result |
 | --- | --- |
 | Backend | **627 pass, 0 skipped** (611 at Step 1; 0.1 added 11, H.1 added 6 and superseded 1) |
-| Frontend | **331 pass** (328 at Step 1); lint and build clean |
+| Frontend | **347 pass** (328 at Step 1; 0.1 added 3, 0.2 added 16); lint and build clean |
 
 ## Measurements (2026-09-29, the app's own shape code, this machine)
 
@@ -102,7 +103,7 @@ Join
 | F-11 | Local cache and replay both seed a room | Phase 3 |
 | F-4 | Undo diverges peers; comments claim otherwise | Phase 4, after D-11 |
 | F-9 | Operation size and shape unbounded | Phase 0, for what is stored |
-| F-27 | An oversized operation loops the connection | Phase 0: server half in 0.1, client half 0.2 |
+| F-27 | An oversized operation loops the connection | Resolved in code by 0.1 and 0.2 (not deployed). An image over the limit stays local until 0.3 |
 | F-28 | One nested message crashes the server | Resolved in code by hotfix H.1 (every event and the handshake) and 0.1 (operations); production waits for `fix/f28-message-nesting` on `main` |
 | F-29 | Validators disagree on space-only ids | Recorded; not scheduled |
 | F-24 | Revocation reaches one process only | Not Step 2 (Step 3) |
@@ -124,3 +125,4 @@ Join
 | 2026-09-29 | Step 2 started. Code read and two runtime checks run; plan, decisions and status written; F-27 recorded. |
 | 2026-09-29 | Chunk 0.1: operation limits in both contract copies, measured first. F-28 (crash by nesting) found, reproduced and closed for operations; F-29 recorded. Backend 611 → 622, frontend 328 → 331. |
 | 2026-09-30 | Hotfix H.1: `nestingGuard.js` on `fix/f28-message-nesting` (from `main`), refusing any event or handshake nested past 32 levels. Four ways in reproduced on `main` and each test proven to fail without the guard; 6 mutants killed. Merged into `feat/accounts-collaboration` and here. 0.1's raw-frame test removed: the guard now stops that frame first. The push to `main` was refused by the permission check (production deploy), so it waits for the owner. Backend 622 → 627. |
+| 2026-09-30 | Chunk 0.2: the web app splits, stops resending, backs off and reports; F-27 resolved in code. Frontend 331 → 347. Branches `feat/accounts-collaboration` and `feat/durable-boards` pushed to GitHub as a backup (not merged). |

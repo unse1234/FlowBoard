@@ -1,6 +1,12 @@
 // @ts-check
 
+import { createClientId } from "../../shared/id/createClientId.js";
 import { createBoardOperation } from "../operations/createBoardOperation.js";
+import { splitOperation } from "../operations/splitOperation.js";
+
+/**
+ * @typedef {{ operation: import("../operations/operationTypes.js").BoardOperation, reason: string }} RefusedOperation
+ */
 
 export class OperationDispatcher {
   #boardId;
@@ -8,6 +14,7 @@ export class OperationDispatcher {
   #realtimeManager;
   #operationApplier;
   #setShapes;
+  #onRefused;
   #logger;
 
   /**
@@ -17,6 +24,10 @@ export class OperationDispatcher {
    * @param {import("../manager/RealtimeManager.js").RealtimeManager} config.realtimeManager
    * @param {import("../operations/operationApplier.js").OperationApplier} config.operationApplier
    * @param {(updater: Function) => void} config.setShapes
+   * @param {(refused: RefusedOperation[], sent: { partly: boolean }) => void} [config.onRefused]
+   *   told about a local edit, or part of one, that could not be sent at all:
+   *   it stays on this board and collaborators never see it. `partly` says
+   *   whether the rest of the edit went out
    * @param {Pick<Console, "warn" | "error">} [config.logger]
    */
   constructor({
@@ -25,6 +36,7 @@ export class OperationDispatcher {
     realtimeManager,
     operationApplier,
     setShapes,
+    onRefused = () => {},
     logger = console,
   }) {
     this.#boardId = boardId;
@@ -32,12 +44,18 @@ export class OperationDispatcher {
     this.#realtimeManager = realtimeManager;
     this.#operationApplier = operationApplier;
     this.#setShapes = setShapes;
+    this.#onRefused = onRefused;
     this.#logger = logger;
   }
 
   /**
+   * Publish a local edit, in as many operations as it takes to fit the
+   * contract's limits (F-27). Whatever cannot be sent is reported to
+   * `onRefused` instead of being queued to fail on every reconnect.
+   *
    * @param {import("../operations/operationTypes.js").OperationType} type
    * @param {Record<string, unknown>} payload
+   * @returns {import("../operations/operationTypes.js").BoardOperation[]} what was published
    */
   dispatchLocalOperation(type, payload) {
     const operation = createBoardOperation({
@@ -47,10 +65,22 @@ export class OperationDispatcher {
       userId: this.#userId,
     });
 
-    this.#operationApplier.markProcessed(operation.operationId);
-    this.#realtimeManager.publishOperation(operation);
+    const { operations, refused } = splitOperation(operation, { createId: () => createClientId("op") });
 
-    return operation;
+    for (const piece of operations) {
+      this.#operationApplier.markProcessed(piece.operationId);
+      this.#realtimeManager.publishOperation(piece);
+    }
+
+    if (refused.length > 0) {
+      this.#logger.warn?.("Local operation too large or invalid to share; kept on this board only.", {
+        type,
+        reasons: refused.map((entry) => entry.reason),
+      });
+      this.#onRefused(refused, { partly: operations.length > 0 });
+    }
+
+    return operations;
   }
 
   /**

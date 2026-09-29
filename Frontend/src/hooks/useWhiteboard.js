@@ -131,6 +131,7 @@ export function useWhiteboard({ account = null } = {}) {
     mode: collaborationMode,
     role: collaborationRole,
     accessProblem,
+    unshared,
   } = useRealtimeCollaboration({ roomId: collaborationRoomId, setShapes, account });
 
   // A viewer watches: nothing on this board can be changed from here. The
@@ -153,8 +154,8 @@ export function useWhiteboard({ account = null } = {}) {
   // The connection only exists once a display name is chosen, which happens a
   // render or more after the room id is set, so the seed is kept until a send
   // actually goes out. Re-running on status changes catches the moment the
-  // connection is created; the realtime manager queues the operation until the
-  // room is joined.
+  // connection is created; the realtime manager queues the operations until
+  // the room is joined. A large board goes as several operations (F-27).
   useEffect(() => {
     const seed = pendingCollaborationSeedRef.current;
     if (!collaborationRoomId || !seed) return;
@@ -164,10 +165,10 @@ export function useWhiteboard({ account = null } = {}) {
       return;
     }
 
-    const operation = publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, {
+    const published = publishLocalOperation(OPERATION_TYPES.CREATE_SHAPES, {
       shapes: seed,
     });
-    if (operation) pendingCollaborationSeedRef.current = null;
+    if (published) pendingCollaborationSeedRef.current = null;
   }, [collaborationRoomId, collaborationStatus, publishLocalOperation]);
 
   useEffect(() => {
@@ -874,9 +875,11 @@ export function useWhiteboard({ account = null } = {}) {
       role: collaborationRole,
       readOnly,
       accessProblem,
+      unshared,
     }),
     [
       accessProblem,
+      unshared,
       boardId,
       collaborationMode,
       collaborationRole,

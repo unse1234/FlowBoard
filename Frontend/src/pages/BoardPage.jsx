@@ -44,6 +44,7 @@ import { useToast } from "../features/toasts/toastContext.js";
 import { useConnectionToasts } from "../hooks/useConnectionToasts";
 import { useTouchGestures } from "../hooks/useTouchGestures";
 import { SHEETS, useUiLayout } from "../hooks/useUiLayout";
+import { useUnsharedChangeToasts } from "../hooks/useUnsharedChangeToasts";
 import { useViewportSize } from "../hooks/useViewportSize";
 import { useWhiteboard } from "../hooks/useWhiteboard";
 import { getBaseShapeStyle } from "../utils/styleUtils";
@@ -244,6 +245,7 @@ export default function BoardPage() {
   const { startCollaboration, copyCollaborationLink, isEnabled: isShared } = collaboration;
 
   useConnectionToasts(collaboration.status);
+  useUnsharedChangeToasts(collaboration.unshared);
 
   // Two fingers pan and pinch the canvas; one finger still draws.
   const canvasRef = useRef(null);

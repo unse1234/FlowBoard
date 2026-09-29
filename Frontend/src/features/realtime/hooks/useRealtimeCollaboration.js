@@ -128,6 +128,14 @@ export function useRealtimeCollaboration({ roomId, setShapes, account = null }) 
   const knownPeersRef = useRef(new Set());
   const dispatcherRef = useRef(null);
 
+  // The latest change that stayed on this board only: too large to send
+  // (F-27), or refused by the server for good. `id` changes on each report,
+  // so the page can say so once per report.
+  const [unshared, setUnshared] = useState(null);
+  const reportUnshared = useCallback((count, reason) => {
+    setUnshared((previous) => ({ id: (previous?.id ?? 0) + 1, count, reason }));
+  }, []);
+
   /** Set this room's display name; a blank name joins as "Guest". */
   const setDisplayName = useCallback(
     (name) => {
@@ -182,6 +190,7 @@ export function useRealtimeCollaboration({ roomId, setShapes, account = null }) 
       realtimeManager: manager,
       operationApplier: new OperationApplier(),
       setShapes,
+      onRefused: (refused, { partly }) => reportUnshared(refused.length, partly ? "partly-too-large" : "too-large"),
     });
 
     return {
@@ -190,7 +199,7 @@ export function useRealtimeCollaboration({ roomId, setShapes, account = null }) 
     };
     // `username` only matters without accounts; with them the server supplies it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, setShapes, userColor, userId, accountMode ? null : username, accountKey, getAccessToken]);
+  }, [roomId, setShapes, userColor, userId, accountMode ? null : username, accountKey, getAccessToken, reportUnshared]);
 
   useEffect(() => {
     if (!realtimeManager || !operationDispatcher) {
@@ -246,6 +255,11 @@ export function useRealtimeCollaboration({ roomId, setShapes, account = null }) 
     const unsubscribeOperations = realtimeManager.onOperation((operation) => {
       operationDispatcher.applyRemoteOperation(operation);
     });
+    // Lost access and a lost editing role are explained by the access
+    // problems and the read-only board; only a refused change needs saying.
+    const unsubscribeRejected = realtimeManager.onRejected((event) => {
+      if (event.code === "INVALID_PAYLOAD") reportUnshared(1, "refused");
+    });
     const unsubscribePresence = realtimeManager.onPresence((event) => {
       if (!event || typeof event !== "object") return;
       if (!event.userId || event.userId === userId) return;
@@ -294,10 +308,11 @@ export function useRealtimeCollaboration({ roomId, setShapes, account = null }) 
       unsubscribeAccess();
       unsubscribeStatus();
       unsubscribeOperations();
+      unsubscribeRejected();
       unsubscribePresence();
       realtimeManager.disconnect();
     };
-  }, [operationDispatcher, realtimeManager, revalidate, userColor, userId]);
+  }, [operationDispatcher, realtimeManager, reportUnshared, revalidate, userColor, userId]);
 
   // Announce ourselves while connected, so peers list us even before — and
   // long after — we move the pointer.
@@ -396,6 +411,9 @@ export function useRealtimeCollaboration({ roomId, setShapes, account = null }) 
     setDisplayName,
     status: roomId ? status : CONNECTION_STATE.IDLE,
     remotePresence: roomId ? remotePresence : EMPTY_REMOTE_PRESENCE,
+    // { id, count, reason: "too-large" | "partly-too-large" | "refused" } for
+    // the latest change collaborators will not see, or null.
+    unshared: roomId ? unshared : null,
     publishLocalOperation,
     publishPresence,
   };

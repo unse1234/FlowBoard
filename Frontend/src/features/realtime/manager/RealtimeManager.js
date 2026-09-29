@@ -5,17 +5,36 @@ import { SOCKET_EVENTS } from "../socket/socketEvents.js";
 
 const DEFAULT_ACK_TIMEOUT_MS = 5000;
 
+/**
+ * Refusals that sending again cannot change: the operation itself was
+ * refused, or this client may no longer edit the board. Anything else, such as
+ * a rate limit, a server hiccup, a join still under way or no answer at all,
+ * is worth another try.
+ */
+const PERMANENT_REFUSALS = new Set(["INVALID_PAYLOAD", "EDIT_FORBIDDEN", "BOARD_NOT_FOUND"]);
+
+/** Retries after a passing failure back off from one second to thirty. */
+const RETRY_FIRST_MS = 1000;
+const RETRY_MAX_MS = 30_000;
+
 export class RealtimeManager {
   #socketService;
   #boardId;
   #user;
   #logger;
+  #timers;
   #joined = false;
   #role = null;
   #pendingOperations = new Map();
+  // Operations sent and not yet answered, each with a token for the attempt,
+  // so an answer to an attempt that was superseded changes nothing.
+  #inFlight = new Map();
+  #retryTimer = null;
+  #retryDelayMs = RETRY_FIRST_MS;
   #accessHandlers = new Set();
   #operationHandlers = new Set();
   #presenceHandlers = new Set();
+  #rejectedHandlers = new Set();
   #statusHandlers = new Set();
   #unsubscribers = [];
 
@@ -25,12 +44,20 @@ export class RealtimeManager {
    * @param {string} config.boardId
    * @param {{ id: string, username?: string, color?: string }} config.user
    * @param {Pick<Console, "info" | "warn" | "error">} [config.logger]
+   * @param {{ setTimeout: (callback: () => void, ms: number) => unknown, clearTimeout: (id: any) => void }} [config.timers]
    */
-  constructor({ socketService, boardId, user, logger = console }) {
+  constructor({
+    socketService,
+    boardId,
+    user,
+    logger = console,
+    timers = { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
+  }) {
     this.#socketService = socketService;
     this.#boardId = boardId;
     this.#user = user;
     this.#logger = logger;
+    this.#timers = timers;
   }
 
   connect() {
@@ -40,6 +67,8 @@ export class RealtimeManager {
   }
 
   async disconnect() {
+    this.#timers.clearTimeout(this.#retryTimer);
+    this.#retryTimer = null;
     if (this.#joined) await this.#leaveBoard();
 
     this.#unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -111,6 +140,20 @@ export class RealtimeManager {
   }
 
   /**
+   * Operations the server refused for good (see PERMANENT_REFUSALS). Each is
+   * dropped from the queue rather than sent again on every reconnect, so it
+   * stays on this board only.
+   *
+   * @param {(event: { operation: import("../operations/operationTypes.js").BoardOperation, code: string, message: string }) => void} handler
+   * @returns {() => void}
+   */
+  onRejected(handler) {
+    this.#rejectedHandlers.add(handler);
+
+    return () => this.#rejectedHandlers.delete(handler);
+  }
+
+  /**
    * @param {import("../operations/operationTypes.js").BoardOperation} operation
    */
   publishOperation(operation) {
@@ -160,6 +203,9 @@ export class RealtimeManager {
     this.#unsubscribers.push(
       this.#socketService.on(SOCKET_EVENTS.DISCONNECT, () => {
         this.#joined = false;
+        // Whatever was in flight may never be answered; the next connection
+        // sends it again, and the server keeps one copy per operation id.
+        this.#inFlight.clear();
         this.#setStatus(CONNECTION_STATE.RECONNECTING);
       }),
     );
@@ -250,31 +296,74 @@ export class RealtimeManager {
     }
   }
 
+  /** Send, in order, every queued operation that is not already awaiting an answer. */
   #flushPendingOperations() {
     if (!this.#joined || !this.#socketService.isConnected()) return;
 
     for (const operation of this.#pendingOperations.values()) {
+      if (this.#inFlight.has(operation.operationId)) continue;
+      // Send failures are handled inside; this is for a listener that throws.
       this.#sendOperation(operation).catch((error) => {
-        this.#logger.warn?.("Realtime operation send failed; it remains queued.", error);
+        this.#logger.error?.("Realtime operation handling failed.", error);
       });
     }
   }
 
   /**
+   * Send one operation and act on the answer: done, dropped for good, or kept
+   * for a later try (F-27: never resent in a loop).
+   *
    * @param {import("../operations/operationTypes.js").BoardOperation} operation
    */
   async #sendOperation(operation) {
-    const response = await this.#socketService.emitWithAck(
-      SOCKET_EVENTS.BOARD_EVENT,
-      { operation },
-      DEFAULT_ACK_TIMEOUT_MS,
-    );
+    const id = operation.operationId;
+    const attempt = Symbol(id);
+    this.#inFlight.set(id, attempt);
 
-    if (!isOkResponse(response)) {
-      throw new Error(getResponseError(response, "Server rejected realtime operation."));
+    let response = null;
+    try {
+      response = await this.#socketService.emitWithAck(
+        SOCKET_EVENTS.BOARD_EVENT,
+        { operation },
+        DEFAULT_ACK_TIMEOUT_MS,
+      );
+    } catch (error) {
+      // No answer in time, or the connection went: worth another try.
+      this.#logger.warn?.("Realtime operation got no answer; it stays queued.", error);
     }
 
-    this.#pendingOperations.delete(operation.operationId);
+    const current = this.#inFlight.get(id) === attempt;
+    if (current) this.#inFlight.delete(id);
+
+    if (isOkResponse(response)) {
+      this.#pendingOperations.delete(id);
+      this.#retryDelayMs = RETRY_FIRST_MS;
+      return;
+    }
+
+    const code = getResponseCode(response);
+    if (code && PERMANENT_REFUSALS.has(code)) {
+      if (!this.#pendingOperations.delete(id)) return;
+      this.#logger.warn?.("Server refused a realtime operation for good; dropped.", { code });
+      const event = { operation, code, message: getResponseError(response, "The change was refused.") };
+      this.#rejectedHandlers.forEach((handler) => handler(event));
+      return;
+    }
+
+    // A newer attempt at the same operation decides what happens next.
+    if (current && this.#pendingOperations.has(id)) this.#scheduleRetry();
+  }
+
+  /** Flush again later, backing off while failures continue. */
+  #scheduleRetry() {
+    if (this.#retryTimer !== null) return;
+
+    const delay = this.#retryDelayMs;
+    this.#retryDelayMs = Math.min(delay * 2, RETRY_MAX_MS);
+    this.#retryTimer = this.#timers.setTimeout(() => {
+      this.#retryTimer = null;
+      this.#flushPendingOperations();
+    }, delay);
   }
 
   #handleError(error) {
@@ -308,6 +397,16 @@ function extractOperation(event) {
  */
 function isOkResponse(response) {
   return Boolean(response && typeof response === "object" && response.ok === true);
+}
+
+/**
+ * @param {unknown} response
+ * @returns {string | null}
+ */
+function getResponseCode(response) {
+  return response && typeof response === "object" && "code" in response && typeof response.code === "string"
+    ? response.code
+    : null;
 }
 
 /**

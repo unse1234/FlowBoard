@@ -110,11 +110,14 @@ local edit
   → useWhiteboard mutates React state (optimistic, already applied)
   → publishLocalOperation(type, payload)
   → createBoardOperation  { operationId, boardId, userId, type, payload, timestamp }
-  → applier.markProcessed(operationId)   ← so the echo is ignored
+  → splitOperation        pieces within OPERATION_LIMITS; what cannot fit is
+                          refused and reported (toast), never sent
+  → applier.markProcessed(operationId)   ← each piece, so the echo is ignored
   → RealtimeManager.publishOperation → emitWithAck("board:event", 5 s)
         │
         ▼ server
-  validateOperation(envelope + payload shape)
+  nestingGuard (every event: depth ≤ 32, before any handler)
+  validateOperation(envelope + payload shape, size, depth, batch, ids)
   reject if operation.boardId !== socket.data.boardId
   operationStore.add → { duplicate: true } short-circuits
   socket.to("board:<id>").emit("board:event", { operation, serverTimestamp })
@@ -125,8 +128,12 @@ local edit
 ```
 
 An unacknowledged operation stays in `RealtimeManager`'s in-memory
-`#pendingOperations` map and is retried on the next flush. That map does not
-survive a reload.
+`#pendingOperations` map. One that is awaiting its answer is not sent again.
+A refusal that sending again cannot change (`INVALID_PAYLOAD`,
+`EDIT_FORBIDDEN`, `BOARD_NOT_FOUND`) drops it and is reported. Any other
+failure, or no answer, retries it after a pause that doubles from 1 s to 30 s.
+A reconnect sends everything still queued at once. The map does not survive a
+reload (Step 2, chunk 3.2).
 
 ### Join and replay
 

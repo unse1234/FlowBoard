@@ -7,7 +7,11 @@ import { RealtimeManager } from "./RealtimeManager.js";
 const BOARD_ID = "11111111-1111-4111-8111-111111111111";
 const SILENT = { info() {}, warn() {}, error() {} };
 
-/** A SocketService stand-in: the test scripts acknowledgements and fires server events. */
+/**
+ * A SocketService stand-in: the test scripts acknowledgements and fires server
+ * events. An answer may be a function, called when the emit happens, to delay
+ * the answer (return a promise) or give none (throw).
+ */
 function createFakeSocket({ recovered = false } = {}) {
   const handlers = new Map();
   const emitted = [];
@@ -36,7 +40,8 @@ function createFakeSocket({ recovered = false } = {}) {
     wasRecovered: () => socket.recovered,
     async emitWithAck(event, payload) {
       emitted.push({ event, payload });
-      return answers.length ? answers.shift() : { ok: true };
+      const next = answers.length ? answers.shift() : { ok: true };
+      return typeof next === "function" ? next() : next;
     },
   };
   return socket;
@@ -44,12 +49,36 @@ function createFakeSocket({ recovered = false } = {}) {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function managerWith(socket) {
+/** Timers the test runs by hand, to see what the manager scheduled and when. */
+function createFakeTimers() {
+  const scheduled = new Map();
+  let nextId = 0;
+  return {
+    setTimeout(callback, ms) {
+      nextId += 1;
+      scheduled.set(nextId, { callback, ms });
+      return nextId;
+    },
+    clearTimeout(id) {
+      scheduled.delete(id);
+    },
+    /** The delays waiting to run, in the order they were set. */
+    delays: () => [...scheduled.values()].map((entry) => entry.ms),
+    runAll() {
+      const due = [...scheduled.values()];
+      scheduled.clear();
+      for (const entry of due) entry.callback();
+    },
+  };
+}
+
+function managerWith(socket, timers = createFakeTimers()) {
   const manager = new RealtimeManager({
     socketService: socket,
     boardId: BOARD_ID,
     user: { id: "u-ada", username: "Ada" },
     logger: SILENT,
+    timers,
   });
   const access = [];
   const statuses = [];
@@ -177,4 +206,158 @@ test("a server without accounts grants no role, and nothing is reported", async 
 
   assert.deepEqual(access, []);
   assert.equal(manager.getRole(), null);
+});
+
+// --- Sending and resending (Step 2 chunk 0.2, finding F-27) ---------------------
+
+const sentIds = (socket) =>
+  socket.emitted.filter((entry) => entry.event === SOCKET_EVENTS.BOARD_EVENT).map((entry) => entry.payload.operation.operationId);
+
+/** A manager joined to the board, with hand-run timers and a record of rejections. */
+async function joined() {
+  const socket = createFakeSocket();
+  socket.answer({ ok: true, boardId: BOARD_ID, role: "editor" });
+  const timers = createFakeTimers();
+  const { manager } = managerWith(socket, timers);
+  const rejected = [];
+  manager.onRejected((event) => rejected.push(event));
+  manager.connect();
+  await settle();
+  return { socket, timers, manager, rejected };
+}
+
+test("an edit still awaiting its answer is not sent again when the next one goes", async () => {
+  const { socket, manager } = await joined();
+  let answerFirst;
+  socket.answer(() => new Promise((resolve) => (answerFirst = resolve)));
+
+  manager.publishOperation(operation("op-1"));
+  manager.publishOperation(operation("op-2"));
+  manager.publishOperation(operation("op-3"));
+  await settle();
+
+  assert.deepEqual(sentIds(socket), ["op-1", "op-2", "op-3"]);
+  answerFirst({ ok: true });
+});
+
+test("an edit the server refuses for good is dropped and reported, and never sent again", async () => {
+  const { socket, timers, manager, rejected } = await joined();
+  socket.answer({ ok: false, code: "INVALID_PAYLOAD", error: "That message wasn't understood." });
+
+  manager.publishOperation(operation("op-1"));
+  await settle();
+
+  assert.deepEqual(rejected.map((event) => [event.operation.operationId, event.code]), [["op-1", "INVALID_PAYLOAD"]]);
+  assert.deepEqual(timers.delays(), [], "nothing scheduled to try again");
+
+  // Neither the next edit nor a fresh connection sends it again.
+  manager.publishOperation(operation("op-2"));
+  socket.connected = false;
+  socket.fire(SOCKET_EVENTS.DISCONNECT, "transport close");
+  socket.answer({ ok: true, boardId: BOARD_ID, role: "editor" });
+  socket.connect();
+  await settle();
+
+  assert.deepEqual(sentIds(socket), ["op-1", "op-2"]);
+});
+
+test("a passing refusal is tried again after a pause, without waiting for another edit", async () => {
+  const { socket, timers, manager, rejected } = await joined();
+  socket.answer({ ok: false, code: "RATE_LIMITED", error: "Slow down a little." });
+
+  manager.publishOperation(operation("op-1"));
+  await settle();
+  assert.deepEqual(timers.delays(), [1000]);
+
+  timers.runAll();
+  await settle();
+
+  assert.deepEqual(sentIds(socket), ["op-1", "op-1"]);
+  assert.deepEqual(timers.delays(), [], "delivered, so nothing more is scheduled");
+  assert.deepEqual(rejected, []);
+});
+
+test("no answer at all is tried again too, and the pause doubles while it lasts", async () => {
+  const { socket, timers, manager } = await joined();
+  const timeout = () => {
+    throw new Error("operation has timed out");
+  };
+  // A server without accounts refuses without a code: a passing failure too.
+  socket.answer(timeout);
+  socket.answer({ ok: false, error: "Socket has not joined this board." });
+  socket.answer(timeout);
+
+  manager.publishOperation(operation("op-1"));
+  const delays = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await settle();
+    delays.push(...timers.delays());
+    timers.runAll();
+  }
+  await settle();
+
+  assert.deepEqual(delays, [1000, 2000, 4000]);
+  assert.deepEqual(sentIds(socket), ["op-1", "op-1", "op-1", "op-1"]);
+  assert.deepEqual(timers.delays(), []);
+});
+
+test("a delivered edit resets the pause for the next failure", async () => {
+  const { socket, timers, manager } = await joined();
+  socket.answer({ ok: false, code: "UNAVAILABLE" });
+  manager.publishOperation(operation("op-1"));
+  await settle();
+  timers.runAll();
+  await settle();
+
+  socket.answer({ ok: false, code: "UNAVAILABLE" });
+  manager.publishOperation(operation("op-2"));
+  await settle();
+
+  assert.deepEqual(timers.delays(), [1000]);
+});
+
+test("after a reconnect an unanswered edit goes again at once, and the stale answer changes nothing", async () => {
+  const { socket, timers, manager, rejected } = await joined();
+  let answerStale;
+  let answerFresh;
+  socket.answer(() => new Promise((resolve) => (answerStale = resolve)));
+  manager.publishOperation(operation("op-1"));
+  await settle();
+
+  socket.connected = false;
+  socket.fire(SOCKET_EVENTS.DISCONNECT, "transport close");
+  socket.answer({ ok: true, boardId: BOARD_ID, role: "editor" });
+  socket.answer(() => new Promise((resolve) => (answerFresh = resolve)));
+  socket.connect();
+  await settle();
+  assert.deepEqual(sentIds(socket), ["op-1", "op-1"]);
+
+  // The first attempt's answer finally arrives, as a failure, while the
+  // second is still out: it neither schedules a retry nor frees op-1 to be
+  // sent a third time.
+  answerStale({ ok: false, code: "UNAVAILABLE" });
+  await settle();
+  assert.deepEqual(timers.delays(), []);
+  manager.publishOperation(operation("op-2"));
+  await settle();
+  assert.deepEqual(sentIds(socket), ["op-1", "op-1", "op-2"]);
+
+  answerFresh({ ok: true });
+  await settle();
+  manager.publishOperation(operation("op-3"));
+  await settle();
+  assert.deepEqual(sentIds(socket), ["op-1", "op-1", "op-2", "op-3"], "op-1 was delivered and is not sent again");
+  assert.deepEqual(rejected, []);
+});
+
+test("disconnecting cancels a scheduled retry", async () => {
+  const { socket, timers, manager } = await joined();
+  socket.answer({ ok: false, code: "RATE_LIMITED" });
+  manager.publishOperation(operation("op-1"));
+  await settle();
+  assert.deepEqual(timers.delays(), [1000]);
+
+  await manager.disconnect();
+
+  assert.deepEqual(timers.delays(), []);
 });
